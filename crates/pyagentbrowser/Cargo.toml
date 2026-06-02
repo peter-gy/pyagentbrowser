@@ -1,0 +1,26 @@
+[package]
+name = "pyagentbrowser"
+version = "0.27.1-rc.1"
+edition.workspace = true
+description = "Python bindings for agent-browser's native Rust browser automation engine"
+license = "Apache-2.0"
+repository = "https://github.com/peter-gy/pyagentbrowser"
+publish = false
+build = "build.rs"
+
+[lints]
+workspace = true
+
+[lib]
+name = "pyagentbrowser"
+crate-type = ["cdylib"]
+
+[dependencies]
+agent-browser = { path = "../agent-browser-adapter" }
+pyo3 = { version = "0.27.2", features = ["extension-module"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+tokio = { version = "1", features = ["rt-multi-thread"] }
+
+[build-dependencies]
+serde_json = "1.0"

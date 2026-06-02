@@ -1,0 +1,16 @@
+# Python-generated files
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info
+target/
+crates/agent-browser-adapter/Cargo.lock
+.pytest_cache/
+.ruff_cache/
+*.so
+*.dylib
+
+# Virtual environments
+.venv*

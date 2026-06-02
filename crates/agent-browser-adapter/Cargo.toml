@@ -1,0 +1,47 @@
+[package]
+name = "agent-browser"
+version = "0.27.1"
+edition = "2021"
+description = "Library adapter for the agent-browser upstream submodule"
+license = "Apache-2.0"
+repository = "https://github.com/peter-gy/pyagentbrowser"
+publish = false
+
+[lib]
+name = "agent_browser"
+path = "src/lib.rs"
+
+[dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+dirs = "5.0"
+base64 = "0.22"
+getrandom = "0.2"
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal", "process"] }
+tokio-tungstenite = { version = "0.24", features = ["rustls-tls-webpki-roots"] }
+futures-util = "0.3"
+url = "2"
+uuid = { version = "1", features = ["v4"] }
+image = "0.25"
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls-webpki-roots", "stream"] }
+sha2 = "0.10"
+aes-gcm = "0.10"
+async-trait = "0.1"
+socket2 = "0.6"
+similar = "2"
+zip = { version = "8.2.0", default-features = false, features = ["deflate"] }
+time = { version = "0.3", features = ["formatting"] }
+hmac = "0.12"
+hex = "0.4"
+chrono = "0.4"
+urlencoding = "2"
+
+[target.'cfg(unix)'.dependencies]
+libc = "0.2"
+
+[build-dependencies]
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+
+[dev-dependencies]
+tempfile = "3"

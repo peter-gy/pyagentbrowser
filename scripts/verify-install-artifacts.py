@@ -1,0 +1,219 @@
+from __future__ import annotations
+
+import os
+import shutil
+import subprocess
+import sys
+import tarfile
+import tempfile
+import zipfile
+from email.message import Message
+from email.parser import Parser
+from pathlib import Path
+
+INSTALL_CHECK = r"""
+from __future__ import annotations
+
+import importlib.metadata as metadata
+import importlib.resources as resources
+from pathlib import Path
+
+import pyagentbrowser as ab
+from pyagentbrowser import Browser
+from pyagentbrowser.cdp import CDPClient
+from pyagentbrowser.models import Screenshot
+
+assert Browser
+assert metadata.version("pyagentbrowser")
+assert isinstance(ab.__agent_browser_version__, str)
+assert ab.__agent_browser_version__
+assert resources.files("pyagentbrowser").joinpath("py.typed").is_file()
+
+assert "core" in ab.skills.available()
+assert ab.skills.get("core").parts
+core = ab.skills.get("core", full=True)
+assert core.files
+full_markdown = ab.skills.markdown("core", full=True)
+core_content = ab.skills.read("core")
+assert core_content
+assert core_content in full_markdown
+for supplement in core.files:
+    supplement_content = ab.skills.read("core", supplement.path)
+    assert supplement_content
+    assert supplement.path in full_markdown
+    assert supplement_content in full_markdown
+
+try:
+    Screenshot(path=Path("missing.png"), format="png", annotations=(), raw={}).pil()
+except ImportError as exc:
+    assert "pyagentbrowser" in str(exc)
+    assert "images" in str(exc)
+else:
+    raise AssertionError("Screenshot.pil() should explain the missing images extra")
+
+try:
+    CDPClient("ws://127.0.0.1:9", timeout=0.01).send("Browser.getVersion")
+except ImportError as exc:
+    assert "pyagentbrowser[cdp]" in str(exc)
+else:
+    raise AssertionError("CDPClient should explain the missing cdp extra")
+"""
+
+EXTRAS_CHECK = r"""
+from __future__ import annotations
+
+import base64
+import json
+import tempfile
+import threading
+from pathlib import Path
+
+from pyagentbrowser.cdp import CDPClient
+from pyagentbrowser.models import Screenshot
+from websockets.sync.server import serve
+
+def cdp_handler(websocket):
+    request = json.loads(websocket.recv())
+    websocket.send(json.dumps({"id": request["id"], "result": {"ok": True}}))
+
+with serve(cdp_handler, "127.0.0.1", 0) as server:
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        port = server.socket.getsockname()[1]
+        client = CDPClient(f"ws://127.0.0.1:{port}", timeout=2)
+        assert client.send("Runtime.evaluate") == {"ok": True}
+        client.close()
+    finally:
+        server.shutdown()
+        thread.join(timeout=2)
+
+png = Path(tempfile.gettempdir()) / "pyagentbrowser-extra-smoke.png"
+png.write_bytes(
+    base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42m"
+        "P8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+    )
+)
+image = Screenshot(path=png, format="png", annotations=(), raw={}).pil()
+assert image.size == (1, 1)
+"""
+
+
+def venv_python(root: Path) -> Path:
+    return root / "bin" / "python"
+
+
+def create_clean_venv(root: Path, python_version: str) -> None:
+    if shutil.which("uv") is None:
+        if python_version != f"{sys.version_info.major}.{sys.version_info.minor}":
+            raise RuntimeError("uv is required to create non-current Python smoke environments")
+        import venv
+
+        venv.EnvBuilder(with_pip=True).create(root)
+        return
+
+    subprocess.check_call(["uv", "venv", "--seed", "--python", python_version, str(root)])
+
+
+def requirement(artifact: Path, *, extras: tuple[str, ...] = ()) -> str:
+    extra = f"[{','.join(extras)}]" if extras else ""
+    return f"pyagentbrowser{extra} @ {artifact.resolve().as_uri()}"
+
+
+def artifact_metadata(artifact: Path) -> Message:
+    if artifact.suffix == ".whl":
+        with zipfile.ZipFile(artifact) as archive:
+            metadata_names = [
+                name for name in archive.namelist() if name.endswith(".dist-info/METADATA")
+            ]
+            if len(metadata_names) != 1:
+                raise RuntimeError(f"expected one wheel METADATA file, found {metadata_names}")
+            return Parser().parsestr(archive.read(metadata_names[0]).decode())
+    if artifact.name.endswith(".tar.gz"):
+        with tarfile.open(artifact) as archive:
+            metadata_names = [name for name in archive.getnames() if name.endswith("/PKG-INFO")]
+            if len(metadata_names) != 1:
+                raise RuntimeError(f"expected one sdist PKG-INFO file, found {metadata_names}")
+            member = archive.extractfile(metadata_names[0])
+            if member is None:
+                raise RuntimeError("sdist PKG-INFO could not be read")
+            return Parser().parsestr(member.read().decode())
+    raise RuntimeError(f"unsupported artifact type: {artifact}")
+
+
+def artifact_extras(artifact: Path) -> tuple[str, ...]:
+    return tuple(sorted(artifact_metadata(artifact).get_all("Provides-Extra") or []))
+
+
+def pip_install(
+    python: Path,
+    artifact: Path,
+    *,
+    extras: tuple[str, ...] = (),
+    no_binary: bool = False,
+) -> None:
+    command = [str(python), "-m", "pip", "install"]
+    if no_binary:
+        command.extend(["--no-binary", "pyagentbrowser", "--no-cache-dir"])
+    command.append(requirement(artifact, extras=extras))
+    subprocess.check_call(command)
+
+
+def verify_install(
+    artifact: Path,
+    *,
+    python_version: str,
+    no_binary: bool = False,
+    check_extras: bool = True,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="pyagentbrowser-install-") as workspace_root:
+        workspace = Path(workspace_root)
+        env_dir = workspace / "venv"
+        local_artifact = workspace / artifact.name
+        shutil.copy2(artifact, local_artifact)
+        create_clean_venv(env_dir, python_version)
+        python = venv_python(env_dir)
+        pip_install(python, local_artifact, no_binary=no_binary)
+        subprocess.check_call([str(python), "-m", "pip", "check"])
+        subprocess.check_call([str(python), "-c", INSTALL_CHECK])
+        if not check_extras:
+            return
+        pip_install(
+            python,
+            local_artifact,
+            extras=artifact_extras(local_artifact),
+            no_binary=no_binary,
+        )
+        subprocess.check_call([str(python), "-m", "pip", "check"])
+        subprocess.check_call([str(python), "-c", EXTRAS_CHECK])
+
+
+def python_versions() -> list[str]:
+    raw = os.environ.get("PYAGENTBROWSER_PYTHON_VERSIONS")
+    if raw:
+        return raw.split()
+    return [f"{sys.version_info.major}.{sys.version_info.minor}"]
+
+
+def wheel_for_version(dist: Path, python_version: str) -> Path:
+    tag = f"cp{python_version.replace('.', '')}"
+    wheels = sorted(path for path in dist.glob("pyagentbrowser-*.whl") if f"-{tag}-" in path.name)
+    if len(wheels) != 1:
+        raise RuntimeError(
+            f"expected exactly one {tag} wheel in {dist}, found {[path.name for path in wheels]}"
+        )
+    return wheels[0]
+
+
+def main() -> None:
+    dist = Path(sys.argv[1])
+    sdist = next(dist.glob("pyagentbrowser-*.tar.gz"))
+    for version in python_versions():
+        wheel = wheel_for_version(dist, version)
+        verify_install(wheel, python_version=version)
+        verify_install(sdist, python_version=version, no_binary=True, check_extras=False)
+
+
+if __name__ == "__main__":
+    main()

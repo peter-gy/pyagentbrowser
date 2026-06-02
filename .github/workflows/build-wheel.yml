@@ -1,0 +1,88 @@
+name: Build pyagentbrowser wheel
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        description: GitHub runner label.
+        required: true
+        type: string
+      python:
+        description: Python version to build for.
+        required: true
+        type: string
+      target:
+        description: Maturin target.
+        required: true
+        type: string
+      artifact:
+        description: Uploaded artifact name.
+        required: true
+        type: string
+      sdist:
+        description: Build the source distribution with this wheel.
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: ${{ inputs.artifact }}
+    runs-on: ${{ inputs.os }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ inputs.python }}
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Build Linux wheel
+        if: runner.os == 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ inputs.target }}
+          manylinux: auto
+          args: >-
+            --release
+            --out dist
+            --interpreter python${{ inputs.python }}
+            ${{ inputs.sdist && '--sdist' || '' }}
+
+      - name: Build native wheel
+        if: runner.os != 'Linux'
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ inputs.target }}
+          args: >-
+            --release
+            --out dist
+            --interpreter python
+
+      - name: Test built wheel
+        run: |
+          python -m venv wheel-test
+          source wheel-test/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python - <<'PY'
+          from pyagentbrowser import Browser
+          import pyagentbrowser._native as native
+
+          assert Browser
+          assert native.__agent_browser_version__
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ inputs.artifact }}
+          path: dist/*
+          if-no-files-found: error

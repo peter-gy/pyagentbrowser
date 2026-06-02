@@ -1,0 +1,198 @@
+[project]
+name = "pyagentbrowser"
+version = "0.27.1rc1"
+description = "Python SDK for controlling the native agent-browser engine in-process"
+readme = "README.md"
+authors = [
+    { name = "Péter Ferenc Gyarmati", email = "dev.petergy@gmail.com" }
+]
+license = "Apache-2.0"
+requires-python = ">=3.10,<3.15"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Rust",
+    "Topic :: Internet :: WWW/HTTP :: Browsers",
+    "Typing :: Typed",
+]
+dependencies = [
+    "typing-extensions>=4.14.0",
+]
+keywords = [
+    "agent-browser",
+    "browser automation",
+    "evidence",
+    "refs",
+    "snapshots",
+]
+
+[project.optional-dependencies]
+cdp = [
+    "websockets>=15.0",
+]
+images = [
+    "pillow>=12.0",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/peter-gy/pyagentbrowser"
+"Repository" = "https://github.com/peter-gy/pyagentbrowser"
+"Issues" = "https://github.com/peter-gy/pyagentbrowser/issues"
+"Documentation" = "https://github.com/peter-gy/pyagentbrowser/blob/main/docs/index.md"
+"Security" = "https://github.com/peter-gy/pyagentbrowser/security/policy"
+"agent-browser docs" = "https://agent-browser.dev/"
+"agent-browser commands" = "https://agent-browser.dev/commands"
+"agent-browser CDP mode" = "https://agent-browser.dev/cdp-mode"
+"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/90050f2"
+
+[build-system]
+requires = ["maturin>=1.11,<2"]
+build-backend = "maturin"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.11.5",
+    "pillow>=12.0",
+    "pytest>=9.0.3",
+    "pytest-timeout>=2.4.0",
+    "ruff>=0.15.12",
+    "tomli>=2.3.0",
+    "ty>=0.0.34",
+]
+
+[tool.uv]
+required-version = ">=0.8.4"
+default-groups = ["dev"]
+
+[tool.maturin]
+features = ["pyo3/extension-module"]
+module-name = "pyagentbrowser._native"
+python-source = "src"
+manifest-path = "crates/pyagentbrowser/Cargo.toml"
+exclude = [
+    ".venv*/**",
+    "Cargo.toml.orig",
+    "crates/agent-browser-adapter/Cargo.lock",
+    "crates/agent-browser-adapter/target/**",
+    "docs/figures/**",
+    "nogit/**",
+    "target/**",
+    "tests/**",
+    "third_party/agent-browser/.claude-plugin/**",
+    "third_party/agent-browser/.github/**",
+    "third_party/agent-browser/.gitignore",
+    "third_party/agent-browser/.husky/**",
+    "third_party/agent-browser/.prettierrc",
+    "third_party/agent-browser/AGENTS.md",
+    "third_party/agent-browser/CHANGELOG.md",
+    "third_party/agent-browser/README.md",
+    "third_party/agent-browser/agent-browser.schema.json",
+    "third_party/agent-browser/benchmarks/**",
+    "third_party/agent-browser/bin/**",
+    "third_party/agent-browser/cli/src/chat.rs",
+    "third_party/agent-browser/cli/src/doctor/**",
+    "third_party/agent-browser/cli/src/main.rs",
+    "third_party/agent-browser/cli/src/output.rs",
+    "third_party/agent-browser/cli/src/skills.rs",
+    "third_party/agent-browser/cli/src/upgrade.rs",
+    "third_party/agent-browser/docker/**",
+    "third_party/agent-browser/docs/**",
+    "third_party/agent-browser/evals/**",
+    "third_party/agent-browser/examples/**",
+    "third_party/agent-browser/package.json",
+    "third_party/agent-browser/packages/**",
+    "third_party/agent-browser/pnpm-lock.yaml",
+    "third_party/agent-browser/pnpm-workspace.yaml",
+    "third_party/agent-browser/scripts/**",
+    "third_party/agent-browser/skills/**",
+    "uv.lock",
+    "wheels/**",
+]
+include = [
+    { path = "LICENSE", format = "sdist" },
+    { path = "docs/*.md", format = "sdist" },
+    { path = "docs/adr/*.md", format = "sdist" },
+    { path = "docs/adr/*.json", format = "sdist" },
+    { path = "docs/internals/*.md", format = "sdist" },
+    { path = "examples/*.py", format = "sdist" },
+    { path = "Cargo.lock", format = "sdist" },
+    { path = "crates/pyagentbrowser/**", format = "sdist" },
+    { path = "crates/agent-browser-adapter/**", format = "sdist" },
+    { path = "rust-toolchain.toml", format = "sdist" },
+    { path = "rustfmt.toml", format = "sdist" },
+    { path = "third_party/agent-browser/LICENSE", format = "sdist" },
+    { path = "third_party/agent-browser/cli/Cargo.toml", format = "sdist" },
+    { path = "third_party/agent-browser/cli/cdp-protocol/**/*", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/color.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/commands.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/connection.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/flags.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/install.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/actions.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/auth.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/browser.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/cdp/**/*", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/cookies.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/diff.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/element.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/inspect_server.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/interaction.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/network.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/policy.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/providers.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/react/**/*", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/recording.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/screenshot.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/snapshot.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/state.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/storage.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/stream/**/*", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/test_fixtures/**/*", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/tracing.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/native/webdriver/**/*", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/test_utils.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/validation.rs", format = "sdist" },
+    { path = "third_party/agent-browser/skill-data/**/*", format = "sdist" },
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+    "--durations=20",
+    "-m",
+    "not integration",
+]
+xfail_strict = true
+timeout = 120
+timeout_func_only = true
+filterwarnings = [
+    "error",
+]
+markers = [
+    "integration: real browser integration tests that can exercise upstream behavior",
+    "native_smoke: native bridge smoke tests for PyO3 and upstream adapter behavior",
+    "packaging: wheel, sdist, and release-boundary contract tests",
+    "sdk_dx: fast tests for Python SDK value, ergonomics, refs, evidence, skills, and async behavior",
+    "upstream_boundary: expected failures documenting upstream-owned native behavior",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["B", "E", "F", "I", "RUF", "SIM", "UP"]
+
+[tool.ruff.lint.per-file-ignores]
+"docs/*.py" = ["B018", "E501"]
