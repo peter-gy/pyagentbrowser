@@ -121,11 +121,11 @@ package: ## Build wheel/sdist artifacts and run artifact/install smoke checks
 	PYAGENTBROWSER_PYTHON_VERSIONS="$(PYTHON_VERSIONS)" uv run python scripts/verify-install-artifacts.py $(DIST_DIR)
 
 .PHONY: prepare-prerelease
-prepare-prerelease: ## Sync release metadata from the pinned upstream tag
+prepare-prerelease: ## Sync release metadata from the upstream base tag
 	uv run python scripts/prepare_prerelease.py
 
 .PHONY: prerelease-version-check
-prerelease-version-check: ## Verify release metadata matches the pinned upstream tag
+prerelease-version-check: ## Verify release metadata matches the pinned upstream commit
 	uv run python scripts/prepare_prerelease.py --check
 
 ##@ Docs/examples

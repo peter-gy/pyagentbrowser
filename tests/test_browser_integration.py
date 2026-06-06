@@ -6,7 +6,6 @@ import socket
 import subprocess
 import time
 from collections.abc import Iterator
-from contextlib import suppress
 from dataclasses import dataclass
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -140,6 +139,17 @@ def _wait_for_cdp(port: int, timeout: float = 5.0) -> bool:
             pass
         time.sleep(0.1)
     return False
+
+
+def _stop_process(process: subprocess.Popen[bytes]) -> None:
+    if process.poll() is not None:
+        return
+    process.terminate()
+    try:
+        process.wait(timeout=3)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait(timeout=3)
 
 
 def test_browser_actions_drive_real_page_through_native_rust_engine(chrome_path: Path) -> None:
@@ -874,11 +884,7 @@ def test_browser_can_attach_to_existing_chrome_cdp(chrome_path: Path, tmp_path: 
 
             assert browser.page.title() == "Attached"
     finally:
-        process.terminate()
-        with suppress(TimeoutError, subprocess.TimeoutExpired):
-            process.wait(timeout=3)
-        if process.poll() is None:
-            process.kill()
+        _stop_process(process)
 
 
 def test_default_configure_attaches_to_existing_chrome_cdp_before_navigation(
@@ -910,11 +916,7 @@ def test_default_configure_attaches_to_existing_chrome_cdp_before_navigation(
         assert browser.tabs.list()
     finally:
         ab.reset()
-        process.terminate()
-        with suppress(TimeoutError, subprocess.TimeoutExpired):
-            process.wait(timeout=3)
-        if process.poll() is None:
-            process.kill()
+        _stop_process(process)
 
 
 def test_tabs_new_creates_labelled_tab_in_real_browser(

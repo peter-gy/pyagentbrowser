@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import builtins
+import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -458,7 +459,7 @@ class Screenshot:
     ) -> Any:
         """Return a `marimo.image` view for this screenshot."""
         try:
-            import marimo as mo
+            mo = importlib.import_module("marimo")
         except ModuleNotFoundError as exc:
             raise ImportError("marimo is required for Screenshot.marimo().") from exc
         image = cast(Any, mo).image

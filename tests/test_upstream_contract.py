@@ -44,14 +44,22 @@ def test_rust_dependency_uses_clean_adapter_over_submodule() -> None:
     assert py_cargo["dependencies"]["agent-browser"]["path"] == "../agent-browser-adapter"
 
 
-def test_prerelease_version_tracks_pinned_upstream_tag() -> None:
+def test_prerelease_version_tracks_pinned_upstream_commit() -> None:
     project = tomli.loads((ROOT / "pyproject.toml").read_text())["project"]
     py_cargo = tomli.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
     adapter_cargo = tomli.loads((ROOT / "crates/agent-browser-adapter/Cargo.toml").read_text())
     release = runpy.run_path(str(ROOT / "src/pyagentbrowser/_version.py"))
 
     upstream_tag = subprocess.check_output(
-        ["git", "describe", "--tags", "--exact-match", "HEAD"],
+        [
+            "git",
+            "describe",
+            "--tags",
+            "--match",
+            "v[0-9]*.[0-9]*.[0-9]*",
+            "--abbrev=0",
+            "HEAD",
+        ],
         cwd=ROOT / "third_party/agent-browser",
         text=True,
     ).strip()

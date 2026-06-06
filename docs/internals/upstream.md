@@ -78,8 +78,8 @@ make check-release
 ```
 
 The update script checks out the requested upstream ref, syncs prerelease
-metadata from the exact upstream tag, then runs the upstream contract, skills,
-native, Rust, and package checks.
+metadata from the upstream base tag and exact pinned commit, then runs the
+upstream contract, skills, native, Rust, and package checks.
 
 If upstream fixes behavior covered by a Native Safety Patch, remove the rewrite.
 Parallel implementations make upstream drift harder to catch.

@@ -1797,6 +1797,17 @@ def test_screenshot_marimo_helper_is_optional_and_notebook_friendly(
     assert calls[0]["caption"] == "Viewport"
 
 
+def test_screenshot_marimo_helper_reports_missing_optional_dependency(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    shot = Screenshot(tmp_path / "page.png", "png", (), {})
+    monkeypatch.setitem(sys.modules, "marimo", None)
+
+    with pytest.raises(ImportError, match=r"Screenshot\.marimo"):
+        shot.marimo()
+
+
 def test_screenshot_wait_ms_zero_still_captures(tmp_path: Path) -> None:
     path = tmp_path / "page.png"
     path.write_bytes(b"fake png bytes")

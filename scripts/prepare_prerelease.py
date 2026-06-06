@@ -29,12 +29,21 @@ def replace_once(path: Path, pattern: str, replacement: str, *, check: bool) -> 
         path.write_text(updated)
 
 
-def exact_upstream_tag() -> str:
+def upstream_base_tag() -> str:
     try:
-        tag = git(["describe", "--tags", "--exact-match", "HEAD"])
+        tag = git(
+            [
+                "describe",
+                "--tags",
+                "--match",
+                "v[0-9]*.[0-9]*.[0-9]*",
+                "--abbrev=0",
+                "HEAD",
+            ]
+        )
     except subprocess.CalledProcessError as exc:
         raise ReleaseVersionError(
-            "third_party/agent-browser must be checked out at an exact upstream tag"
+            "third_party/agent-browser must be checked out at or after an upstream tag"
         ) from exc
     if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
         raise ReleaseVersionError(f"unsupported upstream tag format: {tag}")
@@ -60,7 +69,7 @@ def resolve_rc(upstream_version: str, rc: int | None) -> int:
 
 
 def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str]:
-    tag = exact_upstream_tag()
+    tag = upstream_base_tag()
     upstream_version = tag.removeprefix("v")
     rc = resolve_rc(upstream_version, rc)
     short_commit = git(["rev-parse", "--short=7", "HEAD"])
@@ -119,7 +128,7 @@ def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Sync pyagentbrowser prerelease metadata with the pinned upstream tag."
+        description="Sync pyagentbrowser prerelease metadata with the pinned upstream commit."
     )
     parser.add_argument(
         "--rc",

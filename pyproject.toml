@@ -52,7 +52,7 @@ images = [
 "agent-browser docs" = "https://agent-browser.dev/"
 "agent-browser commands" = "https://agent-browser.dev/commands"
 "agent-browser CDP mode" = "https://agent-browser.dev/cdp-mode"
-"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/90050f2"
+"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/328ce8a"
 
 [build-system]
 requires = ["maturin>=1.11,<2"]
