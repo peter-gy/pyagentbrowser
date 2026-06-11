@@ -604,6 +604,55 @@ def test_role_locator_click_drives_real_browser_output(chrome_path: Path) -> Non
         assert browser.find.css("#out").text() == "Hello, Ada"
 
 
+def test_covered_click_surfaces_native_interception_error(chrome_path: Path) -> None:
+    html = """
+    <!doctype html>
+    <html>
+      <head>
+        <title>Covered click</title>
+        <style>
+          #target {
+            position: absolute;
+            left: 40px;
+            top: 40px;
+            width: 120px;
+            height: 40px;
+            z-index: 1;
+          }
+          #cover {
+            position: absolute;
+            left: 30px;
+            top: 30px;
+            width: 160px;
+            height: 70px;
+            z-index: 2;
+            background: rgba(20, 20, 20, 0.15);
+          }
+        </style>
+      </head>
+      <body>
+        <button id="target">Submit</button>
+        <div id="cover" aria-label="Blocking overlay"></div>
+        <output id="out"></output>
+        <script>
+          document.querySelector("#target").addEventListener("click", () => {
+            document.querySelector("#out").textContent = "clicked";
+          });
+        </script>
+      </body>
+    </html>
+    """
+
+    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+        browser.page.open(_data_url(html))
+
+        with pytest.raises(BrowserError) as failed:
+            browser.find.css("#target").click()
+
+        assert "covered by <div#cover>" in str(failed.value)
+        assert browser.find.css("#out").text() == ""
+
+
 def test_upload_sets_real_file_input(chrome_path: Path, tmp_path: Path) -> None:
     upload_path = tmp_path / "note.txt"
     upload_path.write_text("agent-browser upload")

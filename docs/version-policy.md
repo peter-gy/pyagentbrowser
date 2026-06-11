@@ -46,12 +46,12 @@ pre-release identifiers while the SDK is pre-stable:
 <upstream-version>rc<N>
 ```
 
-For example, a package based on upstream `v0.27.1` publishes as `0.27.1rc0`.
+For example, a package based on upstream `v0.27.2` publishes as `0.27.2rc0`.
 The package exposes the exact pinned upstream commit through
 `pyagentbrowser.__agent_browser_commit__`, `pyagentbrowser.__upstream_commit__`,
 and the `Upstream agent-browser commit` project URL.
 
-Public PyPI releases cannot use local version labels such as `+g328ce8a`. The
+Public PyPI releases cannot use local version labels such as `+gabcdef0`. The
 git commit is recorded as package metadata.
 
 Before publishing:
