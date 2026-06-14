@@ -36,6 +36,16 @@ install: check-prereqs ## Initialize submodules and install the editable package
 	uv sync
 	uv run maturin develop
 
+##@ Maintenance
+
+.PHONY: clean
+clean: ## Remove generated build, test, cache, and local environment artifacts
+	rm -rf target crates/agent-browser-adapter/target build dist wheels *.egg-info
+	rm -rf .pytest_cache .ruff_cache .venv .venv[0-9]* .venvbuild[0-9]*
+	rm -f src/pyagentbrowser/_native*.so src/pyagentbrowser/_native*.pyd src/pyagentbrowser/_native*.dylib
+	find $(PYTHON_SOURCES) -type d -name __pycache__ -prune -exec rm -rf {} +
+	find $(PYTHON_SOURCES) -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
+
 ##@ Quality
 
 .PHONY: format
