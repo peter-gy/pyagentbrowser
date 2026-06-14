@@ -174,7 +174,7 @@ wheels = [
 
 [[package]]
 name = "pyagentbrowser"
-version = "0.27.2rc0"
+version = "0.27.3rc0"
 source = { editable = "." }
 dependencies = [
     { name = "typing-extensions" },
