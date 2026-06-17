@@ -1,6 +1,6 @@
 [project]
 name = "pyagentbrowser"
-version = "0.27.3rc0"
+version = "0.28.0rc0"
 description = "Python SDK for controlling the native agent-browser engine in-process"
 readme = "README.md"
 authors = [
@@ -52,7 +52,7 @@ images = [
 "agent-browser docs" = "https://agent-browser.dev/"
 "agent-browser commands" = "https://agent-browser.dev/commands"
 "agent-browser CDP mode" = "https://agent-browser.dev/cdp-mode"
-"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/2c7991c"
+"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/6323df5"
 
 [build-system]
 requires = ["maturin>=1.11,<2"]
@@ -137,6 +137,7 @@ include = [
     { path = "third_party/agent-browser/cli/src/connection.rs", format = "sdist" },
     { path = "third_party/agent-browser/cli/src/flags.rs", format = "sdist" },
     { path = "third_party/agent-browser/cli/src/install.rs", format = "sdist" },
+    { path = "third_party/agent-browser/cli/src/plugins.rs", format = "sdist" },
     { path = "third_party/agent-browser/cli/src/native/actions.rs", format = "sdist" },
     { path = "third_party/agent-browser/cli/src/native/auth.rs", format = "sdist" },
     { path = "third_party/agent-browser/cli/src/native/browser.rs", format = "sdist" },

@@ -12,6 +12,7 @@ const ROOT_MODULES: &[(&str, &str)] = &[
     ("connection", "connection.rs"),
     ("flags", "flags.rs"),
     ("install", "install.rs"),
+    ("plugins", "plugins.rs"),
     ("validation", "validation.rs"),
 ];
 
@@ -207,70 +208,88 @@ fn rewrite_confirmation_handling(contents: String) -> String {
     const UPSTREAM_PENDING_CONFIRMATION: &str = r#"pub struct PendingConfirmation {
     pub action: String,
     pub cmd: Value,
+    approved_actions: Vec<String>,
 }"#;
     const REWRITTEN_PENDING_CONFIRMATION: &str = r#"pub struct PendingConfirmation {
     pub id: String,
     pub action: String,
     pub cmd: Value,
+    approved_actions: Vec<String>,
 }"#;
     const UPSTREAM_POLICY_CONFIRM_RESPONSE: &str = r#"state.pending_confirmation = Some(PendingConfirmation {
-                    action: action.to_string(),
-                    cmd: cmd.clone(),
-                });
-                return json!({
-                    "id": id,
-                    "success": true,
-                    "data": { "confirmation_required": true, "action": action },
-                });"#;
+                action: policy_action.clone(),
+                cmd: cmd.clone(),
+                approved_actions: state.confirmed_policy_actions.iter().cloned().collect(),
+            });
+            return json!({
+                "id": id,
+                "success": true,
+                "data": {
+                    "confirmation_required": true,
+                    "confirmation_id": id,
+                    "action": policy_action
+                },
+            });"#;
     const REWRITTEN_POLICY_CONFIRM_RESPONSE: &str = r#"state.pending_confirmation = Some(PendingConfirmation {
-                    id: id.clone(),
-                    action: action.to_string(),
-                    cmd: cmd.clone(),
-                });
-                return json!({
-                    "id": id,
-                    "success": true,
-                    "data": { "confirmation_required": true, "confirmation_id": id, "action": action },
-                });"#;
+                id: id.clone(),
+                action: policy_action.clone(),
+                cmd: cmd.clone(),
+                approved_actions: state.confirmed_policy_actions.iter().cloned().collect(),
+            });
+            return json!({
+                "id": id,
+                "success": true,
+                "data": {
+                    "confirmation_required": true,
+                    "confirmation_id": id,
+                    "action": policy_action
+                },
+            });"#;
     const UPSTREAM_CONFIRM_ACTIONS_RESPONSE: &str = r#"state.pending_confirmation = Some(PendingConfirmation {
-                    action: action.to_string(),
-                    cmd: cmd.clone(),
-                });
-                return json!({
-                    "id": id,
-                    "success": true,
-                    "data": {
-                        "confirmation_required": true,
-                        "confirmation_id": id,
-                        "action": action,
-                    },
-                });"#;
+                        action: policy_action.to_string(),
+                        cmd: cmd.clone(),
+                        approved_actions: state.confirmed_policy_actions.iter().cloned().collect(),
+                    });
+                    return json!({
+                        "id": id,
+                        "success": true,
+                        "data": {
+                            "confirmation_required": true,
+                            "confirmation_id": id,
+                            "action": policy_action,
+                        },
+                    });"#;
     const REWRITTEN_CONFIRM_ACTIONS_RESPONSE: &str = r#"state.pending_confirmation = Some(PendingConfirmation {
-                    id: id.clone(),
-                    action: action.to_string(),
-                    cmd: cmd.clone(),
-                });
-                return json!({
-                    "id": id,
-                    "success": true,
-                    "data": {
-                        "confirmation_required": true,
-                        "confirmation_id": id,
-                        "action": action,
-                    },
-                });"#;
+                        id: id.clone(),
+                        action: policy_action.to_string(),
+                        cmd: cmd.clone(),
+                        approved_actions: state.confirmed_policy_actions.iter().cloned().collect(),
+                    });
+                    return json!({
+                        "id": id,
+                        "success": true,
+                        "data": {
+                            "confirmation_required": true,
+                            "confirmation_id": id,
+                            "action": policy_action,
+                        },
+                    });"#;
     const UPSTREAM_CONFIRM_HANDLERS: &str = r#"async fn handle_confirm(_cmd: &Value, state: &mut DaemonState) -> Result<Value, String> {
     let pending = state
         .pending_confirmation
         .take()
         .ok_or("No pending confirmation")?;
 
-    // Temporarily remove policy and confirm_actions to avoid re-triggering confirmation
-    let policy = state.policy.take();
-    let confirm_actions = state.confirm_actions.take();
+    let mut approved_actions = pending.approved_actions.clone();
+    if !approved_actions.iter().any(|a| a == &pending.action) {
+        approved_actions.push(pending.action.clone());
+    }
+    let previous_confirmed = std::mem::replace(
+        &mut state.confirmed_policy_actions,
+        approved_actions.into_iter().collect(),
+    );
     let result = Box::pin(execute_command(&pending.cmd, state)).await;
-    state.policy = policy;
-    state.confirm_actions = confirm_actions;
+    state.confirmed_policy_actions = previous_confirmed;
 
     Ok(json!({ "confirmed": true, "action": pending.action, "result": result }))
 }
@@ -431,6 +450,7 @@ async fn handle_confirm(cmd: &Value, state: &mut DaemonState) -> Result<Value, S
             id: pending_ref.id.clone(),
             action: pending_ref.action.clone(),
             cmd: pending_ref.cmd.clone(),
+            approved_actions: pending_ref.approved_actions.clone(),
         }
     };
     ensure_confirmation_still_allowed(&pending_for_validation, state).await?;
@@ -439,12 +459,16 @@ async fn handle_confirm(cmd: &Value, state: &mut DaemonState) -> Result<Value, S
         .take()
         .expect("pending confirmation was just validated");
 
-    // Temporarily remove policy and confirm_actions after validating the current policy.
-    let policy = state.policy.take();
-    let confirm_actions = state.confirm_actions.take();
+    let mut approved_actions = pending.approved_actions.clone();
+    if !approved_actions.iter().any(|a| a == &pending.action) {
+        approved_actions.push(pending.action.clone());
+    }
+    let previous_confirmed = std::mem::replace(
+        &mut state.confirmed_policy_actions,
+        approved_actions.into_iter().collect(),
+    );
     let result = Box::pin(execute_command(&pending.cmd, state)).await;
-    state.policy = policy;
-    state.confirm_actions = confirm_actions;
+    state.confirmed_policy_actions = previous_confirmed;
 
     Ok(json!({ "confirmed": true, "action": pending.action, "result": result }))
 }
@@ -512,7 +536,7 @@ fn rewrite_dashboard_streaming(contents: String) -> String {
         "upstream DaemonState stream constructor moved"
     );
     assert!(
-        contents.contains("server.broadcast_command(action, &id, cmd);"),
+        contents.contains("server.broadcast_command(action, &id, cmd_for_broadcast);"),
         "upstream command stream broadcast moved"
     );
     assert!(
