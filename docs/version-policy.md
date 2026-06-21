@@ -2,8 +2,8 @@
 
 `pyagentbrowser` publishes pre-1.0 releases. Public APIs may change when the
 change simplifies the launch surface or corrects an unsafe API shape. Each
-published version uses the pinned upstream `agent-browser` release tag as its
-version base and records the exact upstream commit.
+published version uses the pinned upstream `agent-browser` manifest version as
+its version base and records the exact upstream commit.
 
 ## Python Support
 
@@ -39,15 +39,16 @@ old behavior is security-sensitive.
 
 ## Upstream Versioning
 
-The Python version uses the pinned upstream tag as its base and publishes only
-pre-release identifiers while the SDK is pre-stable:
+The Python version uses `third_party/agent-browser/cli/Cargo.toml` as its base
+and publishes only pre-release identifiers while the SDK is pre-stable:
 
 ```text
 <upstream-version>rc<N>
 ```
 
-For example, a package based on upstream `v0.27.2` publishes as `0.27.2rc0`.
-The package exposes the exact pinned upstream commit through
+For example, a package based on upstream `0.27.2` publishes as `0.27.2rc0`.
+The package records the nearest upstream release tag for provenance and exposes
+the exact pinned upstream commit through
 `pyagentbrowser.__agent_browser_commit__`, `pyagentbrowser.__upstream_commit__`,
 and the `Upstream agent-browser commit` project URL.
 
@@ -57,8 +58,7 @@ git commit is recorded as package metadata.
 Before publishing:
 
 - The `third_party/agent-browser` submodule must be checked out at the upstream
-  release tag used by the package version, or at a descendant commit that still
-  uses that tag as its version base.
+  commit whose `cli/Cargo.toml` version is used by the package version.
 - `src/pyagentbrowser/_version.py` must match the upstream tag, upstream version,
   and short commit.
 - `pyproject.toml` must contain a pre-release version and the upstream commit

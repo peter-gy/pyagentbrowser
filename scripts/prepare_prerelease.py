@@ -50,6 +50,17 @@ def upstream_base_tag() -> str:
     return tag
 
 
+def upstream_manifest_version() -> str:
+    manifest = UPSTREAM / "cli" / "Cargo.toml"
+    match = re.search(r'^version = "([^"]+)"$', manifest.read_text(), re.MULTILINE)
+    if not match:
+        raise ReleaseVersionError("third_party/agent-browser/cli/Cargo.toml has no version")
+    version = match.group(1)
+    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
+        raise ReleaseVersionError(f"unsupported upstream version format: {version}")
+    return version
+
+
 def current_project_version() -> str:
     match = re.search(r'^version = "([^"]+)"$', (ROOT / "pyproject.toml").read_text(), re.MULTILINE)
     if not match:
@@ -68,9 +79,9 @@ def resolve_rc(upstream_version: str, rc: int | None) -> int:
     return 0
 
 
-def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str]:
+def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str, str]:
     tag = upstream_base_tag()
-    upstream_version = tag.removeprefix("v")
+    upstream_version = upstream_manifest_version()
     rc = resolve_rc(upstream_version, rc)
     short_commit = git(["rev-parse", "--short=7", "HEAD"])
     python_version = f"{upstream_version}rc{rc}"
@@ -123,7 +134,7 @@ def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str]:
     else:
         release_module.write_text(release_module_text)
 
-    return python_version, tag, short_commit
+    return python_version, upstream_version, tag, short_commit
 
 
 def main() -> int:
@@ -142,13 +153,15 @@ def main() -> int:
         parser.error("--rc must be non-negative")
 
     try:
-        version, tag, commit = sync_versions(rc=args.rc, check=args.check)
+        version, upstream_version, tag, commit = sync_versions(rc=args.rc, check=args.check)
     except ReleaseVersionError as exc:
         print(exc, file=sys.stderr)
         return 1
 
     action = "verified" if args.check else "synced"
-    print(f"{action} pyagentbrowser {version} from agent-browser {tag} ({commit})")
+    print(
+        f"{action} pyagentbrowser {version} from agent-browser {upstream_version} ({tag}, {commit})"
+    )
     return 0
 
 

@@ -24,6 +24,7 @@ from pyagentbrowser.cdp import (
     CDPTargetAmbiguityError,
     CDPTimeoutError,
 )
+from pyagentbrowser.models import TabInfo
 from pyagentbrowser.session import NativeSession
 from pyagentbrowser.session_async import AsyncNativeSession
 
@@ -213,9 +214,28 @@ class MultiTargetBrowser:
     def __init__(self) -> None:
         self.current_url = "https://example.com/one"
         self.page = self
+        self.tabs = self
 
     def url(self) -> str:
         return self.current_url
+
+    def list(self) -> tuple[TabInfo, ...]:
+        return (
+            TabInfo(
+                id="t1",
+                url="https://example.com/one",
+                title="One",
+                label="first",
+                raw={"targetId": "one"},
+            ),
+            TabInfo(
+                id="t2",
+                url="https://example.com/two",
+                title="Two",
+                label="second",
+                raw={"targetId": "two"},
+            ),
+        )
 
     def command(self, action: str, **_params: Any) -> Mapping[str, Any]:
         assert action == "cdp_url"
@@ -338,6 +358,13 @@ def test_cdp_controller_selects_explicit_target_id() -> None:
     controller = _multi_target_controller(browser)
 
     assert controller.target(target_id="one").evaluate("location.href") == "s-one"
+
+
+def test_cdp_controller_selects_native_tab_label() -> None:
+    browser = MultiTargetBrowser()
+    controller = _multi_target_controller(browser)
+
+    assert controller.target(label="second").evaluate("location.href") == "s-two"
 
 
 def _extension_context_page() -> CDPPageSession:

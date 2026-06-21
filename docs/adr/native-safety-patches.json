@@ -15,6 +15,19 @@
             "coverage": ["crates/agent-browser-adapter/tests/smoke.rs", "tests/test_native.py"]
         }
     ],
+    "sdk_integration_patches": [
+        {
+            "id": "tab-list-target-id",
+            "category": "SDK integration patch",
+            "purpose": "Include the native CDP target id in tab-list records so Python CDP target selection can resolve SDK tab labels without URL ambiguity.",
+            "generated_output": "OUT_DIR",
+            "coverage": [
+                "crates/agent-browser-adapter/build.rs",
+                "tests/test_cdp.py",
+                "tests/test_browser_integration.py"
+            ]
+        }
+    ],
     "build_surface_drift_assertions": [
         {
             "id": "dashboard-stream-hooks",

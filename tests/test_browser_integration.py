@@ -492,7 +492,7 @@ def test_cdp_target_label_selects_requested_tab(
         browser.page.open(second_url)
         browser.tabs.new(first_url, label="first")
 
-        assert browser.cdp.target(label="First tab").evaluate("document.title") == "First tab"
+        assert browser.cdp.target(label="first").evaluate("document.title") == "First tab"
 
 
 def test_cdp_target_url_selects_requested_tab(
@@ -978,7 +978,9 @@ def test_tabs_new_creates_labelled_tab_in_real_browser(
         assert browser.tabs.list()
         browser.tabs.new(local_page, label="docs")
 
-        assert any(tab.label == "docs" for tab in browser.tabs.list())
+        labelled = next((tab for tab in browser.tabs.list() if tab.label == "docs"), None)
+        assert labelled is not None
+        assert isinstance(labelled.raw.get("targetId"), str)
 
 
 def test_tabs_switch_updates_active_real_browser_page(

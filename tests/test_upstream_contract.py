@@ -68,7 +68,8 @@ def test_prerelease_version_tracks_pinned_upstream_commit() -> None:
         cwd=ROOT / "third_party/agent-browser",
         text=True,
     ).strip()
-    upstream_version = upstream_tag.removeprefix("v")
+    upstream_manifest = tomli.loads((ROOT / "third_party/agent-browser/cli/Cargo.toml").read_text())
+    upstream_version = upstream_manifest["package"]["version"]
     release_match = re.fullmatch(rf"{re.escape(upstream_version)}rc(\d+)", project["version"])
 
     assert project["name"] == "pyagentbrowser"

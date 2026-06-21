@@ -31,6 +31,7 @@ Allow generated Native Safety Patches only when all constraints hold:
 | --- | --- | --- | --- | --- | --- |
 | `confirmation-replay` | Native Safety Patch | Bind confirmation replay to the requested confirmation ID and re-check policy and allowlist constraints before replay. | OUT_DIR | crates/agent-browser-adapter/tests/smoke.rs, tests/test_native.py | Python SDK until upstream owns confirmation replay safety |
 | `dashboard-stream-result-success` | Native Safety Patch | Emit dashboard stream result success from native boolean response data. | OUT_DIR | crates/agent-browser-adapter/tests/smoke.rs, tests/test_native.py | Python SDK until upstream owns stream result correctness |
+| `tab-list-target-id` | SDK integration patch | Include the native CDP target id in tab-list records so Python CDP target selection can resolve SDK tab labels without URL ambiguity. | OUT_DIR | crates/agent-browser-adapter/build.rs, tests/test_cdp.py, tests/test_browser_integration.py | Python SDK until upstream exposes target ids in tab metadata |
 | `dashboard-stream-hooks` | Build-surface drift assertion | Assert that upstream still exposes the dashboard stream hooks used by SDK session observability. | OUT_DIR | crates/agent-browser-adapter/build.rs, crates/agent-browser-adapter/tests/smoke.rs, tests/test_native.py | Adapter, not a behavior patch |
 
 `dashboard-stream-hooks` is a build-surface drift assertion. It verifies SDK

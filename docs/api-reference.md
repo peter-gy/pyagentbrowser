@@ -266,7 +266,7 @@ listed.
 | `frames.switch(selector=None, *, name=None, url=None)` | Switches the active native frame. With `allowed_domains`, `url` patterns are checked before native execution. Protocol-relative and wildcard-prefixed protocol-relative patterns are host-qualified. | Returns native frame data. Raises `BrowserError` with `code="allowed_domains"` for allowlist violations. |
 | `frames.main()` | Switches back to the main frame. | Returns native main-frame data. |
 | `cdp.evaluate(script, *, frame=None, extension_id=None, context=None, await_promise=True, return_by_value=True)` | Evaluates JavaScript through CDP in a frame or execution context. | Returns the evaluated value or remote object data. Requires the `cdp` extra. |
-| `cdp.target(*, label=None, url=None, target_id=None)` | Resolves a CDP target selected by label, URL, or target id. | Returns a CDP target handle. Raises target resolution errors. |
+| `cdp.target(*, label=None, url=None, target_id=None)` | Resolves a CDP target selected by SDK tab label, URL, or CDP target id. Label lookup uses labels assigned by `browser.tabs.new(...)` or `browser.tabs.open(...)`. | Returns a CDP target handle. Raises target resolution errors. |
 
 ### Input, dialogs, downloads, diffs, and diagnostics
 
@@ -366,7 +366,7 @@ fields outside the typed SDK model.
 | `ScreenshotAnnotation(ref, number, role, name, box, raw)` | One interactable element annotation from an annotated screenshot. `box` is a `ScreenshotBox`. |
 | `ScreenshotBox(x, y, width, height, raw)` | Annotation rectangle in screenshot pixels. |
 | `BoundingBox(x, y, width, height, raw)` | Element rectangle in CSS pixels, returned by locator bounding-box helpers. |
-| `TabInfo(id, url, title="", label=None, active=False, raw={})` | Browser tab metadata returned by `browser.tabs.list()`, `new()`, and `open()`. `label` is the SDK tab label when one was assigned. |
+| `TabInfo(id, url, title="", label=None, active=False, raw={})` | Browser tab metadata returned by `browser.tabs.list()`, `new()`, and `open()`. `label` is the SDK tab label when one was assigned. `raw` preserves native fields such as `targetId` from tab-list records. |
 | `Cookie(name, value, domain=None, path=None, expires=None, http_only=None, secure=None, same_site=None, raw={})` | Cookie metadata returned by `browser.cookies.get(...)`. `expires` is the native expiry timestamp when available. |
 | `ConsoleMessage(type, text, level=None, url=None, line=None, column=None, raw={})` | Browser console entry returned by `browser.diagnostics.console(...)`. |
 | `NetworkRequest(id, url, method="", resource_type="", status=None, raw={})` | Captured request summary returned by `browser.network.requests(...)`. |

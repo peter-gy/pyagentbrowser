@@ -38,11 +38,7 @@ def _resolve_active_target(
         matches = [target for target in page_targets if target.get("url") == url]
         return _single_target(matches, f"url={url!r}")
     if label is not None:
-        matches = [
-            target
-            for target in page_targets
-            if target.get("label") == label or target.get("title") == label
-        ]
+        matches = [target for target in page_targets if target.get("label") == label]
         return _single_target(matches, f"label={label!r}")
     exact = [target for target in page_targets if target.get("url") == current_url]
     if len(exact) == 1:

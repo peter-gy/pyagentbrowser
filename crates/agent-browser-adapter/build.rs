@@ -173,6 +173,7 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
         require_file(&path);
         let module_path = match *name {
             "actions" => rewrite_actions_module(out_dir, &path),
+            "browser" => rewrite_browser_module(out_dir, &path),
             "stream" => rewrite_stream_module(out_dir, &path),
             _ => path,
         };
@@ -191,6 +192,37 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
 
     fs::write(&native_module, output).expect("failed to write generated native module");
     native_module
+}
+
+fn rewrite_browser_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let destination = out_dir.join("agent_browser_browser.rs");
+    let contents = fs::read_to_string(source)
+        .unwrap_or_else(|err| panic!("failed to read upstream browser file: {err}"));
+    let contents = rewrite_tab_list_target_id(contents);
+    fs::write(destination.as_path(), contents).expect("failed to write generated browser file");
+    destination
+}
+
+fn rewrite_tab_list_target_id(contents: String) -> String {
+    const UPSTREAM_TAB_LIST_FIELDS: &str = r#"                    "tabId": format_tab_id(p.tab_id),
+                    "label": p.label,
+                    "title": p.title,"#;
+    const REWRITTEN_TAB_LIST_FIELDS: &str = r#"                    "tabId": format_tab_id(p.tab_id),
+                    "targetId": p.target_id,
+                    "label": p.label,
+                    "title": p.title,"#;
+
+    let rewritten = replace_once_named(
+        contents,
+        "tab_list target id",
+        UPSTREAM_TAB_LIST_FIELDS,
+        REWRITTEN_TAB_LIST_FIELDS,
+    );
+    assert!(
+        rewritten.contains("\"targetId\": p.target_id"),
+        "upstream tab_list target id patch changed"
+    );
+    rewritten
 }
 
 fn rewrite_actions_module(out_dir: &Path, source: &Path) -> PathBuf {

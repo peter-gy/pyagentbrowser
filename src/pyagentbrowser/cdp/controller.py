@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Any
 
 from pyagentbrowser.cdp._resolution import _resolve_active_target
@@ -123,10 +123,12 @@ class CDPController:
             return self._page
 
         client = self._cdp_client()
+        if target_id is None and url is None and label is not None:
+            target_id = self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             client.send("Target.getTargets"),
             self._browser.page.url(),
-            label=label,
+            label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
         )
@@ -152,6 +154,18 @@ class CDPController:
             raise CDPError('browser.command("cdp_url") did not return a cdpUrl string')
         self._client = self._client_factory(cdp_url)
         return self._client
+
+    def _target_id_for_tab_label(self, label: str) -> str | None:
+        for tab in self._browser.tabs.list():
+            if getattr(tab, "label", None) != label:
+                continue
+            raw = getattr(tab, "raw", {})
+            if isinstance(raw, Mapping):
+                target_id = raw.get("targetId")
+                if isinstance(target_id, str) and target_id:
+                    return target_id
+            return None
+        return None
 
 
 class AsyncCDPController:
@@ -264,10 +278,12 @@ class AsyncCDPController:
             return self._page
 
         client = await self._cdp_client()
+        if target_id is None and url is None and label is not None:
+            target_id = await self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             await client.send("Target.getTargets"),
             await self._browser.page.url(),
-            label=label,
+            label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
         )
@@ -293,3 +309,15 @@ class AsyncCDPController:
             raise CDPError('browser.command("cdp_url") did not return a cdpUrl string')
         self._client = self._client_factory(cdp_url)
         return self._client
+
+    async def _target_id_for_tab_label(self, label: str) -> str | None:
+        for tab in await self._browser.tabs.list():
+            if getattr(tab, "label", None) != label:
+                continue
+            raw = getattr(tab, "raw", {})
+            if isinstance(raw, Mapping):
+                target_id = raw.get("targetId")
+                if isinstance(target_id, str) and target_id:
+                    return target_id
+            return None
+        return None
