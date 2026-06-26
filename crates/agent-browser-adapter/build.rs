@@ -13,6 +13,7 @@ const ROOT_MODULES: &[(&str, &str)] = &[
     ("flags", "flags.rs"),
     ("install", "install.rs"),
     ("plugins", "plugins.rs"),
+    ("read", "read.rs"),
     ("validation", "validation.rs"),
 ];
 

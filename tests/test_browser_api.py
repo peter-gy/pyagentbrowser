@@ -39,6 +39,7 @@ from pyagentbrowser import (
     Cookie,
     NetworkRequest,
     ProxyConfig,
+    ReadResult,
     RequestDetail,
     RouteResponse,
     Screenshot,
@@ -87,6 +88,7 @@ _ROOT_EXPORT_CONTRACT = {
     "Frame",
     "NetworkRequest",
     "ProxyConfig",
+    "ReadResult",
     "RouteResponse",
     "Screenshot",
     "Skill",
@@ -1145,6 +1147,7 @@ def test_allowed_domains_raw_command_cannot_weaken_session_policy() -> None:
         ("diff_url", {"url1": "https://evil.example/a", "url2": "https://example.com/b"}),
         ("frame", {"url": "https://evil.example/frame"}),
         ("pushstate", {"url": "https://evil.example/state"}),
+        ("read", {"url": "https://evil.example/docs"}),
         ("recording_start", {"path": "recording.json", "url": "https://evil.example"}),
         ("responsebody", {"url": "https://evil.example/api"}),
         ("vitals", {"url": "https://evil.example/vitals"}),
@@ -1703,6 +1706,91 @@ def test_page_title_and_url_return_page_values() -> None:
     assert browser.page.url() == "https://example.com"
 
 
+def test_page_read_returns_typed_result_and_command_payload() -> None:
+    native = ResponseNative(
+        {
+            "read": {
+                "url": "https://example.com/docs",
+                "finalUrl": "https://example.com/docs/index.md",
+                "status": 200,
+                "contentType": "text/markdown",
+                "source": "path-markdown",
+                "truncated": False,
+                "content": "# Docs\n",
+            }
+        }
+    )
+    browser = Browser(native_session=NativeSession(native=native))
+
+    result = browser.page.read(
+        "example.com/docs",
+        require_md=True,
+        llms="index",
+        filter="auth",
+        timeout_ms=2500,
+        headers={"X-Agent": "pyagentbrowser"},
+        allowed_domains=["example.com"],
+    )
+
+    assert isinstance(result, ReadResult)
+    assert result.final_url == "https://example.com/docs/index.md"
+    assert result.content == "# Docs\n"
+    assert native.commands == [
+        {
+            "id": "py1",
+            "action": "read",
+            "url": "https://example.com/docs",
+            "raw": False,
+            "requireMd": True,
+            "llms": "index",
+            "outline": False,
+            "filter": "auth",
+            "timeout": 2500,
+            "headers": {"X-Agent": "pyagentbrowser"},
+            "allowedDomains": ["example.com"],
+        }
+    ]
+
+
+def test_page_read_without_url_launches_before_reading_active_page() -> None:
+    native = ResponseNative(
+        {
+            "launch": {"launched": True},
+            "read": {
+                "url": "https://example.com/app",
+                "finalUrl": "https://example.com/app",
+                "status": 200,
+                "contentType": "text/html",
+                "source": "active-tab-html-outline",
+                "truncated": False,
+                "content": "# Outline\n",
+            },
+        }
+    )
+    browser = Browser(native_session=NativeSession(native=native))
+
+    result = browser.page.read(outline=True)
+
+    assert result.source == "active-tab-html-outline"
+    assert [command["action"] for command in native.commands] == ["launch", "read"]
+    assert "url" not in native.commands[1]
+    assert native.commands[1]["outline"] is True
+
+
+def test_page_read_rejects_conflicting_or_invalid_options() -> None:
+    browser = Browser(native_session=NativeSession(native=EchoNative()))
+    invalid_llms = cast(Any, "toc")
+
+    with pytest.raises(ValueError, match="llms"):
+        browser.page.read("example.com", llms=invalid_llms)
+    with pytest.raises(ValueError, match="llms"):
+        browser.page.read("example.com", llms="full", outline=True)
+    with pytest.raises(ValueError, match="timeout_ms"):
+        browser.page.read("example.com", timeout_ms=0)
+
+    assert browser.is_launched is False
+
+
 def test_screenshot_result_reads_file_bytes_and_mime_bundle(tmp_path: Path) -> None:
     from PIL import Image
 
@@ -2162,6 +2250,35 @@ def test_browser_async_page_open_normalizes_host_like_url() -> None:
 
         navigation = next(command for command in native.commands if command["action"] == "navigate")
         assert navigation["url"] == "https://example.com"
+
+    asyncio.run(run())
+
+
+def test_browser_async_page_read_returns_typed_result() -> None:
+    async def run() -> None:
+        native = ResponseNative(
+            {
+                "read": {
+                    "url": "https://example.com/docs",
+                    "finalUrl": "https://example.com/docs",
+                    "status": 200,
+                    "contentType": "text/markdown",
+                    "source": "accept-markdown-outline",
+                    "truncated": False,
+                    "content": "# Outline\n",
+                }
+            }
+        )
+        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
+
+        result = await browser.page.read("example.com/docs", outline=True, timeout_ms=1000)
+        await browser.aclose()
+
+        assert isinstance(result, ReadResult)
+        assert result.source == "accept-markdown-outline"
+        assert native.commands[0]["action"] == "read"
+        assert native.commands[0]["url"] == "https://example.com/docs"
+        assert native.commands[0]["outline"] is True
 
     asyncio.run(run())
 

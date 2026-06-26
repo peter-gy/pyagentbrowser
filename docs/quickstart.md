@@ -14,6 +14,20 @@ with Browser(headless=True) as browser:
     print(browser.page.url())
 ```
 
+## Read page content
+
+```python
+from pyagentbrowser import Browser
+
+with Browser(headless=True, allowed_domains="example.com") as browser:
+    result = browser.page.read("example.com/docs", require_md=True)
+    print(result.content)
+```
+
+`page.read()` returns `ReadResult` with the original URL, final URL, content
+type, source, truncation flag, and extracted content. Omit the URL to read the
+active page.
+
 ## Use selectors
 
 ```python

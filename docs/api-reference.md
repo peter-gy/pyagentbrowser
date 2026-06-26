@@ -185,6 +185,7 @@ listed.
 | `content()` | Reads the active page HTML. | Returns `str`. |
 | `set_content(html)` | Replaces the active page document. The browser must already be launched or attached. | Returns native set-content data. |
 | `evaluate(script)` | Evaluates JavaScript in the active page context through the native command path. | Returns the native `result` value. |
+| `read(url=None, *, raw=False, require_md=False, llms=None, outline=False, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | Reads a URL or the active page through the native `read` command. Host-like URL values are normalized to `https://...`. `llms` accepts `"index"` or `"full"`. `llms` and `outline=True` are mutually exclusive. `allowed_domains` adds a read-scoped allowlist, and constructor `allowed_domains` still applies. | Returns `ReadResult`. Raises `ValueError` for invalid `llms` or `timeout_ms`. Raises `BrowserError` for native read failures and allowlist violations. |
 | `ready(*, timeout_ms=None, min_text_length=1)` | Waits until the body contains at least `min_text_length` characters. | Returns `None`. Raises `ValueError` for negative `min_text_length`. |
 | `wait_for_text(text, *, timeout_ms=None)` | Waits for visible text. | Returns `None`. Raises `BrowserError` on timeout. |
 | `wait_for_selector(selector, *, state="visible", timeout_ms=None)` | Waits for selector state `attached`, `detached`, `hidden`, or `visible`. | Returns `None`. Raises `BrowserError` on timeout. |
@@ -366,6 +367,7 @@ fields outside the typed SDK model.
 | `ScreenshotAnnotation(ref, number, role, name, box, raw)` | One interactable element annotation from an annotated screenshot. `box` is a `ScreenshotBox`. |
 | `ScreenshotBox(x, y, width, height, raw)` | Annotation rectangle in screenshot pixels. |
 | `BoundingBox(x, y, width, height, raw)` | Element rectangle in CSS pixels, returned by locator bounding-box helpers. |
+| `ReadResult(url, final_url, status, content_type, source, truncated, content, raw)` | Agent-readable content returned by `browser.page.read(...)`. `source` identifies the native read path, such as active-tab HTML, Markdown fallback, llms.txt, or outline extraction. |
 | `TabInfo(id, url, title="", label=None, active=False, raw={})` | Browser tab metadata returned by `browser.tabs.list()`, `new()`, and `open()`. `label` is the SDK tab label when one was assigned. `raw` preserves native fields such as `targetId` from tab-list records. |
 | `Cookie(name, value, domain=None, path=None, expires=None, http_only=None, secure=None, same_site=None, raw={})` | Cookie metadata returned by `browser.cookies.get(...)`. `expires` is the native expiry timestamp when available. |
 | `ConsoleMessage(type, text, level=None, url=None, line=None, column=None, raw={})` | Browser console entry returned by `browser.diagnostics.console(...)`. |

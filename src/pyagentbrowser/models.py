@@ -23,6 +23,7 @@ JSONValue: TypeAlias = object
 JSONObject: TypeAlias = dict[str, JSONValue]
 JSONMapping: TypeAlias = Mapping[str, JSONValue]
 LoadState = Literal["load", "domcontentloaded", "networkidle", "none"]
+LlmsMode = Literal["index", "full"]
 MouseButton = Literal["left", "right", "middle"]
 MouseEventType = Literal["mouseMoved", "mousePressed", "mouseReleased", "mouseWheel"]
 SameSite = Literal["Strict", "Lax", "None"]
@@ -331,6 +332,20 @@ class RequestDetail:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadResult:
+    """Markdown-oriented content returned by `browser.page.read()`."""
+
+    url: str
+    final_url: str
+    status: int | None
+    content_type: str
+    source: str
+    truncated: bool
+    content: str
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class ConsoleMessage:
     """Captured browser console message."""
 
@@ -559,6 +574,19 @@ def request_detail_from_data(data: Mapping[str, Any]) -> RequestDetail:
         response_headers=dict(response_headers) if isinstance(response_headers, Mapping) else {},
         body=str(raw["body"]) if raw.get("body") is not None else None,
         raw=raw,
+    )
+
+
+def read_result_from_data(data: Mapping[str, Any]) -> ReadResult:
+    return ReadResult(
+        url=str(data.get("url", "")),
+        final_url=str(data.get("finalUrl") or data.get("final_url") or data.get("url") or ""),
+        status=_optional_int(data.get("status")),
+        content_type=str(data.get("contentType") or data.get("content_type") or ""),
+        source=str(data.get("source", "")),
+        truncated=bool(data.get("truncated", False)),
+        content=str(data.get("content", "")),
+        raw=data,
     )
 
 

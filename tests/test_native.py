@@ -11,12 +11,20 @@ import tempfile
 import time
 from collections.abc import Callable
 from contextlib import closing
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from threading import Thread
 from typing import cast
 
 import pytest
 
-from pyagentbrowser import ActionConfirmationRequired, Browser, BrowserError, DashboardOptions
+from pyagentbrowser import (
+    ActionConfirmationRequired,
+    Browser,
+    BrowserError,
+    DashboardOptions,
+    ReadResult,
+)
 from pyagentbrowser._native import NativeBrowser, __agent_browser_version__
 
 pytestmark = pytest.mark.native_smoke
@@ -148,6 +156,35 @@ def test_native_bridge_preserves_command_ids_at_pyo3_boundary() -> None:
     assert response["id"] == "custom"
     assert response["success"] is True
     assert "enabled" in response["data"]
+
+
+def test_native_read_fetches_markdown_through_page_namespace() -> None:
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self) -> None:
+            self.send_response(200)
+            self.send_header("Content-Type", "text/markdown")
+            self.end_headers()
+            self.wfile.write(b"# Native read\n")
+
+        def log_message(self, format: str, *args: object) -> None:
+            del format, args
+            pass
+
+    with ThreadingHTTPServer(("127.0.0.1", 0), Handler) as server:
+        thread = Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_port}/docs"
+            with Browser(allowed_domains="127.0.0.1") as browser:
+                result = browser.page.read(url, require_md=True)
+        finally:
+            server.shutdown()
+            thread.join(timeout=2)
+
+    assert isinstance(result, ReadResult)
+    assert result.status == 200
+    assert result.content == "# Native read\n"
+    assert result.content_type == "text/markdown"
 
 
 def test_native_dashboard_writes_discovery_sidecars(

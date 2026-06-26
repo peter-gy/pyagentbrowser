@@ -20,6 +20,7 @@ URL_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
     "diff_url": ("url1", "url2"),
     "navigate": ("url",),
     "pushstate": ("url",),
+    "read": ("url",),
     "recording_start": ("url",),
     "tab_new": ("url",),
     "vitals": ("url",),

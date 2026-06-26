@@ -23,6 +23,7 @@ from pyagentbrowser.command_params import (
     mouse_params,
     optional,
     pdf_params,
+    read_params,
     requests_params,
     route_params,
     screenshot_params,
@@ -39,10 +40,12 @@ from pyagentbrowser.models import (
     ConsoleMessage,
     Cookie,
     JSONMapping,
+    LlmsMode,
     LoadState,
     MouseButton,
     MouseEventType,
     NetworkRequest,
+    ReadResult,
     RequestDetail,
     RouteResponse,
     SameSite,
@@ -56,6 +59,7 @@ from pyagentbrowser.models import (
     cookies_from_data,
     network_requests_from_data,
     path_value,
+    read_result_from_data,
     ref_selector,
     request_detail_from_data,
     screenshot_from_data,
@@ -125,6 +129,39 @@ class Page:
     def evaluate(self, script: str) -> Any:
         """Evaluate JavaScript in the current page context."""
         return self.browser.command("evaluate", script=script).get("result")
+
+    def read(
+        self,
+        url: str | None = None,
+        *,
+        raw: bool = False,
+        require_md: bool = False,
+        llms: LlmsMode | None = None,
+        outline: bool = False,
+        filter: str | None = None,
+        timeout_ms: int | None = None,
+        headers: Mapping[str, str] | None = None,
+        allowed_domains: Sequence[str] | None = None,
+    ) -> ReadResult:
+        """Return agent-readable content for a URL or the active page."""
+        if url is None and not self.browser.is_launched:
+            self.browser.launch()
+        normalized_url = normalize_url(url) if url is not None else None
+        data = self.browser.command(
+            "read",
+            **read_params(
+                normalized_url,
+                raw=raw,
+                require_md=require_md,
+                llms=llms,
+                outline=outline,
+                filter=filter,
+                timeout_ms=timeout_ms,
+                headers=headers,
+                allowed_domains=allowed_domains,
+            ),
+        )
+        return read_result_from_data(data)
 
     def ready(self, *, timeout_ms: int | None = None, min_text_length: int = 1) -> None:
         """Wait until the page has a body with readable text.
