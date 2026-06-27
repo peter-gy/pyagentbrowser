@@ -6,7 +6,7 @@ import json
 import pytest
 from fakes import AgentNative, StaleRefNative, TransitionSnapshotNative
 
-from pyagentbrowser import (
+from agentbrowser import (
     ActionEvidence,
     AgentSnapshot,
     AsyncAgentSnapshot,
@@ -16,9 +16,9 @@ from pyagentbrowser import (
     BrowserError,
     StaleAgentRefError,
 )
-from pyagentbrowser.models import SnapshotDiff
-from pyagentbrowser.session import NativeSession
-from pyagentbrowser.session_async import AsyncNativeSession
+from agentbrowser.models import SnapshotDiff
+from agentbrowser.session import NativeSession
+from agentbrowser.session_async import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 

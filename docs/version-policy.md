@@ -14,10 +14,10 @@ release notes aligned with that range.
 
 Public API is the importable surface from:
 
-- `pyagentbrowser`
-- `pyagentbrowser.Browser`
-- `pyagentbrowser.AsyncBrowser`
-- `pyagentbrowser.skills`
+- `agentbrowser`
+- `agentbrowser.Browser`
+- `agentbrowser.AsyncBrowser`
+- `agentbrowser.skills`
 - documented models such as `AgentSnapshot`, `AgentRef`, `ActionEvidence`,
   `Screenshot`, and `BrowserError`
 
@@ -49,7 +49,7 @@ and publishes only pre-release identifiers while the SDK is pre-stable:
 For example, a package based on upstream `0.27.2` publishes as `0.27.2rc0`.
 The package records the nearest upstream release tag for provenance and exposes
 the exact pinned upstream commit through
-`pyagentbrowser.__agent_browser_commit__`, `pyagentbrowser.__upstream_commit__`,
+`agentbrowser.__agent_browser_commit__`, `agentbrowser.__upstream_commit__`,
 and the `Upstream agent-browser commit` project URL.
 
 Public PyPI releases cannot use local version labels such as `+gabcdef0`. The
@@ -59,7 +59,7 @@ Before publishing:
 
 - The `third_party/agent-browser` submodule must be checked out at the upstream
   commit whose `cli/Cargo.toml` version is used by the package version.
-- `src/pyagentbrowser/_version.py` must match the upstream tag, upstream version,
+- `src/agentbrowser/_version.py` must match the upstream tag, upstream version,
   and short commit.
 - `pyproject.toml` must contain a pre-release version and the upstream commit
   Project-URL.

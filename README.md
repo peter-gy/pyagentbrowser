@@ -5,7 +5,7 @@
 [![License](https://img.shields.io/github/license/peter-gy/pyagentbrowser)](LICENSE)
 
 The `pyagentbrowser` distribution drives the native Rust `agent-browser` engine
-from Python. Import it as `pyagentbrowser`. It exposes page navigation, browser
+from Python. Import it as `agentbrowser`. It exposes page navigation, browser
 snapshots, element refs, action evidence, screenshots, cookies, storage, native
 active-frame state, and CDP helpers through one Python package.
 
@@ -19,7 +19,7 @@ available on the host.
 ## Usage
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.set_content(
@@ -46,12 +46,12 @@ Snapshot refs stay tied to the page state that created them. After navigation
 or a large DOM update, call `browser.agent.observe()` again and continue from
 the new snapshot.
 
-For notebooks and REPL sessions, `pyagentbrowser` also exposes one process-local
+For notebooks and REPL sessions, `agentbrowser.notebook` exposes one process-local
 default browser:
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import LaunchOptions
+import agentbrowser as ab
+from agentbrowser import LaunchOptions
 
 ab.notebook.configure(launch_options=LaunchOptions(headless=True))
 ab.notebook.page.set_content(

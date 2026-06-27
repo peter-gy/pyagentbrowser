@@ -3,7 +3,7 @@
 ## Open a page
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.open("https://example.com")
@@ -14,7 +14,7 @@ with Browser.launch(LaunchOptions(headless=True)) as browser:
 ## Read page content
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions, ReadMode
+from agentbrowser import Browser, LaunchOptions, ReadMode
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.set_content("<article><h1>Guide</h1><p>Read this page.</p></article>")
@@ -29,7 +29,7 @@ active page.
 ## Use selectors
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.set_content(
@@ -48,7 +48,7 @@ with Browser.launch(LaunchOptions(headless=True)) as browser:
 ## Use snapshot refs
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.set_content(
@@ -82,8 +82,8 @@ changes, observe again.
 ## Restore a session
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import Browser, RestoreOptions
+import agentbrowser as ab
+from agentbrowser import Browser, RestoreOptions
 
 session_id = ab.session_id(prefix="example").session
 
@@ -101,7 +101,7 @@ from the current worktree without creating a browser.
 ## Capture a screenshot
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.open("https://example.com")
@@ -117,7 +117,7 @@ of the artifact.
 ## Async
 
 ```python
-from pyagentbrowser import AsyncBrowser, LaunchOptions
+from agentbrowser import AsyncBrowser, LaunchOptions
 
 browser = await AsyncBrowser.launch(LaunchOptions(headless=True))
 async with browser:
@@ -129,8 +129,8 @@ async with browser:
 ## Attach to running Chrome
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import CDPAttach
+import agentbrowser as ab
+from agentbrowser import CDPAttach
 
 browser = ab.notebook.configure(attach=CDPAttach(port=9222))
 browser.connect()
@@ -145,7 +145,7 @@ For notebook recovery after an interrupted run, use `ab.notebook.reset(force=Tru
 ## Notebook scratchpad helpers
 
 ```python
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.tabs.open("about:blank", label="scratch")

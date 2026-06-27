@@ -8,8 +8,8 @@ from pathlib import Path
 from typing import Any, NoReturn, cast
 from urllib.parse import urlparse
 
-from pyagentbrowser._browser_common import normalize_url
-from pyagentbrowser.models import BrowserError, JSONObject, JSONValue
+from agentbrowser._browser_common import normalize_url
+from agentbrowser.models import BrowserError, JSONObject, JSONValue
 
 DENIED_CODE = "allowed_domains"
 URL_TARGET_FIELDS: dict[str, tuple[str, ...]] = {

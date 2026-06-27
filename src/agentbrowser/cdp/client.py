@@ -8,9 +8,9 @@ from itertools import count
 from threading import RLock
 from typing import Any, cast
 
-from pyagentbrowser.cdp._protocol import _decode_message, _response_result
-from pyagentbrowser.cdp.errors import CDPClosedError, CDPTimeoutError
-from pyagentbrowser.cdp.transport import AsyncConnect, AsyncWebSocket, SyncConnect, SyncWebSocket
+from agentbrowser.cdp._protocol import _decode_message, _response_result
+from agentbrowser.cdp.errors import CDPClosedError, CDPTimeoutError
+from agentbrowser.cdp.transport import AsyncConnect, AsyncWebSocket, SyncConnect, SyncWebSocket
 
 
 class CDPClient:

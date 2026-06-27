@@ -1,6 +1,6 @@
 """Notebook and REPL helpers that use one process-local default browser."""
 
-from pyagentbrowser.default_session import (
+from agentbrowser.default_session import (
     active_frame,
     agent,
     capture,

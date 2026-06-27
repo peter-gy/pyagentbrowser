@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-from pyagentbrowser.cdp.client import AsyncCDPClient, CDPClient
-from pyagentbrowser.cdp.controller import AsyncCDPController, CDPController
-from pyagentbrowser.cdp.errors import (
+from agentbrowser.cdp.client import AsyncCDPClient, CDPClient
+from agentbrowser.cdp.controller import AsyncCDPController, CDPController
+from agentbrowser.cdp.errors import (
     CDPClosedError,
     CDPContextAmbiguityError,
     CDPContextNotFoundError,
@@ -16,7 +16,7 @@ from pyagentbrowser.cdp.errors import (
     CDPTargetNotFoundError,
     CDPTimeoutError,
 )
-from pyagentbrowser.cdp.models import (
+from agentbrowser.cdp.models import (
     AsyncContextPredicate,
     AsyncExecutionContext,
     AsyncFrame,
@@ -24,9 +24,9 @@ from pyagentbrowser.cdp.models import (
     ExecutionContext,
     Frame,
 )
-from pyagentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
-from pyagentbrowser.cdp.target import AsyncCDPTarget, CDPTarget
-from pyagentbrowser.cdp.transport import (
+from agentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
+from agentbrowser.cdp.target import AsyncCDPTarget, CDPTarget
+from agentbrowser.cdp.transport import (
     AsyncCDPTransport,
     AsyncConnect,
     AsyncWebSocket,

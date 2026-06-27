@@ -23,7 +23,7 @@ def clean_default_browser(request: pytest.FixtureRequest) -> Iterator[None]:
         yield
         return
 
-    import pyagentbrowser as ab
+    import agentbrowser as ab
 
     ab.notebook.reset(force=True)
     yield

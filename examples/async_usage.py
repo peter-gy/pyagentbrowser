@@ -1,6 +1,6 @@
 import asyncio
 
-from pyagentbrowser import AsyncBrowser, LaunchOptions
+from agentbrowser import AsyncBrowser, LaunchOptions
 
 
 async def main() -> None:

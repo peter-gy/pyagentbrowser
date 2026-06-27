@@ -28,8 +28,8 @@ from fakes import (
     StatefulConfirmationNative,
 )
 
-import pyagentbrowser as ab
-from pyagentbrowser import (
+import agentbrowser as ab
+from agentbrowser import (
     ActionConfirmationRequired,
     AgentBrowserError,
     AsyncBrowser,
@@ -59,9 +59,9 @@ from pyagentbrowser import (
     StaleAgentRefError,
     TabInfo,
 )
-from pyagentbrowser.cdp import CDPStaleObjectError
-from pyagentbrowser.session import NativeSession
-from pyagentbrowser.session_async import AsyncNativeSession
+from agentbrowser.cdp import CDPStaleObjectError
+from agentbrowser.session import NativeSession
+from agentbrowser.session_async import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
@@ -2226,7 +2226,7 @@ def test_package_root_capture_namespace_returns_screenshot_view(tmp_path: Path) 
 
 
 def _configure_package_root_cdp(monkeypatch: pytest.MonkeyPatch) -> None:
-    cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
+    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", _PublicCDPClient)
     ab.notebook.configure(native_session=NativeSession(native=_CDPNative()))
 
@@ -2326,15 +2326,21 @@ def test_package_versions_expose_upstream_alias() -> None:
     assert ab.__agent_browser_commit__ == ab.__upstream_commit__
 
 
-def test_package_root_does_not_export_default_browser_proxies() -> None:
-    removed = _NOTEBOOK_NAMESPACE_NAMES | {"close", "configure", "default_browser", "reset"}
+def test_package_root_keeps_notebook_controls_under_notebook_namespace() -> None:
+    notebook_root_names = _NOTEBOOK_NAMESPACE_NAMES | {
+        "close",
+        "configure",
+        "default_browser",
+        "reset",
+    }
 
-    assert removed.isdisjoint(ab.__all__)
-    for name in removed:
-        value = getattr(ab, name, None)
-        if value is None:
-            continue
-        assert getattr(value, "__name__", "").startswith(f"pyagentbrowser.{name}"), name
+    assert notebook_root_names.isdisjoint(ab.__all__)
+    assert callable(ab.notebook.configure)
+    assert callable(ab.notebook.close)
+    assert callable(ab.notebook.default_browser)
+    assert callable(ab.notebook.reset)
+    for namespace in _NOTEBOOK_NAMESPACE_NAMES:
+        assert namespace in ab.notebook.__all__
 
 
 @pytest.mark.parametrize("namespace", sorted(_NOTEBOOK_NAMESPACE_NAMES))
@@ -2356,7 +2362,7 @@ def test_package_root_exposes_pure_session_id_helper() -> None:
 
 
 def _browser_with_public_cdp(monkeypatch: pytest.MonkeyPatch) -> Browser:
-    cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
+    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", _PublicCDPClient)
     browser = Browser(native_session=NativeSession(native=_CDPNative()))
     browser.page.open("https://example.com/one")

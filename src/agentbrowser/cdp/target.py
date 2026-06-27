@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
-from pyagentbrowser.cdp.models import (
+from agentbrowser.cdp.models import (
     AsyncContextPredicate,
     AsyncExecutionContext,
     AsyncFrame,
@@ -13,8 +13,8 @@ from pyagentbrowser.cdp.models import (
 )
 
 if TYPE_CHECKING:
-    from pyagentbrowser.cdp.controller import AsyncCDPController, CDPController
-    from pyagentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
+    from agentbrowser.cdp.controller import AsyncCDPController, CDPController
+    from agentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
 
 
 @dataclass(frozen=True, slots=True)

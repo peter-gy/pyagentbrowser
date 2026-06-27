@@ -36,7 +36,7 @@ mod skill_data {
 
 const INTERNAL_SHUTDOWN_ACTION: &str = "__agent_browser_internal_shutdown";
 
-#[pyclass(name = "NativeBrowser", module = "pyagentbrowser._native")]
+#[pyclass(name = "NativeBrowser", module = "agentbrowser._native")]
 struct PyNativeBrowser {
     state: Mutex<DaemonState>,
     runtime: Runtime,

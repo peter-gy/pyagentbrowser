@@ -75,7 +75,7 @@ default-groups = ["dev"]
 
 [tool.maturin]
 features = ["pyo3/extension-module"]
-module-name = "pyagentbrowser._native"
+module-name = "agentbrowser._native"
 python-source = "src"
 manifest-path = "crates/pyagentbrowser/Cargo.toml"
 exclude = [

@@ -6,10 +6,10 @@ from typing import Any
 
 from typing_extensions import Self
 
-from pyagentbrowser._browser_common import is_stale_ref_error_code
-from pyagentbrowser.command_params import click_params, wait_params
-from pyagentbrowser.domains import Locator
-from pyagentbrowser.models import (
+from agentbrowser._browser_common import is_stale_ref_error_code
+from agentbrowser.command_params import click_params, wait_params
+from agentbrowser.domains_async import AsyncLocator
+from agentbrowser.models import (
     ActionEvidence,
     BrowserError,
     LoadState,
@@ -21,35 +21,27 @@ from pyagentbrowser.models import (
 )
 
 
-class StaleAgentRefError(BrowserError):
-    """Raised when an action targets a stale snapshot ref.
+class AsyncStaleAgentRefError(BrowserError):
+    """Raised when an async action targets a stale snapshot ref."""
 
-    Parameters
-    ----------
-    ref
-        Bound snapshot ref that failed.
-    error
-        Native browser error raised by the attempted action.
-    """
-
-    def __init__(self, ref: AgentRef, error: BrowserError) -> None:
+    def __init__(self, ref: AsyncAgentRef, error: BrowserError) -> None:
         super().__init__(
             error.action, f"stale snapshot ref {ref.selector}: {error}", error.response
         )
         self.ref = ref
 
-    def refresh(self, **criteria: Any) -> AgentRef:
+    async def refresh(self, **criteria: Any) -> AsyncAgentRef:
         """Refresh the stale ref using optional match criteria."""
-        return self.ref.refresh(**criteria)
+        return await self.ref.refresh(**criteria)
 
 
 @dataclass(frozen=True, slots=True)
-class AgentRef:
-    """Bound snapshot ref with direct element actions.
+class AsyncAgentRef:
+    """Async bound snapshot ref with direct element actions.
 
-    `AgentRef` is returned by `AgentSnapshot.ref()`, `find()`, and `find_all()`.
-    It keeps the snapshot selector, role, name, and browser needed to perform
-    direct element actions.
+    `AsyncAgentRef` is returned by `AsyncAgentSnapshot.ref()`, `find()`, and
+    `find_all()`. It keeps the snapshot selector, role, name, and browser needed
+    to perform direct async element actions.
     """
 
     browser: Any
@@ -81,11 +73,11 @@ class AgentRef:
         """Raw snapshot ref metadata."""
         return self.snapshot_ref.raw
 
-    def locator(self) -> Locator:
-        """Return a lower-level locator for this snapshot ref."""
-        return Locator(self.browser, self.selector)
+    def locator(self) -> AsyncLocator:
+        """Return a lower-level async locator for this snapshot ref."""
+        return AsyncLocator(self.browser, self.selector)
 
-    def refresh(
+    async def refresh(
         self,
         *,
         role: str | None = None,
@@ -93,20 +85,9 @@ class AgentRef:
         contains: str | None = None,
         exact: bool = True,
         strict: bool = True,
-    ) -> AgentRef:
-        """Re-find this ref in a fresh snapshot.
-
-        Parameters
-        ----------
-        role, name, contains, exact, strict
-            Match criteria forwarded to `AgentSnapshot.find()`.
-
-        Returns
-        -------
-        AgentRef
-            Freshly resolved bound ref.
-        """
-        return self.browser.agent.observe().find(
+    ) -> AsyncAgentRef:
+        """Re-find this ref in a fresh snapshot."""
+        return (await self.browser.agent.observe()).find(
             role=self.role if role is None else role,
             name=self.name if name is None and contains is None else name,
             contains=contains,
@@ -114,7 +95,7 @@ class AgentRef:
             strict=strict,
         )
 
-    def click(
+    async def click(
         self,
         *,
         button: MouseButton = "left",
@@ -122,7 +103,7 @@ class AgentRef:
         new_tab: bool = False,
     ) -> Self:
         """Click this ref and return it."""
-        return self._run(
+        return await self._run(
             lambda: self.browser._command(
                 "click",
                 **click_params(
@@ -134,60 +115,71 @@ class AgentRef:
             )
         )
 
-    def fill(self, value: str) -> Self:
+    async def fill(self, value: str) -> Self:
         """Fill this ref as a form control."""
-        return self._run(lambda: self.browser._command("fill", selector=self.selector, value=value))
-
-    def type(self, text: str) -> Self:
-        """Type text into this ref."""
-        return self._run(lambda: self.browser._command("type", selector=self.selector, text=text))
-
-    def press(self, key: str) -> Self:
-        """Focus this ref and press a key."""
-        return self._run(
-            lambda: (
-                self.browser._command("click", selector=self.selector),
-                self.browser.keyboard.press(key),
-            )
+        return await self._run(
+            lambda: self.browser._command("fill", selector=self.selector, value=value)
         )
 
-    def hover(self) -> Self:
+    async def type(self, text: str) -> Self:
+        """Type text into this ref."""
+        return await self._run(
+            lambda: self.browser._command("type", selector=self.selector, text=text)
+        )
+
+    async def press(self, key: str) -> Self:
+        """Focus this ref and press a key."""
+
+        async def action() -> None:
+            await self.browser._command("click", selector=self.selector)
+            await self.browser.keyboard.press(key)
+
+        return await self._run(action)
+
+    async def hover(self) -> Self:
         """Hover this ref."""
-        return self._run(lambda: self.browser._command("hover", selector=self.selector))
+        return await self._run(lambda: self.browser._command("hover", selector=self.selector))
 
-    def tap(self) -> Self:
+    async def tap(self) -> Self:
         """Tap this ref."""
-        return self._run(lambda: self.browser._command("tap", selector=self.selector))
+        return await self._run(lambda: self.browser._command("tap", selector=self.selector))
 
-    def focus(self) -> Self:
+    async def focus(self) -> Self:
         """Focus this ref."""
-        return self._run(lambda: self.browser._command("focus", selector=self.selector))
+        return await self._run(lambda: self.browser._command("focus", selector=self.selector))
 
-    def clear(self) -> Self:
+    async def clear(self) -> Self:
         """Clear this ref as a form control."""
-        return self._run(lambda: self.browser._command("clear", selector=self.selector))
+        return await self._run(lambda: self.browser._command("clear", selector=self.selector))
 
-    def select(self, value: str) -> Self:
+    async def select(self, value: str) -> Self:
         """Select an option value on this ref."""
-        return self._run(
+        return await self._run(
             lambda: self.browser._command("select", selector=self.selector, value=value)
         )
 
-    def check(self) -> Self:
+    async def check(self) -> Self:
         """Check this ref."""
-        return self._run(lambda: self.browser._command("check", selector=self.selector))
+        return await self._run(lambda: self.browser._command("check", selector=self.selector))
 
-    def uncheck(self) -> Self:
+    async def uncheck(self) -> Self:
         """Uncheck this ref."""
-        return self._run(lambda: self.browser._command("uncheck", selector=self.selector))
+        return await self._run(lambda: self.browser._command("uncheck", selector=self.selector))
 
-    def scroll_into_view(self) -> Self:
+    async def scroll_into_view(self) -> Self:
         """Scroll this ref into view."""
-        return self._run(lambda: self.browser._command("scrollintoview", selector=self.selector))
+        return await self._run(
+            lambda: self.browser._command("scrollintoview", selector=self.selector)
+        )
 
-    def wait(self, *, state: WaitSelectorState = "visible", timeout_ms: int | None = None) -> Self:
+    async def wait(
+        self,
+        *,
+        state: WaitSelectorState = "visible",
+        timeout_ms: int | None = None,
+    ) -> Self:
         """Wait for this ref to reach a state."""
-        return self._run(
+        return await self._run(
             lambda: self.browser._command(
                 "wait",
                 **wait_params(
@@ -199,38 +191,48 @@ class AgentRef:
             )
         )
 
-    def text(self) -> str:
+    async def text(self) -> str:
         """Return text content for this ref."""
-        return str(self.browser._command("gettext", selector=self.selector).get("text", ""))
+        return str((await self.browser._command("gettext", selector=self.selector)).get("text", ""))
 
-    def inner_text(self) -> str:
+    async def inner_text(self) -> str:
         """Return rendered inner text for this ref."""
-        return str(self.browser._command("innertext", selector=self.selector).get("text", ""))
-
-    def input_value(self) -> str:
-        """Return this ref's input value."""
-        return str(self.browser._command("inputvalue", selector=self.selector).get("value", ""))
-
-    def attribute(self, name: str) -> str | None:
-        """Return one attribute on this ref."""
-        value = self.browser._command("getattribute", selector=self.selector, attribute=name).get(
-            "value"
+        return str(
+            (await self.browser._command("innertext", selector=self.selector)).get("text", "")
         )
+
+    async def input_value(self) -> str:
+        """Return this ref's input value."""
+        return str(
+            (await self.browser._command("inputvalue", selector=self.selector)).get("value", "")
+        )
+
+    async def attribute(self, name: str) -> str | None:
+        """Return one attribute on this ref."""
+        value = (
+            await self.browser._command("getattribute", selector=self.selector, attribute=name)
+        ).get("value")
         return str(value) if value is not None else None
 
-    def is_visible(self) -> bool:
+    async def is_visible(self) -> bool:
         """Return whether this ref is visible."""
-        return bool(self.browser._command("isvisible", selector=self.selector).get("visible"))
+        return bool(
+            (await self.browser._command("isvisible", selector=self.selector)).get("visible")
+        )
 
-    def is_enabled(self) -> bool:
+    async def is_enabled(self) -> bool:
         """Return whether this ref is enabled."""
-        return bool(self.browser._command("isenabled", selector=self.selector).get("enabled"))
+        return bool(
+            (await self.browser._command("isenabled", selector=self.selector)).get("enabled")
+        )
 
-    def is_checked(self) -> bool:
+    async def is_checked(self) -> bool:
         """Return whether this ref is checked."""
-        return bool(self.browser._command("ischecked", selector=self.selector).get("checked"))
+        return bool(
+            (await self.browser._command("ischecked", selector=self.selector)).get("checked")
+        )
 
-    def click_and_observe(
+    async def click_and_observe(
         self,
         *,
         button: MouseButton = "left",
@@ -242,15 +244,15 @@ class AgentRef:
         compact: bool = True,
     ) -> ActionEvidence:
         """Click this ref and return before/after snapshot evidence."""
-        self.click(button=button, click_count=click_count, new_tab=new_tab)
-        self._wait_after_action(
+        await self.click(button=button, click_count=click_count, new_tab=new_tab)
+        await self._wait_after_action(
             text=wait_for_text,
             url=wait_for_url,
             load_state=wait_for_load_state,
         )
-        return self._evidence("click", compact=compact)
+        return await self._evidence("click", compact=compact)
 
-    def fill_and_observe(
+    async def fill_and_observe(
         self,
         value: str,
         *,
@@ -260,15 +262,15 @@ class AgentRef:
         compact: bool = True,
     ) -> ActionEvidence:
         """Fill this ref and return before/after snapshot evidence."""
-        self.fill(value)
-        self._wait_after_action(
+        await self.fill(value)
+        await self._wait_after_action(
             text=wait_for_text,
             url=wait_for_url,
             load_state=wait_for_load_state,
         )
-        return self._evidence("fill", compact=compact)
+        return await self._evidence("fill", compact=compact)
 
-    def _wait_after_action(
+    async def _wait_after_action(
         self,
         *,
         text: str | None,
@@ -276,38 +278,34 @@ class AgentRef:
         load_state: LoadState | None,
     ) -> None:
         if text is not None:
-            self.browser.page.wait_for_text(text)
+            await self.browser.page.wait_for_text(text)
         if url is not None:
-            self.browser.page.wait_for_url(url)
+            await self.browser.page.wait_for_url(url)
         if load_state is not None:
-            self.browser.page.wait_for_load_state(load_state)
+            await self.browser.page.wait_for_load_state(load_state)
 
-    def _evidence(self, action: str, *, compact: bool) -> ActionEvidence:
-        before_snapshot = self.snapshot or self.browser.snapshot(interactive=True)
-        before = AgentSnapshot(self.browser, before_snapshot)
-        after = self.browser.observe(compact=compact)
-        diff = self.browser.diff_snapshot(before_snapshot, compact=compact)
+    async def _evidence(self, action: str, *, compact: bool) -> ActionEvidence:
+        before_snapshot = self.snapshot or await self.browser.snapshot(interactive=True)
+        before = AsyncAgentSnapshot(self.browser, before_snapshot)
+        after = await self.browser.observe(compact=compact)
+        diff = await self.browser.diff_snapshot(before_snapshot, compact=compact)
         return ActionEvidence(
             action=action, target=self.selector, before=before, after=after, diff=diff
         )
 
-    def _run(self, action: Any) -> Self:
+    async def _run(self, action: Any) -> Self:
         try:
-            action()
+            await action()
         except BrowserError as err:
             if _is_stale_ref_error(err):
-                raise StaleAgentRefError(self, err) from err
+                raise AsyncStaleAgentRefError(self, err) from err
             raise
         return self
 
 
 @dataclass(frozen=True, slots=True)
-class AgentSnapshot:
-    """Accessibility snapshot bound to a browser.
-
-    The wrapper exposes raw snapshot text and turns snapshot refs into
-    `AgentRef` objects that can be clicked, filled, queried, or refreshed.
-    """
+class AsyncAgentSnapshot:
+    """Async accessibility snapshot bound to a browser."""
 
     browser: Any
     snapshot: Snapshot
@@ -332,9 +330,9 @@ class AgentSnapshot:
         """Raw snapshot ref metadata by ref id."""
         return self.snapshot.refs
 
-    def ref(self, ref_id: str) -> AgentRef:
+    def ref(self, ref_id: str) -> AsyncAgentRef:
         """Return one bound ref by id, accepting both `r1` and `@r1`."""
-        return AgentRef(self.browser, self.snapshot.ref(ref_id), snapshot=self.snapshot)
+        return AsyncAgentRef(self.browser, self.snapshot.ref(ref_id), snapshot=self.snapshot)
 
     def find(
         self,
@@ -344,22 +342,8 @@ class AgentSnapshot:
         contains: str | None = None,
         exact: bool = False,
         strict: bool = True,
-    ) -> AgentRef:
-        """Return one ref matching role/name/text criteria.
-
-        Parameters
-        ----------
-        role
-            Accessible role to match.
-        name
-            Accessible name to match.
-        contains
-            Substring that must appear in the accessible name.
-        exact
-            Whether `name` or `contains` matching is exact.
-        strict
-            Raise if multiple refs match.
-        """
+    ) -> AsyncAgentRef:
+        """Return one ref matching role/name/text criteria."""
         matches = self.find_all(role=role, name=name, contains=contains, exact=exact)
         if not matches:
             raise LookupError("snapshot contains no ref matching the requested criteria")
@@ -375,10 +359,10 @@ class AgentSnapshot:
         name: str | None = None,
         contains: str | None = None,
         exact: bool = False,
-    ) -> list[AgentRef]:
+    ) -> list[AsyncAgentRef]:
         """Return all refs matching role/name/text criteria."""
         return [
-            AgentRef(
+            AsyncAgentRef(
                 self.browser,
                 snapshot_ref,
                 snapshot=self.snapshot,
@@ -393,12 +377,12 @@ class AgentSnapshot:
 
 
 @dataclass(frozen=True, slots=True)
-class Agent:
-    """Agent-oriented browser operations built around snapshots and refs."""
+class AsyncAgent:
+    """Async agent-oriented browser operations built around snapshots and refs."""
 
     browser: Any
 
-    def observe(
+    async def observe(
         self,
         *,
         selector: str | None = None,
@@ -406,17 +390,11 @@ class Agent:
         compact: bool = False,
         max_depth: int | None = None,
         urls: bool = False,
-    ) -> AgentSnapshot:
-        """Capture a snapshot and bind it to this browser.
-
-        Returns
-        -------
-        AgentSnapshot
-            Snapshot wrapper whose refs can be acted on directly.
-        """
-        return AgentSnapshot(
+    ) -> AsyncAgentSnapshot:
+        """Capture a snapshot and bind it to this browser."""
+        return AsyncAgentSnapshot(
             self.browser,
-            self.browser.snapshot(
+            await self.browser.snapshot(
                 selector=selector,
                 interactive=interactive,
                 compact=compact,
@@ -425,9 +403,9 @@ class Agent:
             ),
         )
 
-    def ref(self, ref_id: str) -> Locator:
-        """Return a locator for a snapshot ref id such as `r1` or `@r1`."""
-        return Locator(self.browser, ref_selector(ref_id))
+    def ref(self, ref_id: str) -> AsyncLocator:
+        """Return an async locator for a snapshot ref id such as `r1` or `@r1`."""
+        return AsyncLocator(self.browser, ref_selector(ref_id))
 
 
 def _is_stale_ref_error(error: BrowserError) -> bool:

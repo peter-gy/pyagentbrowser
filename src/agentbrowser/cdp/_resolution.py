@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from pyagentbrowser.cdp.errors import (
+from agentbrowser.cdp.errors import (
     CDPContextAmbiguityError,
     CDPContextNotFoundError,
     CDPFrameAmbiguityError,
@@ -12,7 +12,7 @@ from pyagentbrowser.cdp.errors import (
     CDPTargetAmbiguityError,
     CDPTargetNotFoundError,
 )
-from pyagentbrowser.cdp.models import AsyncExecutionContext, AsyncFrame, ExecutionContext, Frame
+from agentbrowser.cdp.models import AsyncExecutionContext, AsyncFrame, ExecutionContext, Frame
 
 
 def _resolve_active_target(

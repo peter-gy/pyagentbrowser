@@ -18,12 +18,12 @@ from fakes import (
     WarningNative,
 )
 
-import pyagentbrowser.session as session_module
-from pyagentbrowser import BrowserError, DashboardOptions
-from pyagentbrowser._browser_common import INTERNAL_SHUTDOWN_ACTION
-from pyagentbrowser.models import OMIT, ActionConfirmationRequired
-from pyagentbrowser.session import NativeSession
-from pyagentbrowser.session_async import AsyncNativeSession
+import agentbrowser.session as session_module
+from agentbrowser import BrowserError, DashboardOptions
+from agentbrowser._browser_common import INTERNAL_SHUTDOWN_ACTION
+from agentbrowser.models import OMIT, ActionConfirmationRequired
+from agentbrowser.session import NativeSession
+from agentbrowser.session_async import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 

@@ -1,11 +1,11 @@
 # API Reference
 
 The distribution package is `pyagentbrowser`. The import package is
-`pyagentbrowser`. A `Browser` owns one native `agent-browser` session and exposes
+`agentbrowser`. A `Browser` owns one native `agent-browser` session and exposes
 namespaced helpers over the native command protocol.
 
 ```python
-from pyagentbrowser import Browser, BrowserSessionOptions, LaunchOptions
+from agentbrowser import Browser, BrowserSessionOptions, LaunchOptions
 
 with Browser.launch(
     LaunchOptions(headless=True),
@@ -106,7 +106,7 @@ Native commands run on one owner thread so browser state remains ordered while
 the event loop stays responsive.
 
 ```python
-from pyagentbrowser import AsyncBrowser, LaunchOptions
+from agentbrowser import AsyncBrowser, LaunchOptions
 
 browser = await AsyncBrowser.launch(LaunchOptions(headless=True))
 async with browser:
@@ -147,7 +147,7 @@ command. Returns native launch response data.
 ### `browser.connect()`
 
 Connects to the CDP target configured by `Browser.attach(...)` or
-`pyagentbrowser.notebook.configure(attach=...)`. It does not navigate. Calling
+`agentbrowser.notebook.configure(attach=...)`. It does not navigate. Calling
 `connect()` on a process-launch browser raises `RuntimeError`.
 
 ### `browser.close(timeout=5.0)`
@@ -323,8 +323,8 @@ listed.
 ## Default Session
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import BrowserSessionOptions, LaunchOptions
+import agentbrowser as ab
+from agentbrowser import BrowserSessionOptions, LaunchOptions
 
 ab.notebook.configure(
     launch_options=LaunchOptions(headless=True),
@@ -335,7 +335,7 @@ print(ab.notebook.page.title())
 ab.notebook.close()
 ```
 
-### `pyagentbrowser.notebook.configure(force=False, **options)`
+### `agentbrowser.notebook.configure(force=False, **options)`
 
 Replaces the process-local default browser configuration and returns the new
 default `Browser`. Options are named lifecycle objects: `launch_options`,
@@ -352,12 +352,12 @@ close fails.
 `close()` closes and clears the current handle while keeping configured
 defaults. `reset()` closes the handle and clears configured defaults.
 
-`pyagentbrowser.notebook` exposes default-browser accessors for every
+`agentbrowser.notebook` exposes default-browser accessors for every
 synchronous namespace: `page`, `agent`, `capture`, `cdp`, `clipboard`,
 `cookies`, `dialogs`, `diagnostics`, `diff`, `downloads`, `find`,
 `active_frame`, `keyboard`, `mouse`, `network`, `restore`, `runtime`, `scripts`,
 `state`, `storage`, and `tabs`.
-`pyagentbrowser.session_id(...)` generates stable session ids without creating
+`agentbrowser.session_id(...)` generates stable session ids without creating
 or touching a browser.
 
 ## Models And Errors
@@ -405,7 +405,7 @@ fields outside the typed SDK model.
 | `PendingAction` | SDK-created confirmation handle exposed as `ActionConfirmationRequired.pending_action` or `browser.pending_action(...)`. `confirm()` replays the action and `deny()` denies it. |
 | `AsyncPendingAction` | Async confirmation handle with awaitable `confirm()` and `deny()`. |
 | `NativeParseError(message)` | Raised when a native payload is missing fields required by a typed SDK model. |
-| `SessionId(session, scope, path, hash)` | Stable session id returned by `pyagentbrowser.session_id(...)`. `str(session_id)` returns the session string. |
+| `SessionId(session, scope, path, hash)` | Stable session id returned by `agentbrowser.session_id(...)`. `str(session_id)` returns the session string. |
 | `Snapshot(text, origin, refs, raw)` | Accessibility snapshot returned by lower-level snapshot helpers. `refs` maps ref ids to role/name metadata. `ref(ref_id)` accepts `r1` and `@r1`. `find_refs(role=None, name=None, contains=None, exact=False)` returns matching `SnapshotRef` values. |
 | `SnapshotRef(id, role, name, raw)` | One accessibility ref. `.selector` returns the native selector form such as `@r1`. |
 | `AgentSnapshot(browser, snapshot)` | Browser-bound snapshot returned by `browser.agent.observe(...)`. Exposes `text`, `origin`, `raw`, and `refs`. `ref(ref_id)` returns `AgentRef`. `find(...)` returns one ref and raises `LookupError` on zero matches or strict multiple matches. `find_all(...)` returns all matches. |
@@ -440,17 +440,17 @@ fields outside the typed SDK model.
 
 ## Versions
 
-`pyagentbrowser.__version__` is the Python package version.
-`pyagentbrowser.__agent_browser_version__` and
-`pyagentbrowser.__upstream_version__` report the upstream native engine version
-compiled into the extension. `pyagentbrowser.__agent_browser_commit__` and
-`pyagentbrowser.__upstream_commit__` report the short upstream commit pinned for
+`agentbrowser.__version__` is the Python package version.
+`agentbrowser.__agent_browser_version__` and
+`agentbrowser.__upstream_version__` report the upstream native engine version
+compiled into the extension. `agentbrowser.__agent_browser_commit__` and
+`agentbrowser.__upstream_commit__` report the short upstream commit pinned for
 the package build. `DashboardOptions(cli_version=...)` sets the external
 dashboard CLI version expected by the SDK-owned observable session.
 
 ## Skills
 
-`pyagentbrowser.skills` exposes upstream skill data embedded in the native
+`agentbrowser.skills` exposes upstream skill data embedded in the native
 extension. Public functions are `available`, `list`, `get`, `parts`, `part`,
 `read`, and `markdown`. `Skill`, `SkillPart`, and `SkillFile` are exported from
 the package root.

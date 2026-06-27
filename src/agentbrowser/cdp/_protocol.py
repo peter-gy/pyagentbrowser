@@ -5,7 +5,7 @@ import math
 from collections.abc import Mapping
 from typing import Any, cast
 
-from pyagentbrowser.cdp.errors import CDPEvaluationError, CDPProtocolError
+from agentbrowser.cdp.errors import CDPEvaluationError, CDPProtocolError
 
 
 def _decode_message(raw: str | bytes) -> Mapping[str, Any]:

@@ -26,7 +26,7 @@ Use `make help` for the maintained command list.
 - `crates/pyagentbrowser` owns the PyO3 native extension crate.
 - `crates/agent-browser-adapter` owns adapter shims and generated source
   rewrites.
-- `src/pyagentbrowser` owns the Python public API.
+- `src/agentbrowser` owns the Python public API.
 - `examples` and `docs` must track the actual public API, not planned helpers.
 
 Native behavior changes are allowed only as documented Native Safety Patches.

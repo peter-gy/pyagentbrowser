@@ -4,7 +4,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 from typing import Any
 
-from pyagentbrowser.models import (
+from agentbrowser.models import (
     OMIT,
     MouseButton,
     MouseEventType,

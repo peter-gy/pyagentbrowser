@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Callable, Mapping
 from typing import Any
 
-from pyagentbrowser.cdp._resolution import _resolve_active_target
-from pyagentbrowser.cdp.client import AsyncCDPClient, CDPClient
-from pyagentbrowser.cdp.errors import CDPClosedError, CDPError
-from pyagentbrowser.cdp.models import (
+from agentbrowser.cdp._resolution import _resolve_active_target
+from agentbrowser.cdp.client import AsyncCDPClient, CDPClient
+from agentbrowser.cdp.errors import CDPClosedError, CDPError
+from agentbrowser.cdp.models import (
     AsyncContextPredicate,
     AsyncExecutionContext,
     AsyncFrame,
@@ -14,8 +14,8 @@ from pyagentbrowser.cdp.models import (
     ExecutionContext,
     Frame,
 )
-from pyagentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
-from pyagentbrowser.cdp.target import AsyncCDPTarget, CDPTarget
+from agentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
+from agentbrowser.cdp.target import AsyncCDPTarget, CDPTarget
 
 
 class CDPController:

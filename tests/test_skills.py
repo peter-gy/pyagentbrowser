@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import pyagentbrowser as ab
-from pyagentbrowser import Skill, SkillFile, SkillPart, skills
+import agentbrowser as ab
+from agentbrowser import Skill, SkillFile, SkillPart, skills
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.sdk_dx

@@ -9,7 +9,7 @@ submodule. Local integration code lives outside that submodule.
 - `third_party/agent-browser`: upstream source.
 - `crates/pyagentbrowser`: PyO3 native extension crate.
 - `crates/agent-browser-adapter`: Rust adapter crate named `agent-browser`.
-- `src/pyagentbrowser`: Python SDK.
+- `src/agentbrowser`: Python SDK.
 - `crates/pyagentbrowser/build.rs`: embeds upstream `skill-data` into the
   native extension.
 

@@ -18,7 +18,7 @@ from typing import cast
 
 import pytest
 
-from pyagentbrowser import (
+from agentbrowser import (
     ActionConfirmationRequired,
     Browser,
     BrowserError,
@@ -28,7 +28,7 @@ from pyagentbrowser import (
     ReadResult,
     RestoreOptions,
 )
-from pyagentbrowser._native import NativeBrowser, __agent_browser_version__
+from agentbrowser._native import NativeBrowser, __agent_browser_version__
 
 pytestmark = pytest.mark.native_smoke
 
@@ -377,7 +377,7 @@ def test_native_dashboard_close_does_not_hang_on_partial_control_client() -> Non
 import socket
 from pathlib import Path
 
-from pyagentbrowser import Browser
+from agentbrowser import Browser
 
 socket_dir = Path({str(socket_dir)!r})
 session = {session!r}
@@ -437,7 +437,7 @@ import json
 import os
 from pathlib import Path
 
-from pyagentbrowser import Browser
+from agentbrowser import Browser
 
 socket_dir = Path({str(socket_dir)!r})
 session = {session!r}

@@ -1,7 +1,7 @@
 # pyagentbrowser
 
 Python SDK for the native Rust `agent-browser` engine. The package name is
-`pyagentbrowser`. Imports use `pyagentbrowser`.
+`pyagentbrowser`. Imports use `agentbrowser`.
 
 ## Commands
 
@@ -15,7 +15,7 @@ Use `make help` for the supported target list.
 
 ## Repo Map
 
-- `src/pyagentbrowser/`: public Python SDK.
+- `src/agentbrowser/`: public Python SDK.
 - `crates/pyagentbrowser/`: PyO3 Rust crate for the native extension.
 - `crates/agent-browser-adapter/`: first-party Rust adapter and generated source shims.
 - `third_party/agent-browser/`: upstream submodule. Do not edit it directly.

@@ -23,6 +23,8 @@ FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("as_markdown", re.compile(r"as_markdown")),
     ("get_all", re.compile(r"get_all")),
     (".file(", re.compile(r"\.file\(")),
+    ("pyagentbrowser import", re.compile(r"\b(from|import)\s+pyagentbrowser\b")),
+    ("pyagentbrowser import prose", re.compile(r"Import it as `pyagentbrowser`")),
 )
 
 

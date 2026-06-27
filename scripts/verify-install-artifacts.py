@@ -19,17 +19,17 @@ import importlib.util
 import importlib.resources as resources
 from pathlib import Path
 
-import pyagentbrowser as ab
-from pyagentbrowser import Browser
-from pyagentbrowser.cdp import CDPClient
-from pyagentbrowser.models import Screenshot
+import agentbrowser as ab
+from agentbrowser import Browser
+from agentbrowser.cdp import CDPClient
+from agentbrowser.models import Screenshot
 
 assert Browser
 assert metadata.version("pyagentbrowser")
 assert isinstance(ab.__agent_browser_version__, str)
 assert ab.__agent_browser_version__
-assert importlib.util.find_spec("agentbrowser") is None
-assert resources.files("pyagentbrowser").joinpath("py.typed").is_file()
+assert importlib.util.find_spec("pyagentbrowser") is None
+assert resources.files("agentbrowser").joinpath("py.typed").is_file()
 
 assert "core" in ab.skills.available()
 assert ab.skills.get("core").parts
@@ -70,8 +70,8 @@ import tempfile
 import threading
 from pathlib import Path
 
-from pyagentbrowser.cdp import CDPClient
-from pyagentbrowser.models import Screenshot
+from agentbrowser.cdp import CDPClient
+from agentbrowser.models import Screenshot
 from websockets.sync.server import serve
 
 def cdp_handler(websocket):

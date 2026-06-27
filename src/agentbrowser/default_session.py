@@ -6,9 +6,9 @@ from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from typing_extensions import Unpack
 
-from pyagentbrowser.agent import Agent
-from pyagentbrowser.browser import Browser, Dashboard
-from pyagentbrowser.domains import (
+from agentbrowser.agent import Agent
+from agentbrowser.browser import Browser, Dashboard
+from agentbrowser.domains import (
     CDP,
     ActiveFrame,
     Capture,
@@ -30,7 +30,7 @@ from pyagentbrowser.domains import (
     Storage,
     Tabs,
 )
-from pyagentbrowser.launch import (
+from agentbrowser.launch import (
     BrowserSessionOptions,
     CDPAttach,
     LaunchConfiguration,
@@ -38,7 +38,7 @@ from pyagentbrowser.launch import (
 )
 
 if TYPE_CHECKING:
-    from pyagentbrowser.session import NativeSession
+    from agentbrowser.session import NativeSession
 
 _lock = RLock()
 _default_options: dict[str, Any] = {}
@@ -46,7 +46,7 @@ _default_browser: Browser | None = None
 
 
 class DefaultBrowserOptions(TypedDict, total=False):
-    """Keyword options accepted by `pyagentbrowser.notebook.configure()`."""
+    """Keyword options accepted by `agentbrowser.notebook.configure()`."""
 
     launch_options: LaunchOptions | None
     attach: CDPAttach | None
@@ -190,7 +190,7 @@ class _DefaultNamespaceProxy:
     def __repr__(self) -> str:
         with _lock:
             target = repr(_default_browser) if _default_browser is not None else "uncreated"
-        return f"<pyagentbrowser default namespace {self._name!r} for {target}>"
+        return f"<agentbrowser default namespace {self._name!r} for {target}>"
 
 
 active_frame = cast(ActiveFrame, _DefaultNamespaceProxy("active_frame"))

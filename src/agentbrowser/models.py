@@ -11,8 +11,8 @@ from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
-    from pyagentbrowser.agent import AgentSnapshot
-    from pyagentbrowser.agent_async import AsyncAgentSnapshot
+    from agentbrowser.agent import AgentSnapshot
+    from agentbrowser.agent_async import AsyncAgentSnapshot
 else:
     PILImage = Any
 

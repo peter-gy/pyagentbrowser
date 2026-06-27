@@ -8,13 +8,13 @@ from typing import Any, Protocol
 
 from typing_extensions import Self
 
-from pyagentbrowser._browser_common import (
+from agentbrowser._browser_common import (
     exclusive_source,
     normalize_url,
     snapshot_diff_from_data,
     validate_screenshot_wait_ms,
 )
-from pyagentbrowser.command_params import (
+from agentbrowser.command_params import (
     click_params,
     cookies_clear_params,
     cookies_get_params,
@@ -34,13 +34,13 @@ from pyagentbrowser.command_params import (
     wait_params,
     wheel_params,
 )
-from pyagentbrowser.domains import (
+from agentbrowser.domains import (
     _active_tab,
     _tab_selector,
     _tab_with_label,
     _xpath_selector,
 )
-from pyagentbrowser.models import (
+from agentbrowser.models import (
     BoundingBox,
     BrowserError,
     ConsoleMessage,

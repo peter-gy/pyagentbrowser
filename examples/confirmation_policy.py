@@ -1,4 +1,4 @@
-from pyagentbrowser import ActionConfirmationRequired, Browser, BrowserSessionOptions, LaunchOptions
+from agentbrowser import ActionConfirmationRequired, Browser, BrowserSessionOptions, LaunchOptions
 
 HTML = """
 <button>More information</button>

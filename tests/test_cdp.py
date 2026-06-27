@@ -10,8 +10,8 @@ from typing import Any, cast
 
 import pytest
 
-from pyagentbrowser import AgentBrowserError, AsyncBrowser, Browser
-from pyagentbrowser.cdp import (
+from agentbrowser import AgentBrowserError, AsyncBrowser, Browser
+from agentbrowser.cdp import (
     AsyncCDPClient,
     AsyncCDPController,
     AsyncCDPPageSession,
@@ -26,9 +26,9 @@ from pyagentbrowser.cdp import (
     CDPTargetAmbiguityError,
     CDPTimeoutError,
 )
-from pyagentbrowser.models import TabInfo
-from pyagentbrowser.session import NativeSession
-from pyagentbrowser.session_async import AsyncNativeSession
+from agentbrowser.models import TabInfo
+from agentbrowser.session import NativeSession
+from agentbrowser.session_async import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
@@ -631,7 +631,7 @@ def test_page_evaluate_without_context_uses_native_command() -> None:
 
 
 def _browser_with_public_path_cdp(monkeypatch: pytest.MonkeyPatch) -> Browser:
-    cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
+    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", PublicPathCDPClient)
     return Browser(native_session=NativeSession(native=PublicPathNative()))
 
@@ -665,7 +665,7 @@ def test_browser_cdp_frames_lookup_by_selector_uses_public_namespace(
 def test_browser_cdp_evaluate_uses_frame_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
+    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", PublicPathCDPClient)
 
     browser = Browser(native_session=NativeSession(native=PublicPathNative()))
@@ -760,7 +760,7 @@ def test_async_frame_context_evaluates_explicit_context() -> None:
 async def _async_browser_with_public_path_cdp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncBrowser:
-    cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
+    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "AsyncCDPClient", PublicPathAsyncCDPClient)
     return AsyncBrowser(native_session=AsyncNativeSession(native=PublicPathNative()))
 
@@ -806,7 +806,7 @@ def test_browser_async_cdp_frames_lookup_by_selector_uses_public_namespace(
 def test_browser_async_cdp_evaluate_uses_frame_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
+    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "AsyncCDPClient", PublicPathAsyncCDPClient)
 
     async def run() -> None:

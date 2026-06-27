@@ -7,9 +7,9 @@ from itertools import count
 from pathlib import Path
 from typing import Any, Protocol, cast
 
-from pyagentbrowser._allowlist import DomainAllowlist
-from pyagentbrowser._native import NativeBrowser
-from pyagentbrowser.models import (
+from agentbrowser._allowlist import DomainAllowlist
+from agentbrowser._native import NativeBrowser
+from agentbrowser.models import (
     OMIT,
     ActionConfirmationRequired,
     BrowserError,

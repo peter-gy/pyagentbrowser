@@ -16,8 +16,8 @@ from urllib.request import urlopen
 
 import pytest
 
-import pyagentbrowser as ab
-from pyagentbrowser import (
+import agentbrowser as ab
+from agentbrowser import (
     ActionConfirmationRequired,
     AsyncBrowser,
     Browser,
@@ -812,7 +812,7 @@ def test_confirmation_replay_uses_upstream_real_browser(chrome_path: Path) -> No
 @pytest.mark.xfail(
     reason=(
         "upstream responsebody currently races Network.getResponseBody. "
-        "pyagentbrowser treats responsebody as an upstream-owned native behavior"
+        "the SDK treats responsebody as an upstream-owned native behavior"
     ),
     strict=True,
 )

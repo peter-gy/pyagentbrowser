@@ -83,11 +83,11 @@ def _write_wheel(
 ) -> None:
     empty = set(empty or ())
     native_extensions = native_extensions or {
-        "pyagentbrowser/_native.cpython-314-darwin.so": b"native extension"
+        "agentbrowser/_native.cpython-314-darwin.so": b"native extension"
     }
     with zipfile.ZipFile(path, "w") as archive:
         for name in sorted(names):
-            if name == "pyagentbrowser/py.typed" or name in empty:
+            if name == "agentbrowser/py.typed" or name in empty:
                 archive.writestr(name, "")
             elif name.endswith((".py", ".pyi")):
                 archive.writestr(name, "# synthetic Python module\n")
@@ -138,16 +138,16 @@ def test_wheel_smoke_rejects_empty_python_modules(tmp_path: Path) -> None:
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
-        empty={"pyagentbrowser/browser.py"},
+        empty={"agentbrowser/browser.py"},
     )
 
     with pytest.raises(package_smoke.PackageSmokeError, match="empty Python modules"):
         package_smoke.check_wheel(wheel)
 
 
-def test_wheel_smoke_rejects_agentbrowser_package_payload(tmp_path: Path) -> None:
+def test_wheel_smoke_rejects_distribution_name_as_import_package(tmp_path: Path) -> None:
     wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
-    _write_wheel(wheel, WHEEL_PAYLOAD | {"agentbrowser/__init__.py"})
+    _write_wheel(wheel, WHEEL_PAYLOAD | {"pyagentbrowser/__init__.py"})
 
     with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
         package_smoke.check_wheel(wheel)
@@ -167,7 +167,7 @@ def test_wheel_smoke_rejects_empty_native_extension(tmp_path: Path) -> None:
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
-        native_extensions={"pyagentbrowser/_native.cpython-314-darwin.so": b""},
+        native_extensions={"agentbrowser/_native.cpython-314-darwin.so": b""},
     )
 
     with pytest.raises(package_smoke.PackageSmokeError, match="empty native extension"):
@@ -180,8 +180,8 @@ def test_wheel_smoke_rejects_multiple_native_extensions(tmp_path: Path) -> None:
         wheel,
         WHEEL_PAYLOAD,
         native_extensions={
-            "pyagentbrowser/_native.cpython-314-darwin.so": b"native extension",
-            "pyagentbrowser/_native.cpython-313-darwin.so": b"native extension",
+            "agentbrowser/_native.cpython-314-darwin.so": b"native extension",
+            "agentbrowser/_native.cpython-313-darwin.so": b"native extension",
         },
     )
 
@@ -194,7 +194,7 @@ def test_wheel_smoke_rejects_native_extension_tag_mismatch(tmp_path: Path) -> No
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
-        native_extensions={"pyagentbrowser/_native.cpython-313-darwin.so": b"native extension"},
+        native_extensions={"agentbrowser/_native.cpython-313-darwin.so": b"native extension"},
     )
 
     with pytest.raises(package_smoke.PackageSmokeError, match="wheel Python tag"):
@@ -223,9 +223,9 @@ def test_sdist_smoke_accepts_required_categories(tmp_path: Path) -> None:
 
 @pytest.mark.parametrize(
     "payload",
-    ["src/agentbrowser/__init__.py", "src/agentbrowser.py", "src/pyagentbrowser.py"],
+    ["src/pyagentbrowser/__init__.py", "src/pyagentbrowser.py", "pyagentbrowser/__init__.py"],
 )
-def test_sdist_smoke_rejects_agentbrowser_source_payload(
+def test_sdist_smoke_rejects_distribution_name_as_import_payload(
     tmp_path: Path,
     payload: str,
 ) -> None:

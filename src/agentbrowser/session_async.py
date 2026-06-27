@@ -10,13 +10,13 @@ from queue import Queue
 from threading import Event, Lock, Thread
 from typing import Any
 
-from pyagentbrowser._browser_common import (
+from agentbrowser._browser_common import (
     INTERNAL_SHUTDOWN_ACTION,
     action_closes_browser,
     response_data_mapping,
 )
-from pyagentbrowser.models import BrowserResponse, DashboardOptions, JSONValue, RestoreOptions
-from pyagentbrowser.session import (
+from agentbrowser.models import BrowserResponse, DashboardOptions, JSONValue, RestoreOptions
+from agentbrowser.session import (
     DEFAULT_TIMEOUT_MS,
     NativeEngine,
     NativeSession,

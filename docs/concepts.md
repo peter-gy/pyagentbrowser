@@ -31,12 +31,12 @@ The public API is grouped by responsibility:
 
 ## Default Session
 
-`pyagentbrowser.notebook` exposes namespace proxies over one process-local
+`agentbrowser.notebook` exposes namespace proxies over one process-local
 default browser:
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import LaunchOptions
+import agentbrowser as ab
+from agentbrowser import LaunchOptions
 
 ab.notebook.configure(launch_options=LaunchOptions(headless=True))
 ab.notebook.page.open("https://example.com")
@@ -47,8 +47,8 @@ ab.notebook.close()
 CDP attachment uses an explicit `connect()` call:
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import CDPAttach
+import agentbrowser as ab
+from agentbrowser import CDPAttach
 
 browser = ab.notebook.configure(attach=CDPAttach(port=9222))
 browser.connect()
@@ -72,8 +72,8 @@ Use `RestoreOptions` with a stable `session` when a browser should keep cookies
 and localStorage across runs:
 
 ```python
-import pyagentbrowser as ab
-from pyagentbrowser import Browser, RestoreOptions
+import agentbrowser as ab
+from agentbrowser import Browser, RestoreOptions
 
 session_id = ab.session_id(prefix="my-app").session
 
@@ -128,11 +128,11 @@ before they return unless the unsafe export option is used.
 
 ## Skills
 
-`pyagentbrowser.skills` exposes upstream `agent-browser` skill data embedded at
+`agentbrowser.skills` exposes upstream `agent-browser` skill data embedded at
 build time:
 
 ```python
-from pyagentbrowser import skills
+from agentbrowser import skills
 
 for skill in skills.list():
     print(skill.name, skill.description)

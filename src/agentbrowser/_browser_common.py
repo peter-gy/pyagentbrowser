@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, cast
 
-from pyagentbrowser.models import ActionConfirmationRequired, BrowserResponse, SnapshotDiff
+from agentbrowser.models import ActionConfirmationRequired, BrowserResponse, SnapshotDiff
 
 CDP_INVALIDATING_ACTIONS = frozenset(
     {

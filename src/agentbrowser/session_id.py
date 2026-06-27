@@ -4,7 +4,7 @@ import hashlib
 import subprocess
 from pathlib import Path
 
-from pyagentbrowser.models import SessionId, SessionIdScope
+from agentbrowser.models import SessionId, SessionIdScope
 
 
 def generate_session_id(

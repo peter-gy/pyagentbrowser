@@ -42,7 +42,7 @@ install: check-prereqs ## Initialize submodules and install the editable package
 clean: ## Remove generated build, test, cache, and local environment artifacts
 	rm -rf target crates/agent-browser-adapter/target build dist wheels *.egg-info
 	rm -rf .pytest_cache .ruff_cache .venv .venv[0-9]* .venvbuild[0-9]*
-	rm -f src/pyagentbrowser/_native*.so src/pyagentbrowser/_native*.pyd src/pyagentbrowser/_native*.dylib
+	rm -f src/agentbrowser/_native*.so src/agentbrowser/_native*.pyd src/agentbrowser/_native*.dylib
 	find $(PYTHON_SOURCES) -type d -name __pycache__ -prune -exec rm -rf {} +
 	find $(PYTHON_SOURCES) -type f \( -name '*.pyc' -o -name '*.pyo' \) -delete
 
@@ -87,7 +87,7 @@ test-python-matrix: ## Run pytest and native-extension smoke across PYTHON_VERSI
 	for version in $(PYTHON_VERSIONS); do \
 		env_name=$$(printf '%s' "$$version" | tr -d '.'); \
 		echo "==> Python $$version"; \
-		UV_PROJECT_ENVIRONMENT=.venv$$env_name uv run --python $$version python -c 'from pyagentbrowser import Browser; import pyagentbrowser._native as native; assert Browser; assert native.__agent_browser_version__'; \
+		UV_PROJECT_ENVIRONMENT=.venv$$env_name uv run --python $$version python -c 'from agentbrowser import Browser; import agentbrowser._native as native; assert Browser; assert native.__agent_browser_version__'; \
 		UV_PROJECT_ENVIRONMENT=.venv$$env_name uv run --python $$version pytest -q; \
 	done
 

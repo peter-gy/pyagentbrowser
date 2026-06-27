@@ -48,7 +48,7 @@ def test_prerelease_version_tracks_pinned_upstream_commit() -> None:
     project = tomli.loads((ROOT / "pyproject.toml").read_text())["project"]
     py_cargo = tomli.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
     adapter_cargo = tomli.loads((ROOT / "crates/agent-browser-adapter/Cargo.toml").read_text())
-    release = runpy.run_path(str(ROOT / "src/pyagentbrowser/_version.py"))
+    release = runpy.run_path(str(ROOT / "src/agentbrowser/_version.py"))
 
     upstream_tag = subprocess.check_output(
         [

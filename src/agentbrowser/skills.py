@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import Any
 
-from pyagentbrowser._native import skill_data_json
+from agentbrowser._native import skill_data_json
 
 _MAIN_SKILL_PATH = "SKILL.md"
 

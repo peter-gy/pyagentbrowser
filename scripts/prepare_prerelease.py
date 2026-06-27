@@ -115,7 +115,7 @@ def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str, str]:
         check=check,
     )
 
-    release_module = ROOT / "src" / "pyagentbrowser" / "_version.py"
+    release_module = ROOT / "src" / "agentbrowser" / "_version.py"
     release_module_text = "\n".join(
         [
             '"""Release metadata for the Python distribution and vendored upstream engine."""',
@@ -130,7 +130,7 @@ def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str, str]:
     )
     if check:
         if release_module.read_text() != release_module_text:
-            raise ReleaseVersionError("src/pyagentbrowser/_version.py is not synced")
+            raise ReleaseVersionError("src/agentbrowser/_version.py is not synced")
     else:
         release_module.write_text(release_module_text)
 

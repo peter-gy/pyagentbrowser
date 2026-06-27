@@ -1,4 +1,4 @@
-from pyagentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser, LaunchOptions
 
 HTML = """
 <main>

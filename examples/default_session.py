@@ -1,5 +1,5 @@
-import pyagentbrowser as ab
-from pyagentbrowser import BrowserSessionOptions, LaunchOptions
+import agentbrowser as ab
+from agentbrowser import BrowserSessionOptions, LaunchOptions
 
 ab.notebook.configure(
     launch_options=LaunchOptions(headless=True),

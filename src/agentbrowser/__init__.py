@@ -12,20 +12,20 @@ commands (https://agent-browser.dev/commands), selectors
 from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 
-from pyagentbrowser import skills
-from pyagentbrowser._browser_common import ConfirmationTarget
-from pyagentbrowser._native import __agent_browser_version__ as __upstream_version__
-from pyagentbrowser._version import PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM_COMMIT
-from pyagentbrowser.agent import Agent, AgentRef, AgentSnapshot, StaleAgentRefError
-from pyagentbrowser.agent_async import (
+from agentbrowser import skills
+from agentbrowser._browser_common import ConfirmationTarget
+from agentbrowser._native import __agent_browser_version__ as __upstream_version__
+from agentbrowser._version import PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM_COMMIT
+from agentbrowser.agent import Agent, AgentRef, AgentSnapshot, StaleAgentRefError
+from agentbrowser.agent_async import (
     AsyncAgent,
     AsyncAgentRef,
     AsyncAgentSnapshot,
     AsyncStaleAgentRefError,
 )
-from pyagentbrowser.browser import Browser, PendingAction
-from pyagentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
-from pyagentbrowser.cdp import (
+from agentbrowser.browser import Browser, PendingAction
+from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
+from agentbrowser.cdp import (
     AsyncExecutionContext,
     AsyncFrame,
     CDPClosedError,
@@ -43,8 +43,8 @@ from pyagentbrowser.cdp import (
     ExecutionContext,
     Frame,
 )
-from pyagentbrowser.launch import BrowserSessionOptions, CDPAttach, LaunchOptions
-from pyagentbrowser.models import (
+from agentbrowser.launch import BrowserSessionOptions, CDPAttach, LaunchOptions
+from agentbrowser.models import (
     ActionConfirmationRequired,
     ActionEvidence,
     AgentBrowserError,
@@ -74,8 +74,8 @@ from pyagentbrowser.models import (
     SnapshotRef,
     TabInfo,
 )
-from pyagentbrowser.session_id import generate_session_id as session_id
-from pyagentbrowser.skills import Skill, SkillFile, SkillPart
+from agentbrowser.session_id import generate_session_id as session_id
+from agentbrowser.skills import Skill, SkillFile, SkillPart
 
 try:
     __version__ = version(PACKAGE_NAME)
@@ -85,7 +85,7 @@ except PackageNotFoundError:
 __agent_browser_version__ = __upstream_version__
 __agent_browser_commit__ = UPSTREAM_COMMIT
 __upstream_commit__ = UPSTREAM_COMMIT
-notebook = import_module("pyagentbrowser.notebook")
+notebook = import_module("agentbrowser.notebook")
 
 __all__ = [
     "ActionConfirmationRequired",

@@ -5,8 +5,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from pyagentbrowser.command_params import optional
-from pyagentbrowser.models import (
+from agentbrowser.command_params import optional
+from agentbrowser.models import (
     ColorScheme,
     ProxyConfig,
     RestoreOptions,

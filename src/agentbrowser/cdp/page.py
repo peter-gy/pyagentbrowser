@@ -3,8 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from pyagentbrowser.cdp._protocol import _is_stale_context_error, _runtime_evaluate_value
-from pyagentbrowser.cdp._resolution import (
+from agentbrowser.cdp._protocol import _is_stale_context_error, _runtime_evaluate_value
+from agentbrowser.cdp._resolution import (
     _async_context_from_event,
     _context_matches_extension,
     _extract_frame_id,
@@ -12,12 +12,12 @@ from pyagentbrowser.cdp._resolution import (
     _single_frame,
     _sync_context_from_event,
 )
-from pyagentbrowser.cdp.errors import (
+from agentbrowser.cdp.errors import (
     CDPFrameNotFoundError,
     CDPProtocolError,
     CDPStaleObjectError,
 )
-from pyagentbrowser.cdp.models import (
+from agentbrowser.cdp.models import (
     AsyncContextPredicate,
     AsyncExecutionContext,
     AsyncFrame,
@@ -25,7 +25,7 @@ from pyagentbrowser.cdp.models import (
     ExecutionContext,
     Frame,
 )
-from pyagentbrowser.cdp.transport import AsyncCDPTransport, SyncCDPTransport
+from agentbrowser.cdp.transport import AsyncCDPTransport, SyncCDPTransport
 
 
 class CDPPageSession:

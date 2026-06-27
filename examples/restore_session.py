@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import pyagentbrowser as ab
-from pyagentbrowser import Browser, RestoreOptions
+import agentbrowser as ab
+from agentbrowser import Browser, RestoreOptions
 
 session_id = ab.session_id(prefix="docs").session
 

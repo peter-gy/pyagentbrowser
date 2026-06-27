@@ -11,7 +11,7 @@ builds the native extension in editable mode.
 
 ## Repository Map
 
-- `src/pyagentbrowser/`: Python SDK.
+- `src/agentbrowser/`: Python SDK.
 - `crates/pyagentbrowser/`: PyO3 Rust crate for the native extension.
 - `crates/agent-browser-adapter/`: first-party Rust adapter and generated
   upstream source shims.
