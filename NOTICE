@@ -1,0 +1,12 @@
+pyagentbrowser
+Copyright 2026 Péter Ferenc Gyarmati
+
+pyagentbrowser embeds and adapts Apache-2.0 source from the Vercel Labs
+agent-browser project.
+
+Upstream project: https://github.com/vercel-labs/agent-browser
+Development reference checkout: /Users/petergy/Projects/opensource/vercel-labs/agent-browser
+Upstream license: third_party/agent-browser/LICENSE
+
+pyagentbrowser is an independent project. It is not affiliated with, endorsed
+by, or sponsored by Vercel Inc. or Vercel Labs.

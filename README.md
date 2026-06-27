@@ -4,10 +4,9 @@
 [![Release Check](https://github.com/peter-gy/pyagentbrowser/actions/workflows/check-release.yml/badge.svg)](https://github.com/peter-gy/pyagentbrowser/actions/workflows/check-release.yml)
 [![License](https://img.shields.io/github/license/peter-gy/pyagentbrowser)](LICENSE)
 
-The `pyagentbrowser` distribution drives the native Rust `agent-browser` engine
-from Python. Import it as `agentbrowser`. It exposes page navigation, browser
-snapshots, element refs, action evidence, screenshots, cookies, storage, native
-active-frame state, and CDP helpers through one Python package.
+`pyagentbrowser` gives Python a native browser controller for Chrome. Import it
+as `agentbrowser` and drive pages through `page`, `find`, `agent`, `capture`,
+`tabs`, `network`, and `cdp`.
 
 ```bash
 python -m pip install pyagentbrowser
@@ -16,101 +15,72 @@ python -m pip install pyagentbrowser
 Requires Python 3.11 through 3.14 on macOS or Linux, with Chrome or Chromium
 available on the host.
 
-## Usage
+## Use
 
-```python
-from agentbrowser import Browser, LaunchOptions
-
-with Browser.launch(LaunchOptions(headless=True)) as browser:
-    browser.page.set_content(
-        """
-        <h1>Example catalog</h1>
-        <button>More information</button>
-        <p id="status"></p>
-        <script>
-        document.querySelector("button").addEventListener("click", () => {
-          document.querySelector("#status").textContent = "Details loaded"
-        })
-        </script>
-        """
-    )
-
-    page = browser.agent.observe()
-    print(page.text)
-
-    browser.find.text("More information").click()
-    print(browser.find.css("#status").text())
-```
-
-Snapshot refs stay tied to the page state that created them. After navigation
-or a large DOM update, call `browser.agent.observe()` again and continue from
-the new snapshot.
-
-For notebooks and REPL sessions, `agentbrowser.notebook` exposes one process-local
-default browser:
+The package root owns one process-local browser for REPLs, notebooks, and short
+scripts.
 
 ```python
 import agentbrowser as ab
-from agentbrowser import LaunchOptions
 
-ab.notebook.configure(launch_options=LaunchOptions(headless=True))
-ab.notebook.page.set_content(
-    """
-    <h1>Notebook page</h1>
-    <button>More information</button>
-    <p id="status"></p>
-    <script>
-    document.querySelector("button").addEventListener("click", () => {
-      document.querySelector("#status").textContent = "Notebook details loaded"
-    })
-    </script>
-    """
-)
+ab.configure(launch={"headless": True})
+try:
+    ab.page.open("https://example.com")
+    page = ab.agent.observe()
+    print(page.text)
 
-page = ab.notebook.agent.observe()
-ab.notebook.find.text("More information").click()
-
-print(page.text)
-print(ab.notebook.find.css("#status").text())
-ab.notebook.close()
+    ab.find.text("Learn more").click()
+    ab.page.wait_for_url("*://www.iana.org/*")
+    print(ab.page.url())
+finally:
+    ab.close()
 ```
 
-Use `ab.notebook.reset(force=True)` after an interrupted notebook run when the native
-browser state should be discarded.
+`ab.reset(force=True)` discards the default browser after an interrupted run.
 
-## Capabilities
+Use `Browser` when a browser needs an explicit lifetime or when a program owns
+more than one session.
 
-- **Native browser control:** Launch Chrome, attach over CDP, navigate pages,
-  switch tabs, wait for readiness, and close sessions.
-- **Snapshot-driven actions:** Observe an accessibility snapshot, find refs by
-  text, role, name, CSS, or XPath, then fill, click, press, or inspect the
-  matching element.
-- **Evidence after actions:** Use `click_and_observe()` to capture the next
-  page snapshot and a text diff after a click.
-- **Artifacts and state:** Capture screenshots, save and restore browser state,
-  derive stable session ids, inspect cookies, storage, network entries, CDP
-  frames, and native active-frame state.
-- **Typed escape hatches:** Call `browser.native.execute(action, **params)` for
-  raw native responses, or use `browser.cdp` for CDP frame and
-  execution-context work.
+```python
+from agentbrowser import Browser
 
-## Optional Extras
+with Browser.launch({"headless": True}) as browser:
+    browser.page.open("https://example.com")
+    print(browser.page.title())
+```
+
+## Workflows
+
+- Navigate pages, wait for load states, switch tabs, and attach to running
+  Chrome through CDP.
+- Observe accessibility snapshots, resolve refs by text, role, name, CSS, or
+  XPath, then click, fill, press, or inspect matching elements.
+- Capture action evidence with `click_and_observe()` and
+  `fill_and_observe()`.
+- Save screenshots, PDFs, cookies, storage state, network logs, console output,
+  and session restore data.
+- Drop to `browser.native.execute(...)` for raw native commands or `browser.cdp`
+  for frame and execution-context work.
+
+## Extras
 
 ```bash
 python -m pip install "pyagentbrowser[images]"
 python -m pip install "pyagentbrowser[cdp]"
 ```
 
-`images` adds Pillow helpers for screenshots. `cdp` adds websocket-backed CDP
-frame and context evaluation.
+`images` adds Pillow helpers for screenshots. `cdp` adds WebSocket-backed frame,
+target, and execution-context evaluation.
 
-## Resources
+## Docs
 
 - [Install](docs/install.md)
 - [Quickstart](docs/quickstart.md)
-- [Concepts](docs/concepts.md)
 - [API reference](docs/api-reference.md)
 - [Examples](examples/)
-- [Choosing a tool](docs/choosing-a-tool.md)
-- [Development](docs/development.md)
-- [Security](SECURITY.md)
+
+## Acknowledgements
+
+Built with Apache-2.0 source from Vercel Labs'
+[`agent-browser`](https://github.com/vercel-labs/agent-browser). This project
+is independent and not affiliated with Vercel.

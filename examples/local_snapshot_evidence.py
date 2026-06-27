@@ -1,4 +1,4 @@
-from agentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser
 
 HTML = """
 <label>Email <input aria-label="Email" /></label>
@@ -12,7 +12,7 @@ document.querySelector("button").addEventListener("click", () => {
 """
 
 
-with Browser.launch(LaunchOptions(headless=True)) as browser:
+with Browser.launch({"headless": True}) as browser:
     browser.page.set_content(HTML)
 
     page = browser.agent.observe()

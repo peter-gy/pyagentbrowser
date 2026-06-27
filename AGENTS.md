@@ -11,15 +11,13 @@ Python SDK for the native Rust `agent-browser` engine. The package name is
 - Wheel/sdist smoke: `make package`
 - Release gate: `make check-release`
 
-Use `make help` for the supported target list.
-
 ## Repo Map
 
 - `src/agentbrowser/`: public Python SDK.
 - `crates/pyagentbrowser/`: PyO3 Rust crate for the native extension.
 - `crates/agent-browser-adapter/`: first-party Rust adapter and generated source shims.
 - `third_party/agent-browser/`: upstream submodule. Do not edit it directly.
-- `docs/`: user docs, with maintainer boundary docs under `docs/internals/`.
+- `docs/`: essential user docs.
 - `examples/`: maintained public-API examples.
 - `scripts/package_smoke.py`: artifact boundary checks.
 
@@ -31,8 +29,7 @@ Use `make help` for the supported target list.
   `browser.active_frame`, `browser.cdp.frames`, `browser.scripts`, and matching
   async surfaces.
 - Do not patch `third_party/agent-browser`. Native behavior differences must be
-  generated in `OUT_DIR`, documented in `docs/adr/0001-native-safety-patches.md`,
-  and covered by tests.
+  generated in `OUT_DIR` and covered by tests.
 - Update examples and docs in the same change as public API changes.
 - Run `make check` for normal handoff changes. Add `make test-integration` for
   browser behavior, `make package` for artifact changes, and `make check-release`

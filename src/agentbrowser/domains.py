@@ -91,6 +91,12 @@ class Page:
     def open(self, url: str, *, wait_until: LoadState = "load") -> Mapping[str, Any]:
         """Navigate the current page to a URL.
 
+        Example:
+            ```python
+            browser.page.open("https://example.com")
+            print(browser.page.title())
+            ```
+
         Parameters
         ----------
         url
@@ -138,7 +144,17 @@ class Page:
         headers: Mapping[str, str] | None = None,
         allowed_domains: Sequence[str] | None = None,
     ) -> ReadResult:
-        """Return agent-readable content for a URL or the active page."""
+        """Return agent-readable content for a URL or the active page.
+
+        Example:
+            ```python
+            result = browser.page.read(
+                "https://example.com",
+                mode=ReadMode.markdown(require=True),
+            )
+            print(result.content)
+            ```
+        """
         if url is None and not self.browser.is_launched:
             self.browser.launch_process()
         normalized_url = normalize_url(url) if url is not None else None

@@ -1,22 +1,11 @@
-from agentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser
 
-HTML = """
-<h1>Product page</h1>
-<button>More details</button>
-<section id="details" hidden>Details loaded</section>
-<script>
-document.querySelector("button").addEventListener("click", () => {
-  document.querySelector("#details").hidden = false;
-});
-</script>
-"""
-
-with Browser.launch(LaunchOptions(headless=True)) as browser:
-    browser.page.set_content(HTML)
+with Browser.launch({"headless": True}) as browser:
+    browser.page.open("https://example.com")
 
     page = browser.agent.observe()
-    button = page.find(role="button", contains="More")
-    evidence = button.click_and_observe(wait_for_text="Details loaded")
+    link = page.find(role="link", name="Learn more")
+    evidence = link.click_and_observe(wait_for_url="*://www.iana.org/*")
 
     print(evidence.target)
     print(evidence.after.text)

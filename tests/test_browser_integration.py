@@ -24,7 +24,6 @@ from agentbrowser import (
     BrowserError,
     BrowserSessionOptions,
     CDPAttach,
-    LaunchOptions,
     Screenshot,
     Snapshot,
 )
@@ -41,23 +40,23 @@ class LocalSite:
 def _browser(chrome_path: Path) -> Browser:
     return Browser.from_session(
         f"pytest-{time.monotonic_ns()}",
-        launch_options=LaunchOptions(executable_path=chrome_path),
-        session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+        launch={"executable_path": chrome_path},
+        session=BrowserSessionOptions(default_timeout_ms=5_000),
     )
 
 
 def _async_browser(chrome_path: Path) -> AsyncBrowser:
     return AsyncBrowser.from_session(
         f"pytest-async-{time.monotonic_ns()}",
-        launch_options=LaunchOptions(executable_path=chrome_path),
-        session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+        launch={"executable_path": chrome_path},
+        session=BrowserSessionOptions(default_timeout_ms=5_000),
     )
 
 
-def _configure_notebook(chrome_path: Path) -> Browser:
-    return ab.notebook.configure(
-        launch_options=LaunchOptions(executable_path=chrome_path),
-        session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+def _configure_default_browser(chrome_path: Path) -> Browser:
+    return ab.configure(
+        launch={"executable_path": chrome_path},
+        session=BrowserSessionOptions(default_timeout_ms=5_000),
     )
 
 
@@ -288,14 +287,14 @@ def test_default_session_page_namespace_drives_real_browser(
     local_site: LocalSite,
 ) -> None:
     _write_default_session_page(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
 
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        ab.page.open(f"{local_site.base_url}/index.html")
 
-        assert ab.notebook.page.title() == "Default session host"
+        assert ab.page.title() == "Default session host"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_default_session_find_namespace_drives_real_browser(
@@ -303,16 +302,16 @@ def test_default_session_find_namespace_drives_real_browser(
     local_site: LocalSite,
 ) -> None:
     _write_default_session_page(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
 
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
-        ab.notebook.find.css("#go").click()
-        ab.notebook.page.wait_for_text("default clicked")
+        ab.page.open(f"{local_site.base_url}/index.html")
+        ab.find.css("#go").click()
+        ab.page.wait_for_text("default clicked")
 
-        assert ab.notebook.find.css("#out").text() == "default clicked"
+        assert ab.find.css("#out").text() == "default clicked"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_default_session_capture_namespace_writes_screenshot(
@@ -321,26 +320,26 @@ def test_default_session_capture_namespace_writes_screenshot(
     tmp_path: Path,
 ) -> None:
     _write_default_session_page(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
 
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
-        shot = ab.notebook.capture.screenshot(tmp_path / "default-session.png")
+        ab.page.open(f"{local_site.base_url}/index.html")
+        shot = ab.capture.screenshot(tmp_path / "default-session.png")
 
         assert shot.path.exists()
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_default_session_reset_creates_new_configured_browser(chrome_path: Path) -> None:
-    first_browser = _configure_notebook(chrome_path)
+    first_browser = _configure_default_browser(chrome_path)
 
     try:
-        ab.notebook.reset()
-        second_browser = _configure_notebook(chrome_path)
+        ab.reset()
+        second_browser = _configure_default_browser(chrome_path)
         assert second_browser is not first_browser
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def _write_default_frame_site(local_site: LocalSite) -> None:
@@ -363,13 +362,13 @@ def test_default_session_cdp_frames_list_discovers_real_frame(
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        ab.page.open(f"{local_site.base_url}/index.html")
 
-        assert any(item.url.endswith("/frame.html") for item in ab.notebook.cdp.frames.list())
+        assert any(item.url.endswith("/frame.html") for item in ab.cdp.frames.list())
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_default_session_cdp_frames_selector_returns_real_frame(
@@ -377,14 +376,14 @@ def test_default_session_cdp_frames_selector_returns_real_frame(
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
-        frame = ab.notebook.cdp.frames.get(selector="#child")
+        ab.page.open(f"{local_site.base_url}/index.html")
+        frame = ab.cdp.frames.get(selector="#child")
 
         assert frame.url.endswith("/frame.html")
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_default_session_frame_handle_evaluates_selected_frame(
@@ -392,14 +391,14 @@ def test_default_session_frame_handle_evaluates_selected_frame(
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
-        frame = ab.notebook.cdp.frames.get(selector="#child")
+        ab.page.open(f"{local_site.base_url}/index.html")
+        frame = ab.cdp.frames.get(selector="#child")
 
         assert frame.evaluate("document.title") == "Default child"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_default_session_cdp_namespace_evaluates_selected_frame(
@@ -407,13 +406,13 @@ def test_default_session_cdp_namespace_evaluates_selected_frame(
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    _configure_notebook(chrome_path)
+    _configure_default_browser(chrome_path)
     try:
-        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        ab.page.open(f"{local_site.base_url}/index.html")
 
-        assert ab.notebook.cdp.evaluate("document.title", frame="#child") == "Default child"
+        assert ab.cdp.evaluate("document.title", frame="#child") == "Default child"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def _write_named_frame_site(local_site: LocalSite) -> None:
@@ -789,8 +788,8 @@ def test_confirmation_replay_uses_upstream_real_browser(chrome_path: Path) -> No
 
     with Browser.from_session(
         f"pytest-confirm-{time.monotonic_ns()}",
-        launch_options=LaunchOptions(executable_path=chrome_path),
-        session_options=BrowserSessionOptions(
+        launch={"executable_path": chrome_path},
+        session=BrowserSessionOptions(
             confirm_actions=["click"],
             default_timeout_ms=5_000,
         ),
@@ -884,9 +883,7 @@ def test_download_helper_writes_real_file(
     download_path = tmp_path / "downloaded.txt"
 
     with _browser(chrome_path) as browser:
-        browser.launch_process(
-            options=LaunchOptions(executable_path=chrome_path, download_path=tmp_path)
-        )
+        browser.launch_process(options={"executable_path": chrome_path, "download_path": tmp_path})
         browser.page.open(f"{local_site.base_url}/index.html")
         downloaded = browser.downloads.download("#download", download_path)
 
@@ -959,7 +956,7 @@ def test_browser_can_attach_to_existing_chrome_cdp(chrome_path: Path, tmp_path: 
 
         with Browser.attach(
             CDPAttach(port=port),
-            session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+            session=BrowserSessionOptions(default_timeout_ms=5_000),
         ) as browser:
             assert browser.tabs.list()
             browser.page.open(_data_url("<title>Attached</title><h1>CDP attach</h1>"))
@@ -992,9 +989,9 @@ def test_default_configure_attaches_to_existing_chrome_cdp_before_navigation(
         if not _wait_for_cdp(port):
             pytest.skip("Chrome CDP endpoint did not become ready")
 
-        browser = ab.notebook.configure(
+        browser = ab.configure(
             attach=CDPAttach(port=port),
-            session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+            session=BrowserSessionOptions(default_timeout_ms=5_000),
         )
 
         assert browser.is_launched is False
@@ -1002,7 +999,7 @@ def test_default_configure_attaches_to_existing_chrome_cdp_before_navigation(
         assert browser.is_launched is True
         assert browser.tabs.list()
     finally:
-        ab.notebook.reset()
+        ab.reset()
         _stop_process(process)
 
 
@@ -1080,8 +1077,8 @@ def test_state_load_filters_storage_state_by_allowlist(
 
     with Browser.from_session(
         f"pytest-state-load-{time.monotonic_ns()}",
-        launch_options=LaunchOptions(executable_path=chrome_path),
-        session_options=BrowserSessionOptions(
+        launch={"executable_path": chrome_path},
+        session=BrowserSessionOptions(
             allowed_domains="127.0.0.1",
             default_timeout_ms=5_000,
         ),
@@ -1110,8 +1107,8 @@ def test_state_save_filters_storage_state_by_allowlist(
 
     with Browser.from_session(
         f"pytest-state-save-{time.monotonic_ns()}",
-        launch_options=LaunchOptions(executable_path=chrome_path),
-        session_options=BrowserSessionOptions(
+        launch={"executable_path": chrome_path},
+        session=BrowserSessionOptions(
             allowed_domains="127.0.0.1",
             default_timeout_ms=5_000,
         ),

@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, TypeAlias, TypedDict
 
 from agentbrowser.command_params import optional
 from agentbrowser.models import (
@@ -37,6 +37,29 @@ class LaunchOptions:
     download_path: str | Path | None = None
 
 
+class LaunchOptionsDict(TypedDict, total=False):
+    """Mapping form accepted anywhere `LaunchOptions` is accepted."""
+
+    headless: bool
+    executable_path: str | Path | None
+    engine: str | None
+    profile: str | Path | None
+    storage_state: str | Path | None
+    extensions: Sequence[str | Path]
+    proxy: str | ProxyConfig | Mapping[str, Any] | None
+    provider: str | None
+    color_scheme: ColorScheme | None
+    hide_scrollbars: bool | None
+    args: Sequence[str]
+    allow_file_access: bool
+    ignore_https_errors: bool
+    user_agent: str | None
+    download_path: str | Path | None
+
+
+LaunchOptionsInput: TypeAlias = LaunchOptions | LaunchOptionsDict | Mapping[str, Any]
+
+
 @dataclass(frozen=True, slots=True)
 class CDPAttach:
     """CDP attachment target used by `Browser.attach(...)`."""
@@ -48,6 +71,17 @@ class CDPAttach:
     def __post_init__(self) -> None:
         if (self.url is None) == (self.port is None):
             raise ValueError("pass exactly one of url or port")
+
+
+class CDPAttachDict(TypedDict, total=False):
+    """Mapping form accepted anywhere `CDPAttach` is accepted."""
+
+    url: str | None
+    port: int | None
+    auto_connect: bool
+
+
+CDPAttachInput: TypeAlias = CDPAttach | CDPAttachDict | Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)
@@ -62,6 +96,57 @@ class BrowserSessionOptions:
     action_policy: str | Path | None = None
     confirm_actions: Sequence[str] | None = None
     no_auto_dialog: bool = False
+
+
+class BrowserSessionOptionsDict(TypedDict, total=False):
+    """Mapping form accepted anywhere `BrowserSessionOptions` is accepted."""
+
+    session_id: str | None
+    restore: RestoreOptions | None
+    namespace: str | None
+    default_timeout_ms: int | None
+    allowed_domains: str | None
+    action_policy: str | Path | None
+    confirm_actions: Sequence[str] | None
+    no_auto_dialog: bool
+
+
+BrowserSessionOptionsInput: TypeAlias = (
+    BrowserSessionOptions | BrowserSessionOptionsDict | Mapping[str, Any]
+)
+
+
+def normalize_launch(options: LaunchOptionsInput | None = None) -> LaunchOptions:
+    """Return normalized browser process options."""
+    if options is None:
+        return LaunchOptions()
+    if isinstance(options, LaunchOptions):
+        return options
+    if isinstance(options, Mapping):
+        return LaunchOptions(**dict(options))
+    raise TypeError("launch options must be LaunchOptions or a mapping")
+
+
+def cdp_attach(target: CDPAttachInput) -> CDPAttach:
+    """Return a normalized CDP attachment target."""
+    if isinstance(target, CDPAttach):
+        return target
+    if isinstance(target, Mapping):
+        return CDPAttach(**dict(target))
+    raise TypeError("attach target must be CDPAttach or a mapping")
+
+
+def normalize_session(
+    options: BrowserSessionOptionsInput | None = None,
+) -> BrowserSessionOptions:
+    """Return normalized browser session options."""
+    if options is None:
+        return BrowserSessionOptions()
+    if isinstance(options, BrowserSessionOptions):
+        return options
+    if isinstance(options, Mapping):
+        return BrowserSessionOptions(**dict(options))
+    raise TypeError("session options must be BrowserSessionOptions or a mapping")
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,13 +226,14 @@ class LaunchConfiguration:
     @classmethod
     def from_public_options(
         cls,
-        options: LaunchOptions | None = None,
+        options: LaunchOptionsInput | None = None,
         *,
-        attach: CDPAttach | None = None,
+        attach: CDPAttachInput | None = None,
         allowed_domains: str | None = None,
     ) -> LaunchConfiguration:
         """Build a launch configuration from named public option objects."""
-        options = options or LaunchOptions()
+        options = normalize_launch(options)
+        target = cdp_attach(attach) if attach is not None else None
         return cls.from_options(
             headless=options.headless,
             executable_path=options.executable_path,
@@ -158,9 +244,9 @@ class LaunchConfiguration:
             extensions=options.extensions,
             proxy=options.proxy,
             provider=options.provider,
-            cdp_url=attach.url if attach is not None else None,
-            cdp_port=attach.port if attach is not None else None,
-            auto_connect=attach.auto_connect if attach is not None else False,
+            cdp_url=target.url if target is not None else None,
+            cdp_port=target.port if target is not None else None,
+            auto_connect=target.auto_connect if target is not None else False,
             color_scheme=options.color_scheme,
             hide_scrollbars=options.hide_scrollbars,
             args=options.args,
@@ -170,8 +256,9 @@ class LaunchConfiguration:
             download_path=options.download_path,
         )
 
-    def replace_launch_options(self, options: LaunchOptions) -> LaunchConfiguration:
+    def replace_launch(self, options: LaunchOptionsInput) -> LaunchConfiguration:
         """Return this configuration with browser process options replaced."""
+        options = normalize_launch(options)
         return replace(
             self,
             headless=options.headless,
@@ -194,10 +281,10 @@ class LaunchConfiguration:
     def command_params(
         self,
         *,
-        options: LaunchOptions | None = None,
+        options: LaunchOptionsInput | None = None,
     ) -> dict[str, Any]:
         """Return native command parameters for `launch`."""
-        config = self.replace_launch_options(options) if options is not None else self
+        config = self.replace_launch(options) if options is not None else self
         resolved_hide_scrollbars = config.hide_scrollbars
         return {
             "headless": config.headless,

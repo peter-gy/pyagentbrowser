@@ -5,11 +5,11 @@ The distribution package is `pyagentbrowser`. The import package is
 namespaced helpers over the native command protocol.
 
 ```python
-from agentbrowser import Browser, BrowserSessionOptions, LaunchOptions
+from agentbrowser import Browser
 
 with Browser.launch(
-    LaunchOptions(headless=True),
-    session_options=BrowserSessionOptions(allowed_domains="example.com"),
+    {"headless": True},
+    session={"allowed_domains": "example.com"},
 ) as browser:
     browser.page.open("https://example.com")
     page = browser.agent.observe()
@@ -21,7 +21,7 @@ with Browser.launch(
 ```python
 Browser(
     *,
-    session_options: BrowserSessionOptions | None = None,
+    session: BrowserSessionOptions | mapping | None = None,
     native_session: NativeSession | None = None,
 ) -> None
 ```
@@ -33,17 +33,17 @@ launch, attach, or restore lifecycle:
 
 ```python
 Browser.launch(
-    options: LaunchOptions | None = None,
+    options: LaunchOptions | mapping | None = None,
     *,
-    session_options: BrowserSessionOptions | None = None,
+    session: BrowserSessionOptions | mapping | None = None,
     native_session: NativeSession | None = None,
 ) -> Browser
 
 Browser.attach(
-    target: CDPAttach,
+    target: CDPAttach | mapping,
     *,
-    launch_options: LaunchOptions | None = None,
-    session_options: BrowserSessionOptions | None = None,
+    launch: LaunchOptions | mapping | None = None,
+    session: BrowserSessionOptions | mapping | None = None,
     native_session: NativeSession | None = None,
 ) -> Browser
 
@@ -51,8 +51,8 @@ Browser.from_session(
     session_id: str,
     *,
     restore: RestoreOptions | None = None,
-    launch_options: LaunchOptions | None = None,
-    session_options: BrowserSessionOptions | None = None,
+    launch: LaunchOptions | mapping | None = None,
+    session: BrowserSessionOptions | mapping | None = None,
     native_session: NativeSession | None = None,
 ) -> Browser
 ```
@@ -62,17 +62,17 @@ connects to the configured CDP target before returning. `Browser.from_session(..
 returns a lazy controller for a named native session and starts on the first
 browser command.
 
-`LaunchOptions` contains browser process settings such as `headless`,
-`executable_path`, `profile`, `storage_state`, `extensions`, `proxy`,
-`provider`, `color_scheme`, `hide_scrollbars`, `args`, `download_path`,
-`allow_file_access`, `ignore_https_errors`, and `user_agent`.
+Browser process options may be a `LaunchOptions` object or a mapping with keys
+such as `headless`, `executable_path`, `profile`, `storage_state`,
+`extensions`, `proxy`, `provider`, `color_scheme`, `hide_scrollbars`, `args`,
+`download_path`, `allow_file_access`, `ignore_https_errors`, and `user_agent`.
 
-`CDPAttach(url=...)` or `CDPAttach(port=...)` selects a running Chrome CDP
-target. Pass exactly one target.
+`CDPAttach(url=...)`, `CDPAttach(port=...)`, or an equivalent mapping selects a
+running Chrome CDP target. Pass exactly one target.
 
-`BrowserSessionOptions` contains session-owned settings: `session_id`,
-`restore`, `namespace`, `default_timeout_ms`, `allowed_domains`,
-`action_policy`, `confirm_actions`, and `no_auto_dialog`.
+Session options may be a `BrowserSessionOptions` object or a mapping with keys
+such as `session_id`, `restore`, `namespace`, `default_timeout_ms`,
+`allowed_domains`, `action_policy`, `confirm_actions`, and `no_auto_dialog`.
 
 `allowed_domains` accepts comma-separated exact hosts and wildcard suffixes such
 as `example.com`, `*.example.com`, `localhost`, and `::1`. When set, the SDK
@@ -106,12 +106,17 @@ Native commands run on one owner thread so browser state remains ordered while
 the event loop stays responsive.
 
 ```python
-from agentbrowser import AsyncBrowser, LaunchOptions
+from agentbrowser import AsyncBrowser
 
-browser = await AsyncBrowser.launch(LaunchOptions(headless=True))
+browser = await AsyncBrowser.launch({"headless": True})
 async with browser:
     await browser.page.open("https://example.com")
-    print(await browser.page.title())
+    page = await browser.agent.observe()
+    print(page.text)
+
+    await browser.find.text("Learn more").click()
+    await browser.page.wait_for_url("*://www.iana.org/*")
+    print(await browser.page.url())
 ```
 
 ## Core Methods
@@ -141,13 +146,13 @@ items = browser.native.data("raw_array", expect="any")
 ### `browser.launch_process(...)`
 
 Launches the native browser process using stored launch options. Pass
-`options=LaunchOptions(...)` to replace browser process options for that launch
-command. Returns native launch response data.
+`options={...}` or `options=LaunchOptions(...)` to replace browser process
+options for that launch command. Returns native launch response data.
 
 ### `browser.connect()`
 
 Connects to the CDP target configured by `Browser.attach(...)` or
-`agentbrowser.notebook.configure(attach=...)`. It does not navigate. Calling
+`agentbrowser.configure(attach=...)`. It does not navigate. Calling
 `connect()` on a process-launch browser raises `RuntimeError`.
 
 ### `browser.close(timeout=5.0)`
@@ -324,24 +329,24 @@ listed.
 
 ```python
 import agentbrowser as ab
-from agentbrowser import BrowserSessionOptions, LaunchOptions
 
-ab.notebook.configure(
-    launch_options=LaunchOptions(headless=True),
-    session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
-)
-ab.notebook.page.open("example.com")
-print(ab.notebook.page.title())
-ab.notebook.close()
+ab.configure(launch={"headless": True})
+try:
+    ab.page.open("https://example.com")
+    ab.find.text("Learn more").click()
+    ab.page.wait_for_url("*://www.iana.org/*")
+    print(ab.page.url())
+finally:
+    ab.close()
 ```
 
-### `agentbrowser.notebook.configure(force=False, **options)`
+### `agentbrowser.configure(force=False, **options)`
 
 Replaces the process-local default browser configuration and returns the new
-default `Browser`. Options are named lifecycle objects: `launch_options`,
-`attach`, `session_options`, and `native_session`. Browser launch and CDP
-attachment remain lazy. Call `browser.connect()` when a CDP attach should happen
-before navigation.
+default `Browser`. Options are named lifecycle inputs: `launch`, `attach`,
+`session`, and `native_session`. `launch`, `attach`, and `session` accept typed
+option objects or mappings. Browser launch and CDP attachment remain lazy. Call
+`browser.connect()` when a CDP attach should happen before navigation.
 
 `force=True` discards the previous default browser reference even if native
 close fails.
@@ -352,11 +357,11 @@ close fails.
 `close()` closes and clears the current handle while keeping configured
 defaults. `reset()` closes the handle and clears configured defaults.
 
-`agentbrowser.notebook` exposes default-browser accessors for every
+`agentbrowser` exposes default-browser accessors for every
 synchronous namespace: `page`, `agent`, `capture`, `cdp`, `clipboard`,
 `cookies`, `dialogs`, `diagnostics`, `diff`, `downloads`, `find`,
-`active_frame`, `keyboard`, `mouse`, `network`, `restore`, `runtime`, `scripts`,
-`state`, `storage`, and `tabs`.
+`active_frame`, `keyboard`, `mouse`, `native`, `network`, `restore`, `runtime`,
+`scripts`, `state`, `storage`, and `tabs`.
 `agentbrowser.session_id(...)` generates stable session ids without creating
 or touching a browser.
 
@@ -390,9 +395,9 @@ fields outside the typed SDK model.
 | Type | Fields and behavior |
 | --- | --- |
 | `DashboardOptions(port=None, cli_version=None)` | Dashboard startup options accepted by `browser.dashboard.start(...)`. `port` accepts `0` through `65535` and `0` requests an ephemeral port. `cli_version` must be non-empty when provided. |
-| `LaunchOptions(...)` | Browser process settings accepted by `Browser.launch(...)`, `AsyncBrowser.launch(...)`, `Browser.from_session(..., launch_options=...)`, notebook configuration, and `browser.launch_process(options=...)`. |
-| `CDPAttach(url=None, port=None, auto_connect=True)` | CDP attachment target accepted by `Browser.attach(...)`, `AsyncBrowser.attach(...)`, and notebook configuration. Exactly one of `url` or `port` is required. |
-| `BrowserSessionOptions(...)` | Native session settings accepted by `Browser(...)`, `Browser.launch(...)`, `Browser.attach(...)`, `Browser.from_session(...)`, and notebook configuration. `default_timeout_ms` defaults to `15_000`. |
+| `LaunchOptions(...)` and `LaunchOptionsDict` | Browser process settings accepted by `Browser.launch(...)`, `AsyncBrowser.launch(...)`, `Browser.from_session(..., launch=...)`, `agentbrowser.configure(launch=...)`, and `browser.launch_process(options=...)`. |
+| `CDPAttach(url=None, port=None, auto_connect=True)` and `CDPAttachDict` | CDP attachment target accepted by `Browser.attach(...)`, `AsyncBrowser.attach(...)`, and `agentbrowser.configure(attach=...)`. Exactly one of `url` or `port` is required. |
+| `BrowserSessionOptions(...)` and `BrowserSessionOptionsDict` | Native session settings accepted by `Browser(...)`, `Browser.launch(...)`, `Browser.attach(...)`, `Browser.from_session(...)`, and `agentbrowser.configure(session=...)`. `default_timeout_ms` defaults to `15_000`. |
 | `ProxyConfig(server, bypass=None, username=None, password=None)` | Browser proxy configuration accepted by `LaunchOptions(proxy=...)`. `as_command_value()` serializes only populated fields. |
 | `RestoreOptions(key, save=None, check_url=None, check_text=None, check_fn=None)` | Browser restore configuration accepted by `BrowserSessionOptions(restore=...)` and `Browser.from_session(..., restore=...)`. `key` is the persistence key. `save` controls auto-save. The check fields validate the restored page before auto-save. |
 | `RouteResponse(status=None, body=None, content_type=None, headers=None)` | Static route response accepted by `browser.network.route(response=...)`. `headers` is a mapping of response header names to strings. `as_command_value()` serializes `content_type` as `contentType` for native execution. |

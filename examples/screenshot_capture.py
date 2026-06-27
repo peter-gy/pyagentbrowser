@@ -1,6 +1,6 @@
-from agentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser
 
-with Browser.launch(LaunchOptions(headless=True, hide_scrollbars=False)) as browser:
+with Browser.launch({"headless": True, "hide_scrollbars": False}) as browser:
     browser.page.open("https://example.com")
     shot = browser.capture.screenshot("page.png", full_page=True)
 

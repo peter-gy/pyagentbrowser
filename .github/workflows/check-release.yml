@@ -31,8 +31,6 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-    env:
-      PYTHON_VERSIONS: "3.11 3.12 3.13 3.14"
     steps:
       - uses: actions/checkout@v6
         with:
@@ -41,3 +39,6 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: make prerelease-version-check
       - run: make package
+      - run: uv run python scripts/verify-install-artifacts.py target/wheels
+        env:
+          PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.12 3.13 3.14"

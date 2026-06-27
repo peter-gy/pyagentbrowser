@@ -1,14 +1,14 @@
 import agentbrowser as ab
-from agentbrowser import BrowserSessionOptions, LaunchOptions
 
-ab.notebook.configure(
-    launch_options=LaunchOptions(headless=True),
-    session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
-)
+ab.configure(launch={"headless": True})
 try:
-    ab.notebook.page.open("example.com")
-    page = ab.notebook.agent.observe()
+    ab.page.open("https://example.com")
+    page = ab.agent.observe()
     print(page.text)
-    print(ab.notebook.page.title(), ab.notebook.page.url())
+
+    ab.find.text("Learn more").click()
+    ab.page.wait_for_url("*://www.iana.org/*")
+    print(ab.page.title())
+    print(ab.page.url())
 finally:
-    ab.notebook.close()
+    ab.close()

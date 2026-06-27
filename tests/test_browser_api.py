@@ -90,7 +90,7 @@ _BROWSER_NAMESPACE_NAMES = {
     "storage",
     "tabs",
 }
-_NOTEBOOK_NAMESPACE_NAMES = _BROWSER_NAMESPACE_NAMES - {"native"}
+_DEFAULT_NAMESPACE_NAMES = _BROWSER_NAMESPACE_NAMES
 
 _ROOT_EXPORT_CONTRACT = {
     "ActionConfirmationRequired",
@@ -102,7 +102,9 @@ _ROOT_EXPORT_CONTRACT = {
     "BrowserError",
     "BrowserResponse",
     "BrowserSessionOptions",
+    "BrowserSessionOptionsDict",
     "CDPAttach",
+    "CDPAttachDict",
     "CDPClosedError",
     "CDPError",
     "ConfirmationTarget",
@@ -110,6 +112,7 @@ _ROOT_EXPORT_CONTRACT = {
     "DashboardOptions",
     "Frame",
     "LaunchOptions",
+    "LaunchOptionsDict",
     "NativeParseError",
     "NetworkRequest",
     "PendingAction",
@@ -133,8 +136,12 @@ _ROOT_EXPORT_CONTRACT = {
     "__upstream_commit__",
     "__upstream_version__",
     "__version__",
-    "notebook",
+    "close",
+    "configure",
+    "default_browser",
+    "reset",
     "skills",
+    *_DEFAULT_NAMESPACE_NAMES,
 }
 
 
@@ -493,6 +500,7 @@ class ClipboardNative:
 class ReadmeWorkflowNative:
     def __init__(self) -> None:
         self.clicked_more = False
+        self.current_url = "https://example.com"
 
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
@@ -503,17 +511,20 @@ class ReadmeWorkflowNative:
             data = {}
         elif action == "snapshot":
             data = {
-                "snapshot": '@e1 [button] "More information"',
+                "snapshot": '@e1 [link] "Learn more"',
                 "origin": "https://example.com",
-                "refs": {"e1": {"role": "button", "name": "More information"}},
+                "refs": {"e1": {"role": "link", "name": "Learn more"}},
             }
-        elif action == "getbytext" and command.get("text") == "More information":
+        elif action == "getbytext" and command.get("text") == "Learn more":
             self.clicked_more = command.get("subaction") == "click"
+            self.current_url = "https://www.iana.org/help/example-domains"
+            data = {}
+        elif action == "wait" and command.get("url") == "*://www.iana.org/*":
             data = {}
         elif action == "title" and self.clicked_more:
-            data = {"title": "Example"}
+            data = {"title": "Example Domains"}
         elif action == "url" and self.clicked_more:
-            data = {"url": "https://example.com"}
+            data = {"url": self.current_url}
         elif action in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         else:
@@ -779,7 +790,7 @@ def test_restore_options_reject_invalid_key() -> None:
 def test_browser_rejects_ignored_native_session_restore_options() -> None:
     with pytest.raises(ValueError, match="restore must be set on NativeSession"):
         Browser(
-            session_options=BrowserSessionOptions(restore=RestoreOptions(key="login-state")),
+            session=BrowserSessionOptions(restore=RestoreOptions(key="login-state")),
             native_session=NativeSession(native=EchoNative()),
         )
 
@@ -841,24 +852,24 @@ def test_page_open_requires_url() -> None:
 
 
 def test_browser_connect_uses_constructor_cdp_options_without_navigation() -> None:
-    browser = ab.notebook.configure(
+    browser = ab.configure(
         force=True,
-        attach=CDPAttach(url="ws://127.0.0.1:9222/devtools/browser/test"),
+        attach={"url": "ws://127.0.0.1:9222/devtools/browser/test"},
         native_session=NativeSession(native=CdpConnectNative()),
     )
     try:
         assert browser.connect() == {"launched": True}
         assert browser.tabs.list()[0].id == "t1"
     finally:
-        ab.notebook.reset(force=True)
+        ab.reset(force=True)
 
 
 def test_browser_launch_classmethod_starts_with_named_options() -> None:
     native = EchoNative()
 
     browser = Browser.launch(
-        LaunchOptions(headless=False, hide_scrollbars=False),
-        session_options=BrowserSessionOptions(allowed_domains="example.com"),
+        {"headless": False, "hide_scrollbars": False},
+        session={"allowed_domains": "example.com"},
         native_session=NativeSession(native=native),
     )
 
@@ -871,8 +882,8 @@ def test_browser_launch_classmethod_starts_with_named_options() -> None:
 
 def test_browser_attach_classmethod_starts_cdp_target() -> None:
     browser = Browser.attach(
-        CDPAttach(port=52980),
-        launch_options=LaunchOptions(hide_scrollbars=False),
+        {"port": 52980},
+        launch={"hide_scrollbars": False},
         native_session=NativeSession(native=CdpPortConnectNative()),
     )
 
@@ -884,7 +895,7 @@ def test_browser_from_session_names_lazy_session_controller() -> None:
     browser = Browser.from_session(
         "next-loop",
         restore=RestoreOptions(key="next-loop"),
-        session_options=BrowserSessionOptions(allowed_domains="example.com"),
+        session={"allowed_domains": "example.com"},
     )
 
     assert isinstance(browser, Browser)
@@ -945,65 +956,63 @@ def test_browser_context_manager_surfaces_close_error_without_body_exception() -
 
 def test_default_session_keeps_handle_when_close_fails() -> None:
     native = CloseErrorNative()
-    browser = ab.notebook.configure(native_session=NativeSession(native=native))
+    browser = ab.configure(native_session=NativeSession(native=native))
     browser.launch_process()
 
     with pytest.raises(BrowserError) as exc_info:
-        ab.notebook.close()
+        ab.close()
 
     assert exc_info.value.action == "close"
-    assert ab.notebook.default_browser() is browser
+    assert ab.default_browser() is browser
     assert browser.is_launched is True
 
 
 def test_default_session_force_close_discards_stale_handle_when_close_fails() -> None:
     native = CloseErrorNative()
-    browser = ab.notebook.configure(native_session=NativeSession(native=native))
+    browser = ab.configure(native_session=NativeSession(native=native))
     browser.launch_process()
 
-    ab.notebook.close(force=True)
+    ab.close(force=True)
 
-    assert ab.notebook.default_browser() is not browser
+    assert ab.default_browser() is not browser
     assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
 def test_default_session_configure_rolls_back_when_old_browser_close_fails() -> None:
     native = CloseErrorNative()
-    original = ab.notebook.configure(native_session=NativeSession(native=native))
+    original = ab.configure(native_session=NativeSession(native=native))
     original.launch_process()
 
     with pytest.raises(BrowserError):
-        ab.notebook.configure(native_session=NativeSession(native=EchoNative()))
+        ab.configure(native_session=NativeSession(native=EchoNative()))
 
-    assert ab.notebook.default_browser() is original
+    assert ab.default_browser() is original
     assert original.is_launched is True
 
 
 def test_default_session_force_configure_recovers_from_stale_default_browser() -> None:
     native = CloseErrorNative()
-    original = ab.notebook.configure(native_session=NativeSession(native=native))
+    original = ab.configure(native_session=NativeSession(native=native))
     original.launch_process()
 
-    replacement = ab.notebook.configure(
-        force=True, native_session=NativeSession(native=EchoNative())
-    )
+    replacement = ab.configure(force=True, native_session=NativeSession(native=EchoNative()))
 
-    assert replacement is ab.notebook.default_browser()
+    assert replacement is ab.default_browser()
     assert replacement is not original
     assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
 def test_default_session_force_reset_discards_stale_handle_after_close_failure() -> None:
     native = CloseErrorNative()
-    browser = ab.notebook.configure(
-        launch_options=LaunchOptions(headless=False),
+    browser = ab.configure(
+        launch={"headless": False},
         native_session=NativeSession(native=native),
     )
     browser.launch_process()
 
-    ab.notebook.reset(force=True)
+    ab.reset(force=True)
 
-    assert ab.notebook.default_browser() is not browser
+    assert ab.default_browser() is not browser
     assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
@@ -1011,9 +1020,9 @@ def test_default_session_configure_keeps_cdp_attachment_explicit() -> None:
     native = CdpPortConnectNative()
 
     try:
-        browser = ab.notebook.configure(
-            attach=CDPAttach(port=52980),
-            launch_options=LaunchOptions(hide_scrollbars=False),
+        browser = ab.configure(
+            attach={"port": 52980},
+            launch={"hide_scrollbars": False},
             native_session=NativeSession(native=native),
         )
 
@@ -1021,9 +1030,9 @@ def test_default_session_configure_keeps_cdp_attachment_explicit() -> None:
         assert native.connected is False
         browser.connect()
         assert browser.is_launched is True
-        assert ab.notebook.tabs.list()[0].id == "t1"
+        assert ab.tabs.list()[0].id == "t1"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_confirm_helper_replays_pending_action() -> None:
@@ -1053,7 +1062,9 @@ def test_deny_helper_returns_native_denial() -> None:
 
 
 def _first_launch_command(
-    browser: Browser, native: EchoNative, options: LaunchOptions | None = None
+    browser: Browser,
+    native: EchoNative,
+    options: Any = None,
 ) -> dict[str, Any]:
     browser.launch_process(options=options)
     return native.commands[0]
@@ -1062,11 +1073,11 @@ def _first_launch_command(
 def test_start_serializes_configured_path_options() -> None:
     native = EchoNative()
     Browser.launch(
-        LaunchOptions(
-            profile=Path("profile"),
-            storage_state=Path("state.json"),
-            extensions=[Path("extension")],
-        ),
+        {
+            "profile": Path("profile"),
+            "storage_state": Path("state.json"),
+            "extensions": [Path("extension")],
+        },
         native_session=NativeSession(native=native),
     )
 
@@ -1080,11 +1091,16 @@ def test_start_serializes_configured_path_options() -> None:
 def test_start_serializes_named_connection_options() -> None:
     native = EchoNative()
     Browser.attach(
-        CDPAttach(url="ws://127.0.0.1:9222/devtools/browser/test"),
-        launch_options=LaunchOptions(
-            proxy=ProxyConfig("http://proxy:8080", bypass="localhost", username="u", password="p"),
-            provider="browserbase",
-        ),
+        {"url": "ws://127.0.0.1:9222/devtools/browser/test"},
+        launch={
+            "proxy": ProxyConfig(
+                "http://proxy:8080",
+                bypass="localhost",
+                username="u",
+                password="p",
+            ),
+            "provider": "browserbase",
+        },
         native_session=NativeSession(native=native),
     )
 
@@ -1125,14 +1141,14 @@ def test_start_serializes_configured_browser_args() -> None:
     assert command["args"] == ["--disable-gpu"]
 
 
-def test_start_serializes_explicit_launch_options() -> None:
+def test_start_serializes_explicit_launch_mapping() -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native))
 
     command = _first_launch_command(
         browser,
         native,
-        LaunchOptions(download_path=Path("downloads")),
+        {"download_path": Path("downloads")},
     )
 
     assert command["downloadPath"] == "downloads"
@@ -1150,7 +1166,7 @@ def test_dashboard_start_after_native_start_raises() -> None:
 def test_launch_uses_configured_default_execution_options() -> None:
     native = EchoNative()
     Browser.launch(
-        LaunchOptions(headless=False),
+        {"headless": False},
         native_session=NativeSession(native=native),
     )
 
@@ -1163,7 +1179,7 @@ def test_launch_uses_configured_default_allowlist() -> None:
     native = EchoNative()
     browser = Browser(
         native_session=NativeSession(native=native),
-        session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
+        session=BrowserSessionOptions(allowed_domains="*.example.com"),
     )
 
     command = _first_launch_command(browser, native)
@@ -1186,9 +1202,9 @@ def test_launch_uses_configured_default_display_options() -> None:
 
 def test_launch_call_options_override_configured_defaults() -> None:
     native = EchoNative()
-    browser = ab.notebook.configure(
+    browser = ab.configure(
         force=True,
-        launch_options=LaunchOptions(headless=False, hide_scrollbars=False),
+        launch={"headless": False, "hide_scrollbars": False},
         native_session=NativeSession(native=native),
     )
 
@@ -1196,10 +1212,10 @@ def test_launch_call_options_override_configured_defaults() -> None:
         command = _first_launch_command(
             browser,
             native,
-            LaunchOptions(headless=True, hide_scrollbars=True),
+            {"headless": True, "hide_scrollbars": True},
         )
     finally:
-        ab.notebook.reset(force=True)
+        ab.reset(force=True)
 
     assert command["headless"] is True
     assert command["hideScrollbars"] is True
@@ -1324,7 +1340,7 @@ def test_allowed_domains_preserve_confirmed_unsafe_cookie_export() -> None:
 def test_allowed_domains_applies_to_supplied_native_session() -> None:
     native = EchoNative()
     browser = Browser(
-        session_options=BrowserSessionOptions(allowed_domains="example.com"),
+        session=BrowserSessionOptions(allowed_domains="example.com"),
         native_session=NativeSession(native=native),
     )
 
@@ -1618,7 +1634,7 @@ def test_async_allowed_domains_applies_to_supplied_native_session() -> None:
 
     async def run() -> None:
         browser = AsyncBrowser(
-            session_options=BrowserSessionOptions(allowed_domains="example.com"),
+            session=BrowserSessionOptions(allowed_domains="example.com"),
             native_session=AsyncNativeSession(native=native),
         )
 
@@ -2199,109 +2215,107 @@ def test_screenshot_wait_ms_rejects_negative_values(tmp_path: Path) -> None:
 
 def test_package_root_default_browser_session_uses_configured_browser() -> None:
     native = EchoNative()
-    browser = ab.notebook.configure(
+    browser = ab.configure(
         native_session=NativeSession(native=native),
-        launch_options=LaunchOptions(headless=False),
-        session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
+        launch={"headless": False},
+        session={"allowed_domains": "*.example.com"},
     )
 
     try:
-        assert browser is ab.notebook.default_browser()
-        assert ab.notebook.page.title() == ""
+        assert browser is ab.default_browser()
+        assert ab.page.title() == ""
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_package_root_capture_namespace_returns_screenshot_view(tmp_path: Path) -> None:
     path = tmp_path / "page.png"
     path.write_bytes(b"fake png bytes")
-    ab.notebook.configure(native_session=NativeSession(native=ScreenshotNative(path)))
+    ab.configure(native_session=NativeSession(native=ScreenshotNative(path)))
 
     try:
-        shot = ab.notebook.capture.screenshot()
+        shot = ab.capture.screenshot()
         assert isinstance(shot, Screenshot)
         assert shot.path == path
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def _configure_package_root_cdp(monkeypatch: pytest.MonkeyPatch) -> None:
     cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", _PublicCDPClient)
-    ab.notebook.configure(native_session=NativeSession(native=_CDPNative()))
+    ab.configure(native_session=NativeSession(native=_CDPNative()))
 
 
-def test_notebook_cdp_frames_list_returns_frame_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_cdp_frames_list_returns_frame_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        frames = {frame.id: frame for frame in ab.notebook.cdp.frames.list()}
+        frames = {frame.id: frame for frame in ab.cdp.frames.list()}
         assert frames["main"].url == "https://example.com"
         assert frames["child"].name == "target"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
-def test_notebook_cdp_frames_get_by_url_returns_matching_frame(
+def test_default_cdp_frames_get_by_url_returns_matching_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.notebook.cdp.frames.get(url="https://example.com/one/frame").id == "child"
+        assert ab.cdp.frames.get(url="https://example.com/one/frame").id == "child"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_package_root_cdp_evaluate_uses_frame_selector(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.notebook.cdp.evaluate("document.title", frame="#target-frame").endswith("-child")
+        assert ab.cdp.evaluate("document.title", frame="#target-frame").endswith("-child")
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
-def test_notebook_cdp_frames_lookup_by_selector(
+def test_default_cdp_frames_lookup_by_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.notebook.cdp.frames.get(selector="#target-frame").id == "child"
+        assert ab.cdp.frames.get(selector="#target-frame").id == "child"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
-def test_notebook_cdp_frames_lookup_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_cdp_frames_lookup_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.notebook.cdp.frames.get(name="target").id == "child"
+        assert ab.cdp.frames.get(name="target").id == "child"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
-def test_notebook_active_frame_select_returns_selected_frame(
+def test_default_active_frame_select_returns_selected_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.notebook.active_frame.select(selector="#target-frame")["frame"] == (
-            "#target-frame"
-        )
+        assert ab.active_frame.select(selector="#target-frame")["frame"] == ("#target-frame")
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
-def test_notebook_active_frame_main_restores_main_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_default_active_frame_main_restores_main_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.notebook.active_frame.main()["frame"] == "main"
+        assert ab.active_frame.main()["frame"] == "main"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_package_root_exports_supported_public_names() -> None:
@@ -2326,33 +2340,33 @@ def test_package_versions_expose_upstream_alias() -> None:
     assert ab.__agent_browser_commit__ == ab.__upstream_commit__
 
 
-def test_package_root_keeps_notebook_controls_under_notebook_namespace() -> None:
-    notebook_root_names = _NOTEBOOK_NAMESPACE_NAMES | {
+def test_package_root_exposes_default_browser_controls() -> None:
+    default_root_names = _DEFAULT_NAMESPACE_NAMES | {
         "close",
         "configure",
         "default_browser",
         "reset",
     }
 
-    assert notebook_root_names.isdisjoint(ab.__all__)
-    assert callable(ab.notebook.configure)
-    assert callable(ab.notebook.close)
-    assert callable(ab.notebook.default_browser)
-    assert callable(ab.notebook.reset)
-    for namespace in _NOTEBOOK_NAMESPACE_NAMES:
-        assert namespace in ab.notebook.__all__
+    assert default_root_names <= set(ab.__all__)
+    assert callable(ab.configure)
+    assert callable(ab.close)
+    assert callable(ab.default_browser)
+    assert callable(ab.reset)
+    for namespace in _DEFAULT_NAMESPACE_NAMES:
+        assert namespace in ab.__all__
 
 
-@pytest.mark.parametrize("namespace", sorted(_NOTEBOOK_NAMESPACE_NAMES))
-def test_notebook_namespace_proxy_is_non_callable(namespace: str) -> None:
-    assert namespace in ab.notebook.__all__
-    assert not callable(getattr(ab.notebook, namespace))
+@pytest.mark.parametrize("namespace", sorted(_DEFAULT_NAMESPACE_NAMES))
+def test_default_namespace_proxy_is_non_callable(namespace: str) -> None:
+    assert namespace in ab.__all__
+    assert not callable(getattr(ab, namespace))
 
 
-@pytest.mark.parametrize("namespace", sorted(_NOTEBOOK_NAMESPACE_NAMES))
-def test_notebook_namespace_proxy_matches_browser_methods(namespace: str) -> None:
+@pytest.mark.parametrize("namespace", sorted(_DEFAULT_NAMESPACE_NAMES))
+def test_default_namespace_proxy_matches_browser_methods(namespace: str) -> None:
     browser = Browser(native_session=NativeSession(native=EchoNative()))
-    proxy_methods = _public_method_names(getattr(ab.notebook, namespace))
+    proxy_methods = _public_method_names(getattr(ab, namespace))
     browser_methods = _public_method_names(getattr(browser, namespace))
     assert proxy_methods == browser_methods
 
@@ -2409,15 +2423,16 @@ def test_cdp_tab_switch_invalidates_old_target_handles(
 
 def test_package_root_default_session_matches_readme_agent_workflow() -> None:
     try:
-        ab.notebook.configure(native_session=NativeSession(native=ReadmeWorkflowNative()))
-        ab.notebook.page.open("example.com")
-        page = ab.notebook.agent.observe()
-        assert "More information" in page.text
-        ab.notebook.find.text("More information").click()
-        assert ab.notebook.page.title() == "Example"
-        assert ab.notebook.page.url() == "https://example.com"
+        ab.configure(native_session=NativeSession(native=ReadmeWorkflowNative()))
+        ab.page.open("example.com")
+        page = ab.agent.observe()
+        assert "Learn more" in page.text
+        ab.find.text("Learn more").click()
+        ab.page.wait_for_url("*://www.iana.org/*")
+        assert ab.page.title() == "Example Domains"
+        assert ab.page.url() == "https://www.iana.org/help/example-domains"
     finally:
-        ab.notebook.reset()
+        ab.reset()
 
 
 def test_locator_check_returns_chainable_handle() -> None:

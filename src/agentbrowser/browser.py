@@ -51,9 +51,11 @@ from agentbrowser.domains import (
 )
 from agentbrowser.launch import (
     BrowserSessionOptions,
-    CDPAttach,
+    BrowserSessionOptionsInput,
+    CDPAttachInput,
     LaunchConfiguration,
-    LaunchOptions,
+    LaunchOptionsInput,
+    normalize_session,
 )
 from agentbrowser.models import (
     ActionConfirmationRequired,
@@ -159,25 +161,39 @@ class Browser:
 
     `Browser` owns one native browser session and exposes command namespaces
     such as `page`, `find`, `capture`, `tabs`, `network`, and `cdp`.
-    Construction is lazy. Use `Browser.launch(LaunchOptions(...))` to create
-    and start a browser, `Browser.attach(CDPAttach(...))` to attach to a
+    Construction is lazy. Use `Browser.launch({"headless": True})` to create
+    and start a browser, `Browser.attach({"port": 9222})` to attach to a
     running browser, or `Browser.from_session(...)` to name a restorable
     session before the first native command.
+
+    Example:
+        ```python
+        from agentbrowser import Browser
+
+        with Browser.launch({"headless": True}) as browser:
+            browser.page.open("https://example.com")
+            page = browser.agent.observe()
+            print(page.text)
+
+            browser.find.text("Learn more").click()
+            browser.page.wait_for_url("*://www.iana.org/*")
+            print(browser.page.url())
+        ```
     """
 
     def __init__(
         self,
         *,
-        session_options: BrowserSessionOptions | None = None,
+        session: BrowserSessionOptionsInput | None = None,
         native_session: NativeSession | None = None,
     ) -> None:
-        base_options = session_options or BrowserSessionOptions()
+        base_options = normalize_session(session)
         launch_configuration = LaunchConfiguration.from_public_options(
             allowed_domains=base_options.allowed_domains
         )
         self._init(
             launch_configuration,
-            session_options=base_options,
+            session=base_options,
             native_session=native_session,
         )
 
@@ -186,13 +202,13 @@ class Browser:
         cls,
         launch_configuration: LaunchConfiguration,
         *,
-        session_options: BrowserSessionOptions | None = None,
+        session: BrowserSessionOptionsInput | None = None,
         native_session: NativeSession | None = None,
     ) -> Browser:
         browser = cls.__new__(cls)
         browser._init(
             launch_configuration,
-            session_options=session_options,
+            session=session,
             native_session=native_session,
         )
         return browser
@@ -201,52 +217,52 @@ class Browser:
         self,
         launch_configuration: LaunchConfiguration,
         *,
-        session_options: BrowserSessionOptions | None = None,
+        session: BrowserSessionOptionsInput | None = None,
         native_session: NativeSession | None = None,
     ) -> None:
-        session_options = session_options or BrowserSessionOptions()
+        session_config = normalize_session(session)
         self._session = native_session or NativeSession(
-            session=session_options.session_id,
-            restore=session_options.restore,
-            namespace=session_options.namespace,
-            default_timeout_ms=session_options.default_timeout_ms,
-            allowed_domains=session_options.allowed_domains,
+            session=session_config.session_id,
+            restore=session_config.restore,
+            namespace=session_config.namespace,
+            default_timeout_ms=session_config.default_timeout_ms,
+            allowed_domains=session_config.allowed_domains,
             engine=launch_configuration.engine,
-            action_policy=session_options.action_policy,
-            confirm_actions=session_options.confirm_actions,
-            no_auto_dialog=session_options.no_auto_dialog,
+            action_policy=session_config.action_policy,
+            confirm_actions=session_config.confirm_actions,
+            no_auto_dialog=session_config.no_auto_dialog,
         )
-        if native_session is not None and session_options.allowed_domains is not None:
-            self._session.set_allowed_domains(session_options.allowed_domains)
-        default_session_options = BrowserSessionOptions()
-        if native_session is not None and session_options.namespace is not None:
+        if native_session is not None and session_config.allowed_domains is not None:
+            self._session.set_allowed_domains(session_config.allowed_domains)
+        default_session_config = BrowserSessionOptions()
+        if native_session is not None and session_config.namespace is not None:
             raise ValueError(
                 "namespace must be set on NativeSession when native_session is supplied"
             )
-        if native_session is not None and session_options.session_id is not None:
+        if native_session is not None and session_config.session_id is not None:
             raise ValueError(
                 "session_id must be set on NativeSession when native_session is supplied"
             )
-        if native_session is not None and session_options.restore is not None:
+        if native_session is not None and session_config.restore is not None:
             raise ValueError("restore must be set on NativeSession when native_session is supplied")
         if (
             native_session is not None
-            and session_options.default_timeout_ms != default_session_options.default_timeout_ms
+            and session_config.default_timeout_ms != default_session_config.default_timeout_ms
         ):
             raise ValueError(
                 "default_timeout_ms must be set on NativeSession when native_session is supplied"
             )
-        if native_session is not None and session_options.action_policy is not None:
+        if native_session is not None and session_config.action_policy is not None:
             raise ValueError(
                 "action_policy must be set on NativeSession when native_session is supplied"
             )
-        if native_session is not None and session_options.confirm_actions is not None:
+        if native_session is not None and session_config.confirm_actions is not None:
             raise ValueError(
                 "confirm_actions must be set on NativeSession when native_session is supplied"
             )
         if (
             native_session is not None
-            and session_options.no_auto_dialog != default_session_options.no_auto_dialog
+            and session_config.no_auto_dialog != default_session_config.no_auto_dialog
         ):
             raise ValueError(
                 "no_auto_dialog must be set on NativeSession when native_session is supplied"
@@ -298,19 +314,19 @@ class Browser:
     @classmethod
     def launch(
         cls,
-        options: LaunchOptions | None = None,
+        options: LaunchOptionsInput | None = None,
         *,
-        session_options: BrowserSessionOptions | None = None,
+        session: BrowserSessionOptionsInput | None = None,
         native_session: NativeSession | None = None,
     ) -> Browser:
         """Create a browser and start the native browser process."""
-        session_options = session_options or BrowserSessionOptions()
+        session_config = normalize_session(session)
         browser = cls._from_configuration(
             LaunchConfiguration.from_public_options(
                 options,
-                allowed_domains=session_options.allowed_domains,
+                allowed_domains=session_config.allowed_domains,
             ),
-            session_options=session_options,
+            session=session_config,
             native_session=native_session,
         )
         browser.launch_process()
@@ -319,21 +335,21 @@ class Browser:
     @classmethod
     def attach(
         cls,
-        target: CDPAttach,
+        target: CDPAttachInput,
         *,
-        launch_options: LaunchOptions | None = None,
-        session_options: BrowserSessionOptions | None = None,
+        launch: LaunchOptionsInput | None = None,
+        session: BrowserSessionOptionsInput | None = None,
         native_session: NativeSession | None = None,
     ) -> Browser:
         """Create a browser and attach to a running CDP target."""
-        session_options = session_options or BrowserSessionOptions()
+        session_config = normalize_session(session)
         browser = cls._from_configuration(
             LaunchConfiguration.from_public_options(
-                launch_options,
+                launch,
                 attach=target,
-                allowed_domains=session_options.allowed_domains,
+                allowed_domains=session_config.allowed_domains,
             ),
-            session_options=session_options,
+            session=session_config,
             native_session=native_session,
         )
         browser.connect()
@@ -345,16 +361,16 @@ class Browser:
         session_id: str,
         *,
         restore: RestoreOptions | None = None,
-        launch_options: LaunchOptions | None = None,
-        session_options: BrowserSessionOptions | None = None,
+        launch: LaunchOptionsInput | None = None,
+        session: BrowserSessionOptionsInput | None = None,
         native_session: NativeSession | None = None,
     ) -> Browser:
         """Create a lazy browser controller for a named native session."""
-        base_options = session_options or BrowserSessionOptions()
+        base_options = normalize_session(session)
         if base_options.session_id not in {None, session_id}:
-            raise ValueError("session_options.session_id must match session_id")
+            raise ValueError("session.session_id must match session_id")
         if restore is not None and base_options.restore is not None:
-            raise ValueError("pass restore or session_options.restore, not both")
+            raise ValueError("pass restore or session.restore, not both")
         resolved_options = replace(
             base_options,
             session_id=session_id,
@@ -362,10 +378,10 @@ class Browser:
         )
         return cls._from_configuration(
             LaunchConfiguration.from_public_options(
-                launch_options,
+                launch,
                 allowed_domains=resolved_options.allowed_domains,
             ),
-            session_options=resolved_options,
+            session=resolved_options,
             native_session=native_session,
         )
 
@@ -533,7 +549,7 @@ class Browser:
     def launch_process(
         self,
         *,
-        options: LaunchOptions | None = None,
+        options: LaunchOptionsInput | None = None,
     ) -> Mapping[str, Any]:
         """Launch a native browser process using explicit process options.
 
@@ -557,7 +573,7 @@ class Browser:
     def _launch_native(
         self,
         *,
-        options: LaunchOptions | None = None,
+        options: LaunchOptionsInput | None = None,
     ) -> Mapping[str, Any]:
         launch_params = self._launch_configuration.command_params(options=options)
         data = self._command("launch", **launch_params)

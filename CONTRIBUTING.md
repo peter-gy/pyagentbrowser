@@ -6,16 +6,13 @@
 make install
 ```
 
-Use `make help` for the maintained command list.
-
 ## Command Map
 
 | Change type                | Target                    |
 | -------------------------- | ------------------------- |
 | Normal Python/docs handoff | `make check`              |
 | Real browser behavior      | `make test-integration`   |
-| Python version support     | `make test-python-matrix` |
-| Rust-only work             | `make rust`               |
+| Rust-only work             | `make rust-check`         |
 | Wheel/sdist boundaries     | `make package`            |
 | Release readiness          | `make check-release`      |
 
@@ -29,9 +26,8 @@ Use `make help` for the maintained command list.
 - `src/agentbrowser` owns the Python public API.
 - `examples` and `docs` must track the actual public API, not planned helpers.
 
-Native behavior changes are allowed only as documented Native Safety Patches.
-See [docs/adr/0001-native-safety-patches.md](docs/adr/0001-native-safety-patches.md)
-and [docs/internals/upstream.md](docs/internals/upstream.md).
+Native behavior changes must be generated in `OUT_DIR`, covered by tests, and
+kept out of `third_party/agent-browser`.
 
 ## Docs And Examples
 
@@ -39,8 +35,4 @@ When changing public API:
 
 1. Update the relevant example in `examples/`.
 2. Update the closest docs page in `docs/`.
-3. Run `make docs`, `make examples`, and the smallest relevant gate from the
-   command map.
-
-Do not duplicate long quality-gate lists in docs. Link to `make help` or this
-file instead.
+3. Run `make check` or the smallest relevant gate from the command map.

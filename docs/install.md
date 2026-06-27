@@ -24,10 +24,10 @@ from agentbrowser import Browser
 If Chrome is not on the default path, pass an executable path:
 
 ```python
-from agentbrowser import Browser, LaunchOptions
+from agentbrowser import Browser
 
 with Browser.launch(
-    LaunchOptions(executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+    {"executable_path": "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"}
 ) as browser:
     browser.page.open("https://example.com")
 ```

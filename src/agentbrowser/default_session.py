@@ -5,7 +5,7 @@ from threading import RLock
 from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
 
 from agentbrowser.agent import Agent
-from agentbrowser.browser import Browser, Dashboard
+from agentbrowser.browser import Browser, Dashboard, Native
 from agentbrowser.domains import (
     CDP,
     ActiveFrame,
@@ -29,10 +29,11 @@ from agentbrowser.domains import (
     Tabs,
 )
 from agentbrowser.launch import (
-    BrowserSessionOptions,
-    CDPAttach,
+    BrowserSessionOptionsInput,
+    CDPAttachInput,
     LaunchConfiguration,
-    LaunchOptions,
+    LaunchOptionsInput,
+    normalize_session,
 )
 
 if TYPE_CHECKING:
@@ -44,11 +45,11 @@ _default_browser: Browser | None = None
 
 
 class DefaultBrowserOptions(TypedDict, total=False):
-    """Keyword options accepted by `agentbrowser.notebook.configure()`."""
+    """Keyword options accepted by `agentbrowser.configure()`."""
 
-    launch_options: LaunchOptions | None
-    attach: CDPAttach | None
-    session_options: BrowserSessionOptions | None
+    launch: LaunchOptionsInput | None
+    attach: CDPAttachInput | None
+    session: BrowserSessionOptionsInput | None
     native_session: NativeSession | None
 
 
@@ -69,21 +70,18 @@ def default_browser() -> Browser:
 
 
 def _new_browser(options: dict[str, Any]) -> Browser:
-    session_options = cast(
-        BrowserSessionOptions,
-        options.get("session_options") or BrowserSessionOptions(),
-    )
-    launch_options = cast(LaunchOptions | None, options.get("launch_options"))
-    attach = cast(CDPAttach | None, options.get("attach"))
+    session_config = normalize_session(options.get("session"))
+    launch = cast(LaunchOptionsInput | None, options.get("launch"))
+    attach = cast(CDPAttachInput | None, options.get("attach"))
     native_session = cast("NativeSession | None", options.get("native_session"))
     launch_configuration = LaunchConfiguration.from_public_options(
-        launch_options,
+        launch,
         attach=attach,
-        allowed_domains=session_options.allowed_domains,
+        allowed_domains=session_config.allowed_domains,
     )
     return Browser._from_configuration(
         launch_configuration,
-        session_options=session_options,
+        session=session_config,
         native_session=native_session,
     )
 
@@ -104,10 +102,11 @@ def configure(
     force
         Best-effort close the current default browser and discard the reference
         even if the native close command fails. Use it when an interrupted
-        notebook run leaves a stale default browser.
+        interactive run leaves a stale default browser.
     **options
-        Named lifecycle option objects: `launch_options`, `attach`,
-        `session_options`, and `native_session`.
+        Named lifecycle inputs: `launch`, `attach`, `session`, and
+        `native_session`. `launch`, `attach`, and `session` accept typed
+        option objects or mappings.
 
     Returns
     -------
@@ -206,6 +205,7 @@ downloads = cast(Downloads, _DefaultNamespaceProxy("downloads"))
 find = cast(Find, _DefaultNamespaceProxy("find"))
 keyboard = cast(Keyboard, _DefaultNamespaceProxy("keyboard"))
 mouse = cast(Mouse, _DefaultNamespaceProxy("mouse"))
+native = cast(Native, _DefaultNamespaceProxy("native"))
 network = cast(Network, _DefaultNamespaceProxy("network"))
 scripts = cast(Scripts, _DefaultNamespaceProxy("scripts"))
 restore = cast(Restore, _DefaultNamespaceProxy("restore"))

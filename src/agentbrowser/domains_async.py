@@ -96,6 +96,12 @@ class AsyncPage:
     ) -> Mapping[str, Any]:
         """Navigate the current page to a URL.
 
+        Example:
+            ```python
+            await browser.page.open("https://example.com")
+            print(await browser.page.title())
+            ```
+
         Parameters
         ----------
         url
@@ -147,7 +153,17 @@ class AsyncPage:
         headers: Mapping[str, str] | None = None,
         allowed_domains: Sequence[str] | None = None,
     ) -> ReadResult:
-        """Return agent-readable content for a URL or the active page."""
+        """Return agent-readable content for a URL or the active page.
+
+        Example:
+            ```python
+            result = await browser.page.read(
+                "https://example.com",
+                mode=ReadMode.markdown(require=True),
+            )
+            print(result.content)
+            ```
+        """
         if url is None and not self.browser.is_launched:
             await self.browser.launch_process()
         normalized_url = normalize_url(url) if url is not None else None

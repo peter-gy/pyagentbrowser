@@ -9,7 +9,6 @@ commands (https://agent-browser.dev/commands), selectors
 (https://agent-browser.dev/cdp-mode).
 """
 
-from importlib import import_module
 from importlib.metadata import PackageNotFoundError, version
 
 from agentbrowser import skills
@@ -43,7 +42,43 @@ from agentbrowser.cdp import (
     ExecutionContext,
     Frame,
 )
-from agentbrowser.launch import BrowserSessionOptions, CDPAttach, LaunchOptions
+from agentbrowser.default_session import (
+    active_frame,
+    agent,
+    capture,
+    cdp,
+    clipboard,
+    close,
+    configure,
+    cookies,
+    dashboard,
+    default_browser,
+    diagnostics,
+    dialogs,
+    diff,
+    downloads,
+    find,
+    keyboard,
+    mouse,
+    native,
+    network,
+    page,
+    reset,
+    restore,
+    runtime,
+    scripts,
+    state,
+    storage,
+    tabs,
+)
+from agentbrowser.launch import (
+    BrowserSessionOptions,
+    BrowserSessionOptionsDict,
+    CDPAttach,
+    CDPAttachDict,
+    LaunchOptions,
+    LaunchOptionsDict,
+)
 from agentbrowser.models import (
     ActionConfirmationRequired,
     ActionEvidence,
@@ -85,7 +120,6 @@ except PackageNotFoundError:
 __agent_browser_version__ = __upstream_version__
 __agent_browser_commit__ = UPSTREAM_COMMIT
 __upstream_commit__ = UPSTREAM_COMMIT
-notebook = import_module("agentbrowser.notebook")
 
 __all__ = [
     "ActionConfirmationRequired",
@@ -107,7 +141,9 @@ __all__ = [
     "BrowserError",
     "BrowserResponse",
     "BrowserSessionOptions",
+    "BrowserSessionOptionsDict",
     "CDPAttach",
+    "CDPAttachDict",
     "CDPClosedError",
     "CDPContextAmbiguityError",
     "CDPContextNotFoundError",
@@ -127,6 +163,7 @@ __all__ = [
     "ExecutionContext",
     "Frame",
     "LaunchOptions",
+    "LaunchOptionsDict",
     "LlmsMode",
     "NativeParseError",
     "NetworkRequest",
@@ -156,7 +193,33 @@ __all__ = [
     "__upstream_commit__",
     "__upstream_version__",
     "__version__",
-    "notebook",
+    "active_frame",
+    "agent",
+    "capture",
+    "cdp",
+    "clipboard",
+    "close",
+    "configure",
+    "cookies",
+    "dashboard",
+    "default_browser",
+    "diagnostics",
+    "dialogs",
+    "diff",
+    "downloads",
+    "find",
+    "keyboard",
+    "mouse",
+    "native",
+    "network",
+    "page",
+    "reset",
+    "restore",
+    "runtime",
+    "scripts",
     "session_id",
     "skills",
+    "state",
+    "storage",
+    "tabs",
 ]

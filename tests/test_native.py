@@ -178,9 +178,7 @@ def test_native_read_fetches_markdown_through_page_namespace() -> None:
         thread.start()
         try:
             url = f"http://127.0.0.1:{server.server_port}/docs"
-            with Browser(
-                session_options=BrowserSessionOptions(allowed_domains="127.0.0.1")
-            ) as browser:
+            with Browser(session=BrowserSessionOptions(allowed_domains="127.0.0.1")) as browser:
                 result = browser.page.read(url, mode=ReadMode.markdown(require=True))
         finally:
             server.shutdown()
@@ -216,7 +214,7 @@ def test_native_namespace_scopes_session_info(
 
     with Browser.from_session(
         "py-namespace",
-        session_options=BrowserSessionOptions(namespace="Worktree: One"),
+        session=BrowserSessionOptions(namespace="Worktree: One"),
     ) as browser:
         info = browser.runtime.info()
 
@@ -493,7 +491,7 @@ def test_native_errors_raise_typed_browser_error() -> None:
 
 def test_native_tab_new_rejects_disallowed_url() -> None:
     with (
-        Browser(session_options=BrowserSessionOptions(allowed_domains="example.com")) as browser,
+        Browser(session=BrowserSessionOptions(allowed_domains="example.com")) as browser,
         pytest.raises(BrowserError) as exc_info,
     ):
         browser.native.data("tab_new", url="https://evil.example")
@@ -504,7 +502,7 @@ def test_native_tab_new_rejects_disallowed_url() -> None:
 
 def test_native_cookie_set_rejects_disallowed_domain() -> None:
     with (
-        Browser(session_options=BrowserSessionOptions(allowed_domains="example.com")) as browser,
+        Browser(session=BrowserSessionOptions(allowed_domains="example.com")) as browser,
         pytest.raises(BrowserError) as exc_info,
     ):
         browser.cookies.set("session", "abc", domain="evil.example")
@@ -514,9 +512,7 @@ def test_native_cookie_set_rejects_disallowed_domain() -> None:
 
 
 def test_native_confirmation_requires_matching_confirmation_id() -> None:
-    with Browser(
-        session_options=BrowserSessionOptions(confirm_actions=[CONFIRMABLE_ACTION])
-    ) as browser:
+    with Browser(session=BrowserSessionOptions(confirm_actions=[CONFIRMABLE_ACTION])) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.native.data(CONFIRMABLE_ACTION)
 
@@ -529,9 +525,7 @@ def test_native_confirmation_requires_matching_confirmation_id() -> None:
 
 
 def test_native_confirmation_replays_with_matching_confirmation_id() -> None:
-    with Browser(
-        session_options=BrowserSessionOptions(confirm_actions=[CONFIRMABLE_ACTION])
-    ) as browser:
+    with Browser(session=BrowserSessionOptions(confirm_actions=[CONFIRMABLE_ACTION])) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.native.data(CONFIRMABLE_ACTION)
 
@@ -546,7 +540,7 @@ def test_native_confirmation_replay_rechecks_policy_deny(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
+    with Browser(session=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.native.data(CONFIRMABLE_ACTION)
 
@@ -564,7 +558,7 @@ def test_native_confirmation_replay_fails_closed_when_policy_is_invalid(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
+    with Browser(session=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.native.data(CONFIRMABLE_ACTION)
 
@@ -583,7 +577,7 @@ def test_native_confirmation_can_replay_after_policy_repair(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
+    with Browser(session=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.native.data(CONFIRMABLE_ACTION)
 
@@ -601,7 +595,7 @@ def test_native_confirmation_replay_fails_closed_when_policy_is_deleted(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
+    with Browser(session=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.native.data(CONFIRMABLE_ACTION)
 
@@ -617,7 +611,7 @@ def test_native_confirmation_replay_fails_closed_when_policy_is_deleted(
 def test_native_confirmation_policy_cannot_bypass_python_url_allowlist() -> None:
     with (
         Browser(
-            session_options=BrowserSessionOptions(
+            session=BrowserSessionOptions(
                 allowed_domains="example.com",
                 confirm_actions=["tab_new"],
             )
@@ -634,7 +628,7 @@ def test_native_confirmation_policy_cannot_bypass_python_url_allowlist() -> None
 def test_native_confirmation_policy_cannot_bypass_python_cookie_allowlist() -> None:
     with (
         Browser(
-            session_options=BrowserSessionOptions(
+            session=BrowserSessionOptions(
                 allowed_domains="example.com",
                 confirm_actions=["cookies_set"],
             )
@@ -655,7 +649,7 @@ def test_native_confirmation_replay_fails_closed_for_unvalidated_allowlist_targe
     state_path.write_text(json.dumps({"cookies": [], "origins": []}))
 
     with Browser(
-        session_options=BrowserSessionOptions(
+        session=BrowserSessionOptions(
             allowed_domains="example.com",
             confirm_actions=["state_load"],
         )

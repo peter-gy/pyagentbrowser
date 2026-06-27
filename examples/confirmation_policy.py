@@ -1,23 +1,15 @@
-from agentbrowser import ActionConfirmationRequired, Browser, BrowserSessionOptions, LaunchOptions
-
-HTML = """
-<button>More information</button>
-<p id="status"></p>
-<script>
-document.querySelector("button").addEventListener("click", () => {
-  document.querySelector("#status").textContent = "Confirmed"
-});
-</script>
-"""
+from agentbrowser import ActionConfirmationRequired, Browser
 
 with Browser.launch(
-    LaunchOptions(headless=True),
-    session_options=BrowserSessionOptions(confirm_actions=["click"]),
+    {"headless": True},
+    session={"confirm_actions": ["click"]},
 ) as browser:
-    browser.page.set_content(HTML)
+    browser.page.open("https://example.com")
 
     try:
-        browser.find.text("More information").click()
+        browser.find.text("Learn more").click()
     except ActionConfirmationRequired as confirmation:
-        result = confirmation.pending_action.confirm()
-        print(result)
+        confirmation.pending_action.confirm()
+
+    browser.page.wait_for_url("*://www.iana.org/*")
+    print(browser.page.url())

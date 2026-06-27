@@ -65,7 +65,6 @@ WHEEL_FORBIDDEN_EXACT = frozenset(
         "pyagentbrowser.pyi",
         "Cargo.lock",
         "rust-toolchain.toml",
-        "rustfmt.toml",
     }
 )
 WHEEL_FORBIDDEN_PREFIXES = (
@@ -84,10 +83,10 @@ SDIST_REQUIRED_BUILD_FILES = (
         {
             "pyproject.toml",
             "LICENSE",
+            "NOTICE",
             "Cargo.toml",
             "Cargo.lock",
             "rust-toolchain.toml",
-            "rustfmt.toml",
             "crates/pyagentbrowser/Cargo.toml",
             "crates/pyagentbrowser/build.rs",
             "crates/pyagentbrowser/src/lib.rs",
@@ -251,7 +250,9 @@ def _native_extensions(names: set[str]) -> list[str]:
 
 def _wheel_python_and_abi_tags(artifact_name: str) -> tuple[str, str] | None:
     match = re.match(r"^pyagentbrowser-[^-]+-(cp\d+)-([^-]+)-", artifact_name)
-    return match.groups() if match else None
+    if match is None:
+        return None
+    return match.group(1), match.group(2)
 
 
 def _native_extension_matches_wheel_tags(name: str, python_tag: str, abi_tag: str) -> bool:
