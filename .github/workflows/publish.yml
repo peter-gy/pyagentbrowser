@@ -152,7 +152,30 @@ jobs:
       contents: read
       id-token: write
     steps:
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: false
+          cache-dependency-glob: uv.lock
+
+      - name: Check PyPI state
+        id: pypi
+        env:
+          PACKAGE: pyagentbrowser
+          VERSION: ${{ github.ref_name }}
+        run: |
+          version="${VERSION#v}"
+          status=$(curl -s -o /dev/null -I -w "%{http_code}" "https://pypi.org/pypi/${PACKAGE}/${version}/json")
+          if [ "$status" = "200" ]; then
+            echo "already_published=true" >> "$GITHUB_OUTPUT"
+            echo "${PACKAGE} ${version} is already on PyPI"
+          else
+            echo "already_published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download distributions
+        if: steps.pypi.outputs.already_published != 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
@@ -160,9 +183,14 @@ jobs:
           path: dist
 
       - name: Publish distributions
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          skip-existing: true
+        if: steps.pypi.outputs.already_published != 'true'
+        run: |
+          for wheel in dist/*.whl
+          do
+            unzip -qt "$wheel"
+          done
+          uvx twine check --strict dist/*
+          uv publish --trusted-publishing always dist/*
 
   release-notes:
     name: Update release notes
