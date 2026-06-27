@@ -74,8 +74,8 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install dist/*.whl
           python - <<'PY'
-          from pyagentbrowser import Browser
-          import pyagentbrowser._native as native
+          from agentbrowser import Browser
+          import agentbrowser._native as native
 
           assert Browser
           assert native.__agent_browser_version__
