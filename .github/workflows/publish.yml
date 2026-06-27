@@ -47,43 +47,53 @@ jobs:
           - os: ubuntu-latest
             python: "3.10"
             target: x86_64
+            manylinux: "2_28"
             artifact: linux-x86_64-cp310
             sdist: true
           - os: ubuntu-latest
             python: "3.11"
             target: x86_64
+            manylinux: "2_28"
             artifact: linux-x86_64-cp311
           - os: ubuntu-latest
             python: "3.12"
             target: x86_64
+            manylinux: "2_28"
             artifact: linux-x86_64-cp312
           - os: ubuntu-latest
             python: "3.13"
             target: x86_64
+            manylinux: "2_28"
             artifact: linux-x86_64-cp313
           - os: ubuntu-latest
             python: "3.14"
             target: x86_64
+            manylinux: "2_28"
             artifact: linux-x86_64-cp314
           - os: ubuntu-latest
             python: "3.10"
             target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
             artifact: linux-aarch64-cp310
           - os: ubuntu-latest
             python: "3.11"
             target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
             artifact: linux-aarch64-cp311
           - os: ubuntu-latest
             python: "3.12"
             target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
             artifact: linux-aarch64-cp312
           - os: ubuntu-latest
             python: "3.13"
             target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
             artifact: linux-aarch64-cp313
           - os: ubuntu-latest
             python: "3.14"
             target: aarch64-unknown-linux-gnu
+            manylinux: "2_28"
             artifact: linux-aarch64-cp314
           - os: macos-13
             python: "3.10"
@@ -129,6 +139,7 @@ jobs:
       os: ${{ matrix.os }}
       python: ${{ matrix.python }}
       target: ${{ matrix.target }}
+      manylinux: ${{ matrix.manylinux || '2_28' }}
       artifact: wheels-${{ matrix.artifact }}
       sdist: ${{ matrix.sdist || false }}
 
@@ -151,7 +162,6 @@ jobs:
       - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          password: ${{ secrets.PYPI_API_TOKEN }}
           skip-existing: true
 
   release-notes:

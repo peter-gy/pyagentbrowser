@@ -15,6 +15,11 @@ on:
         description: Maturin target.
         required: true
         type: string
+      manylinux:
+        description: Linux platform compatibility tag.
+        required: false
+        default: "2_28"
+        type: string
       artifact:
         description: Uploaded artifact name.
         required: true
@@ -48,11 +53,24 @@ jobs:
       - name: Build Linux wheel
         if: runner.os == 'Linux'
         uses: PyO3/maturin-action@v1
+        env:
+          CARGO_HTTP_MULTIPLEXING: "false"
+          CARGO_NET_RETRY: "10"
+          CARGO_REGISTRIES_CRATES_IO_PROTOCOL: sparse
+          CFLAGS_aarch64_unknown_linux_gnu: "-D__ARM_ARCH=8"
         with:
+          maturin-version: v1.14.1
           target: ${{ inputs.target }}
-          manylinux: auto
+          manylinux: ${{ inputs.manylinux }}
+          docker-options: >-
+            -e CARGO_HTTP_MULTIPLEXING
+            -e CARGO_NET_RETRY
+            -e CARGO_REGISTRIES_CRATES_IO_PROTOCOL
+            -e CFLAGS_aarch64_unknown_linux_gnu
           args: >-
             --release
+            --locked
+            --compatibility pypi
             --out dist
             --interpreter python${{ inputs.python }}
             ${{ inputs.sdist && '--sdist' || '' }}
@@ -61,9 +79,12 @@ jobs:
         if: runner.os != 'Linux'
         uses: PyO3/maturin-action@v1
         with:
+          maturin-version: v1.14.1
           target: ${{ inputs.target }}
           args: >-
             --release
+            --locked
+            --compatibility pypi
             --out dist
             --interpreter python
 
