@@ -82,9 +82,7 @@ def _write_wheel(
     native_extensions: dict[str, bytes] | None = None,
 ) -> None:
     empty = set(empty or ())
-    native_extensions = native_extensions or {
-        "agentbrowser/_native.cpython-314-darwin.so": b"native extension"
-    }
+    native_extensions = native_extensions or {"agentbrowser/_native.abi3.so": b"native extension"}
     with zipfile.ZipFile(path, "w") as archive:
         for name in sorted(names):
             if name == "agentbrowser/py.typed" or name in empty:
@@ -118,15 +116,39 @@ def _load_verify_install_module() -> ModuleType:
     return module
 
 
+def test_install_verifier_selects_python_311_abi3_wheel_for_newer_python(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_verify_install_module()
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
+    wheel.write_bytes(b"wheel")
+
+    assert verifier.wheel_for_version(tmp_path, "3.11") == wheel
+    assert verifier.wheel_for_version(tmp_path, "3.14") == wheel
+
+
+def test_install_verifier_rejects_abi3_wheel_below_its_python_floor(
+    tmp_path: Path,
+) -> None:
+    verifier = _load_verify_install_module()
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
+    wheel.write_bytes(b"wheel")
+    python_major = 3
+    python_floor_minor = 11
+
+    with pytest.raises(RuntimeError, match="compatible abi3 wheel"):
+        verifier.wheel_for_version(tmp_path, f"{python_major}.{python_floor_minor - 1}")
+
+
 def test_wheel_smoke_accepts_required_runtime_payload(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(wheel, WHEEL_PAYLOAD)
 
     package_smoke.check_wheel(wheel)
 
 
 def test_wheel_smoke_rejects_support_junk(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(wheel, WHEEL_PAYLOAD | {"docs/figures/figure.png"})
 
     with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
@@ -134,7 +156,7 @@ def test_wheel_smoke_rejects_support_junk(tmp_path: Path) -> None:
 
 
 def test_wheel_smoke_rejects_empty_python_modules(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
@@ -146,7 +168,7 @@ def test_wheel_smoke_rejects_empty_python_modules(tmp_path: Path) -> None:
 
 
 def test_wheel_smoke_rejects_distribution_name_as_import_package(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(wheel, WHEEL_PAYLOAD | {"pyagentbrowser/__init__.py"})
 
     with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
@@ -155,7 +177,7 @@ def test_wheel_smoke_rejects_distribution_name_as_import_package(tmp_path: Path)
 
 @pytest.mark.parametrize("payload", ["agentbrowser.py", "pyagentbrowser.py"])
 def test_wheel_smoke_rejects_module_payload(tmp_path: Path, payload: str) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(wheel, WHEEL_PAYLOAD | {payload})
 
     with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
@@ -163,11 +185,11 @@ def test_wheel_smoke_rejects_module_payload(tmp_path: Path, payload: str) -> Non
 
 
 def test_wheel_smoke_rejects_empty_native_extension(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
-        native_extensions={"agentbrowser/_native.cpython-314-darwin.so": b""},
+        native_extensions={"agentbrowser/_native.abi3.so": b""},
     )
 
     with pytest.raises(package_smoke.PackageSmokeError, match="empty native extension"):
@@ -175,12 +197,12 @@ def test_wheel_smoke_rejects_empty_native_extension(tmp_path: Path) -> None:
 
 
 def test_wheel_smoke_rejects_multiple_native_extensions(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
         native_extensions={
-            "agentbrowser/_native.cpython-314-darwin.so": b"native extension",
+            "agentbrowser/_native.abi3.so": b"native extension",
             "agentbrowser/_native.cpython-313-darwin.so": b"native extension",
         },
     )
@@ -190,7 +212,7 @@ def test_wheel_smoke_rejects_multiple_native_extensions(tmp_path: Path) -> None:
 
 
 def test_wheel_smoke_rejects_native_extension_tag_mismatch(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(
         wheel,
         WHEEL_PAYLOAD,
@@ -206,7 +228,7 @@ def test_wheel_smoke_rejects_missing_required_runtime_file(
     tmp_path: Path,
     missing: str,
 ) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(wheel, WHEEL_PAYLOAD - {missing})
 
     with pytest.raises(package_smoke.PackageSmokeError, match="wheel missing required files"):
@@ -319,7 +341,7 @@ def test_install_verifier_installs_advertised_extras(
     tmp_path: Path,
 ) -> None:
     verifier = _load_verify_install_module()
-    source = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    source = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     advertised_extras = ("synthetic-browser",)
     _write_wheel(
         source,
@@ -363,9 +385,7 @@ def test_metadata_smoke_requires_project_classifiers(
     names = SDIST_BUILD_PAYLOAD | SDIST_DOCS_AND_EXAMPLES | SDIST_UPSTREAM_PAYLOAD
 
     if artifact_kind == "wheel":
-        artifact = tmp_path / _artifact(
-            "pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl"
-        )
+        artifact = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
         _write_wheel(artifact, WHEEL_PAYLOAD, metadata=metadata)
         check = package_smoke.check_wheel
     else:
@@ -379,7 +399,7 @@ def test_metadata_smoke_requires_project_classifiers(
 
 def test_metadata_smoke_rejects_filename_version_drift(tmp_path: Path) -> None:
     bad_version = "0.0.0" if PROJECT_VERSION != "0.0.0" else "0.0.1"
-    wheel = tmp_path / f"pyagentbrowser-{bad_version}-cp314-cp314-macosx_11_0_arm64.whl"
+    wheel = tmp_path / f"pyagentbrowser-{bad_version}-cp311-abi3-macosx_11_0_arm64.whl"
     _write_wheel(wheel, WHEEL_PAYLOAD)
 
     with pytest.raises(package_smoke.PackageSmokeError, match="filename version"):
@@ -387,7 +407,7 @@ def test_metadata_smoke_rejects_filename_version_drift(tmp_path: Path) -> None:
 
 
 def test_metadata_smoke_accepts_requires_python_spacing_normalization(tmp_path: Path) -> None:
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     requires_python = str(PROJECT["requires-python"])
     metadata = _metadata_with_requires_python(requires_python.replace(",", ", "))
     _write_wheel(wheel, WHEEL_PAYLOAD, metadata=metadata)
@@ -402,7 +422,7 @@ def test_metadata_smoke_rejects_project_url_drift(tmp_path: Path) -> None:
         f"Project-URL: {label}, {url}",
         f"Project-URL: {label}, https://example.com/repo",
     )
-    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp311-abi3-macosx_11_0_arm64.whl")
     _write_wheel(wheel, WHEEL_PAYLOAD, metadata=metadata)
 
     with pytest.raises(package_smoke.PackageSmokeError, match="Project-URL pairs"):

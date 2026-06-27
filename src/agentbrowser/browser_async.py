@@ -5,10 +5,8 @@ from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, cast, overload
+from typing import TYPE_CHECKING, Any, Literal, Self, cast, overload
 from weakref import proxy as weak_proxy
-
-from typing_extensions import Self
 
 from agentbrowser._browser_common import (
     ConfirmationTarget,

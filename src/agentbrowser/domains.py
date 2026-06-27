@@ -4,9 +4,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from time import sleep as sync_sleep
-from typing import Any, Protocol, cast
-
-from typing_extensions import Self
+from typing import Any, Protocol, Self, cast
 
 from agentbrowser._browser_common import (
     exclusive_source,

@@ -1,7 +1,8 @@
 .DEFAULT_GOAL := help
 
 PYTHON_SOURCES = src tests scripts examples
-PYTHON_VERSIONS ?= 3.10 3.11 3.12 3.13 3.14
+PYTHON_VERSIONS ?= 3.11 3.12 3.13 3.14
+BUILD_PYTHON ?= 3.11
 RUST_TOOLCHAIN ?= stable
 RUST_CARGO = rustup run $(RUST_TOOLCHAIN) cargo
 RUSTFMT = $(shell rustup which --toolchain $(RUST_TOOLCHAIN) rustfmt 2>/dev/null || printf rustfmt)
@@ -116,17 +117,11 @@ rust: rust-check rust-test ## Run all Rust checks and tests
 package: ## Build wheel/sdist artifacts and run artifact/install smoke checks
 	rm -rf $(DIST_DIR)
 	mkdir -p $(DIST_DIR)
-	@for version in $(PYTHON_VERSIONS); do \
-		env_name=$$(printf '%s' "$$version" | tr -d '.'); \
-		echo "==> Building wheel for Python $$version"; \
-		CARGO="$$(rustup which --toolchain $(RUST_TOOLCHAIN) cargo)" \
-		RUSTC="$$(rustup which --toolchain $(RUST_TOOLCHAIN) rustc)" \
-		UV_PROJECT_ENVIRONMENT=.venvbuild$$env_name \
-		uv run --no-project --python $$version --with "maturin>=1.11.5" maturin build --release --out $(DIST_DIR); \
-	done
+	@echo "==> Building Python $(BUILD_PYTHON) ABI3 wheel and source distribution"
 	CARGO="$$(rustup which --toolchain $(RUST_TOOLCHAIN) cargo)" \
 	RUSTC="$$(rustup which --toolchain $(RUST_TOOLCHAIN) rustc)" \
-	uv run --no-project --with "maturin>=1.11.5" maturin sdist --out $(DIST_DIR)
+	UV_PROJECT_ENVIRONMENT=.venvbuild$$(printf '%s' "$(BUILD_PYTHON)" | tr -d '.') \
+	uv run --no-project --python $(BUILD_PYTHON) --with "maturin>=1.11.5" maturin build --release --locked --compatibility pypi --sdist --out $(DIST_DIR)
 	uv run python scripts/package_smoke.py $(DIST_DIR)
 	PYAGENTBROWSER_PYTHON_VERSIONS="$(PYTHON_VERSIONS)" uv run python scripts/verify-install-artifacts.py $(DIST_DIR)
 

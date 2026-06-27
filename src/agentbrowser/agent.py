@@ -2,9 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
-
-from typing_extensions import Self
+from typing import Any, Self
 
 from agentbrowser._browser_common import is_stale_ref_error_code
 from agentbrowser.command_params import click_params, wait_params

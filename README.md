@@ -13,7 +13,7 @@ active-frame state, and CDP helpers through one Python package.
 python -m pip install pyagentbrowser
 ```
 
-Requires Python 3.10 through 3.14 on macOS or Linux, with Chrome or Chromium
+Requires Python 3.11 through 3.14 on macOS or Linux, with Chrome or Chromium
 available on the host.
 
 ## Usage

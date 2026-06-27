@@ -7,7 +7,7 @@ its version base and records the exact upstream commit.
 
 ## Python Support
 
-The package targets Python 3.10, 3.11, 3.12, 3.13, and 3.14. Keep classifiers, tests, and
+The package targets Python 3.11, 3.12, 3.13, and 3.14. Keep classifiers, tests, and
 release notes aligned with that range.
 
 ## Public API

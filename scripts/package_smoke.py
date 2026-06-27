@@ -3,14 +3,13 @@ from __future__ import annotations
 import re
 import sys
 import tarfile
+import tomllib
 import zipfile
 from collections.abc import Iterable, Mapping
 from email.message import Message
 from email.parser import Parser
 from pathlib import Path
 from typing import NoReturn
-
-import tomli
 
 
 class PackageSmokeError(AssertionError):
@@ -214,7 +213,7 @@ def _fail(message: str) -> NoReturn:
 
 
 def project_metadata() -> Mapping[str, object]:
-    pyproject = tomli.loads((ROOT / "pyproject.toml").read_text())
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     project = pyproject.get("project")
     if not isinstance(project, Mapping):
         _fail("pyproject.toml is missing [project]")
@@ -250,14 +249,18 @@ def _native_extensions(names: set[str]) -> list[str]:
     return sorted(name for name in names if _is_native_extension(name))
 
 
-def _wheel_python_tag(artifact_name: str) -> str | None:
-    match = re.match(r"^pyagentbrowser-[^-]+-(cp\d+)-", artifact_name)
-    return match.group(1) if match else None
+def _wheel_python_and_abi_tags(artifact_name: str) -> tuple[str, str] | None:
+    match = re.match(r"^pyagentbrowser-[^-]+-(cp\d+)-([^-]+)-", artifact_name)
+    return match.groups() if match else None
 
 
-def _native_extension_matches_python_tag(name: str, python_tag: str) -> bool:
+def _native_extension_matches_wheel_tags(name: str, python_tag: str, abi_tag: str) -> bool:
     tag_digits = python_tag.removeprefix("cp")
     basename = name.rsplit("/", 1)[-1]
+    if abi_tag == "abi3":
+        return ".abi3." in basename or (
+            basename.endswith(".pyd") and "cpython-" not in basename and ".cp" not in basename
+        )
     return f"cpython-{tag_digits}" in basename or f".{python_tag}-" in basename
 
 
@@ -287,11 +290,12 @@ def assert_wheel_runtime_payload(
     native_extension = native_extensions[0]
     if sizes.get(native_extension, 0) <= 0:
         _fail(f"wheel contains empty native extension: {native_extension}")
-    python_tag = _wheel_python_tag(artifact_name)
-    if python_tag and not _native_extension_matches_python_tag(native_extension, python_tag):
+    wheel_tags = _wheel_python_and_abi_tags(artifact_name)
+    if wheel_tags and not _native_extension_matches_wheel_tags(native_extension, *wheel_tags):
+        python_tag, abi_tag = wheel_tags
         _fail(
             f"wheel native extension {native_extension} does not match "
-            f"wheel Python tag {python_tag}"
+            f"wheel Python tag {python_tag} and ABI tag {abi_tag}"
         )
 
 

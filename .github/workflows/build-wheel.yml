@@ -121,6 +121,33 @@ jobs:
           assert native.__agent_browser_version__
           PY
 
+      - name: Set up Python 3.14 for ABI3 smoke
+        if: >-
+          (runner.os == 'Linux' && inputs.target == 'x86_64') ||
+          (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
+          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Test ABI3 wheel on Python 3.14
+        if: >-
+          (runner.os == 'Linux' && inputs.target == 'x86_64') ||
+          (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
+          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
+        run: |
+          python -m venv abi3-wheel-test
+          source abi3-wheel-test/bin/activate
+          python -m pip install --upgrade pip
+          python -m pip install dist/*.whl
+          python - <<'PY'
+          from agentbrowser import Browser
+          import agentbrowser._native as native
+
+          assert Browser
+          assert native.__agent_browser_version__
+          PY
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ inputs.artifact }}

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -198,12 +199,26 @@ def python_versions() -> list[str]:
     return [f"{sys.version_info.major}.{sys.version_info.minor}"]
 
 
+def _python_tag_version(tag: str) -> tuple[int, int]:
+    digits = tag.removeprefix("cp")
+    return int(digits[0]), int(digits[1:])
+
+
 def wheel_for_version(dist: Path, python_version: str) -> Path:
     tag = f"cp{python_version.replace('.', '')}"
     wheels = sorted(path for path in dist.glob("pyagentbrowser-*.whl") if f"-{tag}-" in path.name)
+    if not wheels:
+        requested = tuple(int(part) for part in python_version.split(".", 1))
+        wheels = sorted(
+            path
+            for path in dist.glob("pyagentbrowser-*.whl")
+            if (match := re.match(r"^pyagentbrowser-[^-]+-(cp\d+)-abi3-", path.name))
+            and _python_tag_version(match.group(1)) <= requested
+        )
     if len(wheels) != 1:
         raise RuntimeError(
-            f"expected exactly one {tag} wheel in {dist}, found {[path.name for path in wheels]}"
+            f"expected exactly one {tag} or compatible abi3 wheel in {dist}, "
+            f"found {[path.name for path in wheels]}"
         )
     return wheels[0]
 

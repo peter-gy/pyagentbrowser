@@ -16,7 +16,7 @@ from agentbrowser import Browser
 
 ## Requirements
 
-- Python 3.10, 3.11, 3.12, 3.13, or 3.14.
+- Python 3.11, 3.12, 3.13, or 3.14.
 - macOS or Linux.
 - Chrome or Chromium available to the native `agent-browser` engine.
 - Rust stable only when building from source.

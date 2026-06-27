@@ -2,9 +2,7 @@ from __future__ import annotations
 
 import atexit
 from threading import RLock
-from typing import TYPE_CHECKING, Any, TypedDict, cast
-
-from typing_extensions import Unpack
+from typing import TYPE_CHECKING, Any, TypedDict, Unpack, cast
 
 from agentbrowser.agent import Agent
 from agentbrowser.browser import Browser, Dashboard

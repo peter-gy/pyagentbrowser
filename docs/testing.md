@@ -27,7 +27,7 @@ skipped.
 make test-python-matrix
 ```
 
-The default matrix is Python 3.10 through 3.14. Override with
+The default matrix is Python 3.11 through 3.14. Override with
 `PYTHON_VERSIONS` when you need a narrower local run.
 
 ## Rust
@@ -47,9 +47,9 @@ tests and the adapter smoke test.
 make package
 ```
 
-This builds a wheel for each supported Python version plus one sdist, verifies
-artifact boundaries, and installs the matching wheel and sdist into clean
-environments. Narrow the local package matrix with `PYTHON_VERSIONS`:
+This builds one Python 3.11 ABI3 wheel plus one sdist, verifies artifact
+boundaries, and installs the wheel and sdist into clean environments for each
+supported Python version. Narrow the local package matrix with `PYTHON_VERSIONS`:
 
 ```bash
 PYTHON_VERSIONS=3.14 make package

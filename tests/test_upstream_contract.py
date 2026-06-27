@@ -3,10 +3,10 @@ from __future__ import annotations
 import re
 import runpy
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
-import tomli
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.packaging
@@ -35,8 +35,8 @@ def test_agent_browser_is_tracked_as_official_submodule() -> None:
 
 
 def test_rust_dependency_uses_clean_adapter_over_submodule() -> None:
-    workspace_cargo = tomli.loads((ROOT / "Cargo.toml").read_text())
-    py_cargo = tomli.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
+    workspace_cargo = tomllib.loads((ROOT / "Cargo.toml").read_text())
+    py_cargo = tomllib.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
 
     assert "crates/pyagentbrowser" in workspace_cargo["workspace"]["members"]
     assert "crates/agent-browser-adapter" in workspace_cargo["workspace"]["exclude"]
@@ -45,9 +45,9 @@ def test_rust_dependency_uses_clean_adapter_over_submodule() -> None:
 
 
 def test_prerelease_version_tracks_pinned_upstream_commit() -> None:
-    project = tomli.loads((ROOT / "pyproject.toml").read_text())["project"]
-    py_cargo = tomli.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
-    adapter_cargo = tomli.loads((ROOT / "crates/agent-browser-adapter/Cargo.toml").read_text())
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    py_cargo = tomllib.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
+    adapter_cargo = tomllib.loads((ROOT / "crates/agent-browser-adapter/Cargo.toml").read_text())
     release = runpy.run_path(str(ROOT / "src/agentbrowser/_version.py"))
 
     upstream_tag = subprocess.check_output(
@@ -68,7 +68,9 @@ def test_prerelease_version_tracks_pinned_upstream_commit() -> None:
         cwd=ROOT / "third_party/agent-browser",
         text=True,
     ).strip()
-    upstream_manifest = tomli.loads((ROOT / "third_party/agent-browser/cli/Cargo.toml").read_text())
+    upstream_manifest = tomllib.loads(
+        (ROOT / "third_party/agent-browser/cli/Cargo.toml").read_text()
+    )
     upstream_version = upstream_manifest["package"]["version"]
     release_match = re.fullmatch(rf"{re.escape(upstream_version)}rc(\d+)", project["version"])
 

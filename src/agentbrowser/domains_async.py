@@ -4,9 +4,7 @@ from asyncio import sleep as async_sleep
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Protocol
-
-from typing_extensions import Self
+from typing import Any, Protocol, Self
 
 from agentbrowser._browser_common import (
     exclusive_source,
