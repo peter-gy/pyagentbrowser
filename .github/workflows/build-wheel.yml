@@ -67,7 +67,26 @@ jobs:
             --out dist
             --interpreter python
 
+      - name: Check built wheel payload
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import zipfile
+
+          wheels = sorted(Path("dist").glob("*.whl"))
+          assert len(wheels) == 1, wheels
+          with zipfile.ZipFile(wheels[0]) as wheel:
+              names = set(wheel.namelist())
+          assert any(name.endswith(".dist-info/METADATA") for name in names)
+          assert any(name.startswith("agentbrowser/") for name in names)
+          assert any(name.startswith("agentbrowser/_native") for name in names)
+          PY
+
       - name: Test built wheel
+        if: >-
+          (runner.os == 'Linux' && inputs.target == 'x86_64') ||
+          (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
+          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
         run: |
           python -m venv wheel-test
           source wheel-test/bin/activate

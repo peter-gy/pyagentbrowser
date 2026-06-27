@@ -1,17 +1,44 @@
-name: Publish pyagentbrowser to PyPI
+name: Publish
 
 on:
-  workflow_dispatch:
   push:
     tags:
-      - v*
+      - "[0-9]*.[0-9]*.[0-9]*"
+      - "[0-9]*.[0-9]*.[0-9]*rc[0-9]*"
+      - "v[0-9]*.[0-9]*.[0-9]*"
+      - "v[0-9]*.[0-9]*.[0-9]*rc[0-9]*"
 
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref_name }}
+  cancel-in-progress: false
+
 jobs:
+  check-release-tag:
+    name: Check release tag
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.14"
+
+      - name: Check package version
+        run: ./scripts/release.sh check-version "${{ github.ref_name }}"
+
+      - name: Check upstream release metadata
+        run: python scripts/prepare_prerelease.py --check
+
   build:
     name: Build ${{ matrix.artifact }}
+    needs: check-release-tag
     uses: ./.github/workflows/build-wheel.yml
     strategy:
       fail-fast: false
@@ -105,22 +132,46 @@ jobs:
       artifact: wheels-${{ matrix.artifact }}
       sdist: ${{ matrix.sdist || false }}
 
-  publish:
-    name: Publish distributions
-    runs-on: ubuntu-latest
+  publish-pypi:
+    name: Publish to PyPI
     needs: build
+    runs-on: ubuntu-latest
     environment: pypi
     permissions:
       contents: read
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - name: Download distributions
+        uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
           merge-multiple: true
           path: dist
-      - name: Publish to PyPI
+
+      - name: Publish distributions
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          skip-existing: true
           password: ${{ secrets.PYPI_API_TOKEN }}
+          skip-existing: true
+
+  release-notes:
+    name: Update release notes
+    needs: publish-pypi
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: "24"
+
+      - name: Update release notes
+        run: npx --yes changelogithub@14.0.0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
