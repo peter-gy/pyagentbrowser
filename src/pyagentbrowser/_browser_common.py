@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Protocol, TypeAlias, cast
 
 from pyagentbrowser.models import ActionConfirmationRequired, BrowserResponse, SnapshotDiff
 
@@ -18,6 +18,16 @@ CDP_INVALIDATING_ACTIONS = frozenset(
     }
 )
 STALE_REF_ERROR_CODES = frozenset({"stale_ref", "unknown_ref"})
+INTERNAL_SHUTDOWN_ACTION = "__agent_browser_internal_shutdown"
+
+
+class PendingActionHandle(Protocol):
+    """Confirmation handle accepted by sync and async confirmation APIs."""
+
+    confirmation_id: str
+
+
+ConfirmationTarget: TypeAlias = ActionConfirmationRequired | PendingActionHandle | str
 
 
 def normalize_url(url: str) -> str:
@@ -37,10 +47,12 @@ def normalize_url(url: str) -> str:
     return f"https://{url}"
 
 
-def confirmation_id(confirmation: ActionConfirmationRequired | str | None) -> str | None:
+def confirmation_id(confirmation: ConfirmationTarget | None) -> str | None:
     if isinstance(confirmation, ActionConfirmationRequired):
         return confirmation.confirmation_id
-    return confirmation
+    if confirmation is None or isinstance(confirmation, str):
+        return confirmation
+    return confirmation.confirmation_id
 
 
 def response_confirmation_id(response: BrowserResponse) -> str | None:
@@ -63,11 +75,11 @@ def action_sets_launched(action: str) -> bool:
 
 
 def action_closes_browser(action: str) -> bool:
-    return action == "close"
+    return action in {"close", INTERNAL_SHUTDOWN_ACTION}
 
 
 def action_clears_pending_confirmation(action: str) -> bool:
-    return action in {"close", "confirm", "deny"}
+    return action in {"close", "confirm", "deny", INTERNAL_SHUTDOWN_ACTION}
 
 
 def action_invalidates_cdp(action: str) -> bool:

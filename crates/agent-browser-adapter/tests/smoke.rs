@@ -287,7 +287,13 @@ async fn stream_result_messages_report_success() {
     let status_event: Value = serde_json::from_str(status_message.to_text().unwrap()).unwrap();
     assert_eq!(status_event["type"], "status", "{status_event}");
 
-    assert_success(&run(&mut state, json!({"id": "status", "action": "stream_status"})).await);
+    assert_success(
+        &run(
+            &mut state,
+            json!({"id": "status", "action": "stream_status"}),
+        )
+        .await,
+    );
 
     let result = loop {
         let message = timeout(Duration::from_secs(10), websocket.next())

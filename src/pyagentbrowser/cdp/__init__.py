@@ -3,6 +3,7 @@ from __future__ import annotations
 from pyagentbrowser.cdp.client import AsyncCDPClient, CDPClient
 from pyagentbrowser.cdp.controller import AsyncCDPController, CDPController
 from pyagentbrowser.cdp.errors import (
+    CDPClosedError,
     CDPContextAmbiguityError,
     CDPContextNotFoundError,
     CDPError,
@@ -46,6 +47,7 @@ __all__ = [
     "AsyncFrame",
     "AsyncWebSocket",
     "CDPClient",
+    "CDPClosedError",
     "CDPContextAmbiguityError",
     "CDPContextNotFoundError",
     "CDPController",

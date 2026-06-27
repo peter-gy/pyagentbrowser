@@ -26,10 +26,36 @@ LoadState = Literal["load", "domcontentloaded", "networkidle", "none"]
 LlmsMode = Literal["index", "full"]
 MouseButton = Literal["left", "right", "middle"]
 MouseEventType = Literal["mouseMoved", "mousePressed", "mouseReleased", "mouseWheel"]
+RestoreSave = Literal["auto", "always", "never"]
 SameSite = Literal["Strict", "Lax", "None"]
+SessionIdScope = Literal["worktree", "cwd", "git-root"]
 StorageArea = Literal["local", "session"]
 WaitSelectorState = Literal["attached", "detached", "hidden", "visible"]
 ColorScheme = Literal["dark", "light", "no-preference"]
+
+
+@dataclass(frozen=True, slots=True)
+class RestoreOptions:
+    """State restore policy for a native browser session."""
+
+    key: str
+    save: RestoreSave | None = None
+    check_url: str | None = None
+    check_text: str | None = None
+    check_fn: str | None = None
+
+    def __post_init__(self) -> None:
+        if not _is_valid_session_component(self.key):
+            raise ValueError(
+                f"Invalid restore key '{self.key}'. Only alphanumeric characters, "
+                "hyphens, and underscores are allowed."
+            )
+        if self.save is not None and self.save not in {"auto", "always", "never"}:
+            raise ValueError("save must be 'auto', 'always', or 'never'")
+
+
+def _is_valid_session_component(value: str) -> bool:
+    return bool(value) and all(char.isalnum() or char in {"-", "_"} for char in value)
 
 
 class _OmitType:
@@ -44,6 +70,10 @@ OMIT = _OmitType()
 
 class AgentBrowserError(RuntimeError):
     """Common catchable base for Python SDK errors."""
+
+
+class NativeParseError(AgentBrowserError, ValueError):
+    """Raised when native payloads cannot be parsed into typed SDK models."""
 
 
 class BrowserError(AgentBrowserError):
@@ -83,11 +113,12 @@ class ActionConfirmationRequired(BrowserError):
         )
         self.confirmation_id = str(confirmation_id) if confirmation_id is not None else None
         self.data = dict(data)
+        self.pending_action: Any = None
 
 
 @dataclass(frozen=True, slots=True)
 class BrowserResponse:
-    """Native response envelope returned by `try_command()`.
+    """Native response envelope returned by `browser.native.execute()`.
 
     Attributes
     ----------
@@ -346,6 +377,62 @@ class ReadResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ReadMode:
+    """Native read mode passed to `browser.page.read(mode=...)`."""
+
+    raw: bool = False
+    require_markdown: bool = False
+    llms: LlmsMode | None = None
+    outline: bool = False
+
+    def __post_init__(self) -> None:
+        if self.llms not in {None, "index", "full"}:
+            raise ValueError("llms must be 'index', 'full', or None")
+        if self.raw and (self.require_markdown or self.llms is not None or self.outline):
+            raise ValueError("ReadMode.html() cannot be combined with markdown, llms, or outline")
+        if self.outline and (self.require_markdown or self.llms is not None):
+            raise ValueError("ReadMode.outline_only() cannot be combined with markdown or llms")
+
+    @classmethod
+    def html(cls) -> ReadMode:
+        """Return raw HTML content when native read supports it."""
+        return cls(raw=True)
+
+    @classmethod
+    def markdown(cls, *, require: bool = False) -> ReadMode:
+        """Return Markdown-oriented content."""
+        return cls(require_markdown=require)
+
+    @classmethod
+    def llms_index(cls, *, require_markdown: bool = False) -> ReadMode:
+        """Read through llms.txt index discovery."""
+        return cls(require_markdown=require_markdown, llms="index")
+
+    @classmethod
+    def llms_full(cls, *, require_markdown: bool = False) -> ReadMode:
+        """Read through full llms.txt content discovery."""
+        return cls(require_markdown=require_markdown, llms="full")
+
+    @classmethod
+    def outline_only(cls) -> ReadMode:
+        """Return outline extraction content."""
+        return cls(outline=True)
+
+
+@dataclass(frozen=True, slots=True)
+class SessionId:
+    """Stable session id derived from a filesystem scope."""
+
+    session: str
+    scope: SessionIdScope
+    path: str
+    hash: str
+
+    def __str__(self) -> str:
+        return self.session
+
+
+@dataclass(frozen=True, slots=True)
 class ConsoleMessage:
     """Captured browser console message."""
 
@@ -519,6 +606,7 @@ def bounding_box_from_data(data: Mapping[str, Any]) -> BoundingBox | None:
     box = _first_mapping(data, "box", "boundingBox", "rect") or data
     if not any(key in box for key in ("x", "y", "width", "height")):
         return None
+    _require_keys(box, "BoundingBox", "x", "y", "width", "height")
     return BoundingBox(
         x=_float(box.get("x")),
         y=_float(box.get("y")),
@@ -563,11 +651,13 @@ def network_requests_from_data(data: Mapping[str, Any]) -> tuple[NetworkRequest,
 
 def request_detail_from_data(data: Mapping[str, Any]) -> RequestDetail:
     raw = _first_mapping(data, "request", "detail") or data
+    id_value = _first_present(raw, "requestId", "id", model="RequestDetail", field="id")
+    url_value = _first_present(raw, "url", model="RequestDetail", field="url")
     request_headers = raw.get("requestHeaders") or raw.get("headers") or {}
     response_headers = raw.get("responseHeaders") or {}
     return RequestDetail(
-        id=str(raw.get("requestId") or raw.get("id") or ""),
-        url=str(raw.get("url", "")),
+        id=str(id_value),
+        url=str(url_value),
         method=str(raw.get("method", "")),
         status=_optional_int(raw.get("status")),
         request_headers=dict(request_headers) if isinstance(request_headers, Mapping) else {},
@@ -578,6 +668,7 @@ def request_detail_from_data(data: Mapping[str, Any]) -> RequestDetail:
 
 
 def read_result_from_data(data: Mapping[str, Any]) -> ReadResult:
+    _require_keys(data, "ReadResult", "content")
     return ReadResult(
         url=str(data.get("url", "")),
         final_url=str(data.get("finalUrl") or data.get("final_url") or data.get("url") or ""),
@@ -724,10 +815,31 @@ def _first_mapping(data: Mapping[str, Any], *keys: str) -> Mapping[str, Any] | N
     return None
 
 
+def _require_keys(raw: Mapping[str, Any], model: str, *keys: str) -> None:
+    missing = [key for key in keys if raw.get(key) is None]
+    if missing:
+        raise NativeParseError(f"{model} missing required native field: {', '.join(missing)}")
+
+
+def _first_present(
+    raw: Mapping[str, Any],
+    *keys: str,
+    model: str,
+    field: str,
+) -> Any:
+    for key in keys:
+        value = raw.get(key)
+        if value is not None:
+            return value
+    raise NativeParseError(f"{model} missing required native field: {field}")
+
+
 def _tab_info(raw: Mapping[str, Any]) -> TabInfo:
+    id_value = _first_present(raw, "id", "tabId", "targetId", model="TabInfo", field="id")
+    url_value = _first_present(raw, "url", model="TabInfo", field="url")
     return TabInfo(
-        id=str(raw.get("id") or raw.get("tabId") or raw.get("targetId") or ""),
-        url=str(raw.get("url", "")),
+        id=str(id_value),
+        url=str(url_value),
         title=str(raw.get("title", "")),
         label=str(raw["label"]) if raw.get("label") is not None else None,
         active=bool(raw.get("active") or raw.get("selected") or raw.get("current")),
@@ -737,6 +849,7 @@ def _tab_info(raw: Mapping[str, Any]) -> TabInfo:
 
 def _cookie(raw: Mapping[str, Any]) -> Cookie:
     http_only = raw.get("httpOnly") if "httpOnly" in raw else raw.get("http_only")
+    _require_keys(raw, "Cookie", "name", "value")
     return Cookie(
         name=str(raw.get("name", "")),
         value=str(raw.get("value", "")),
@@ -751,9 +864,11 @@ def _cookie(raw: Mapping[str, Any]) -> Cookie:
 
 
 def _network_request(raw: Mapping[str, Any]) -> NetworkRequest:
+    id_value = _first_present(raw, "requestId", "id", model="NetworkRequest", field="id")
+    url_value = _first_present(raw, "url", model="NetworkRequest", field="url")
     return NetworkRequest(
-        id=str(raw.get("requestId") or raw.get("id") or ""),
-        url=str(raw.get("url", "")),
+        id=str(id_value),
+        url=str(url_value),
         method=str(raw.get("method", "")),
         resource_type=str(raw.get("type") or raw.get("resourceType") or ""),
         status=_optional_int(raw.get("status")),
@@ -762,9 +877,11 @@ def _network_request(raw: Mapping[str, Any]) -> NetworkRequest:
 
 
 def _console_message(raw: Mapping[str, Any]) -> ConsoleMessage:
+    type_value = _first_present(raw, "type", "kind", "level", model="ConsoleMessage", field="type")
+    text_value = _first_present(raw, "text", "message", model="ConsoleMessage", field="text")
     return ConsoleMessage(
-        type=str(raw.get("type") or raw.get("kind") or raw.get("level") or ""),
-        text=str(raw.get("text") or raw.get("message") or ""),
+        type=str(type_value),
+        text=str(text_value),
         level=str(raw["level"]) if raw.get("level") is not None else None,
         url=str(raw["url"]) if raw.get("url") is not None else None,
         line=_optional_int(raw.get("line") or raw.get("lineNumber")),

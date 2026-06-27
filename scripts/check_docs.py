@@ -17,7 +17,7 @@ FORBIDDEN_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
     ("browser.evaluate", re.compile(r"browser\.evaluate")),
     ("browser.locator", re.compile(r"browser\.locator")),
     ("browser.get_by_", re.compile(r"browser\.get_by_")),
-    ("browser.cdp frame sugar", re.compile(r"browser\.cdp\.(frames|frame|contexts)")),
+    ("browser.cdp frame sugar", re.compile(r"browser\.cdp\.(frame|contexts)\b")),
     ("screenshot_image", re.compile(r"screenshot_image")),
     ("to_pil", re.compile(r"to_pil")),
     ("as_markdown", re.compile(r"as_markdown")),

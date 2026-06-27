@@ -1,17 +1,16 @@
 from __future__ import annotations
 
 import atexit
-from collections.abc import Mapping, Sequence
-from pathlib import Path
 from threading import RLock
 from typing import TYPE_CHECKING, Any, TypedDict, cast
 
 from typing_extensions import Unpack
 
 from pyagentbrowser.agent import Agent
-from pyagentbrowser.browser import Browser
+from pyagentbrowser.browser import Browser, Dashboard
 from pyagentbrowser.domains import (
     CDP,
+    ActiveFrame,
     Capture,
     Clipboard,
     Cookies,
@@ -20,17 +19,23 @@ from pyagentbrowser.domains import (
     Diff,
     Downloads,
     Find,
-    Frames,
     Keyboard,
     Mouse,
     Network,
     Page,
+    Restore,
+    Runtime,
     Scripts,
     State,
     Storage,
     Tabs,
 )
-from pyagentbrowser.models import ColorScheme, DashboardOptions, ProxyConfig
+from pyagentbrowser.launch import (
+    BrowserSessionOptions,
+    CDPAttach,
+    LaunchConfiguration,
+    LaunchOptions,
+)
 
 if TYPE_CHECKING:
     from pyagentbrowser.session import NativeSession
@@ -41,30 +46,11 @@ _default_browser: Browser | None = None
 
 
 class DefaultBrowserOptions(TypedDict, total=False):
-    """Keyword options accepted by `pyagentbrowser.configure()`."""
+    """Keyword options accepted by `pyagentbrowser.notebook.configure()`."""
 
-    headless: bool
-    executable_path: str | Path | None
-    engine: str | None
-    session: str | None
-    session_name: str | None
-    default_timeout_ms: int | None
-    allowed_domains: str | None
-    action_policy: str | Path | None
-    confirm_actions: Sequence[str] | None
-    profile: str | Path | None
-    storage_state: str | Path | None
-    extensions: Sequence[str | Path]
-    proxy: str | ProxyConfig | Mapping[str, Any] | None
-    provider: str | None
-    cdp_url: str | None
-    cdp_port: int | None
-    auto_connect: bool
-    color_scheme: ColorScheme | None
-    hide_scrollbars: bool | None
-    args: Sequence[str]
-    no_auto_dialog: bool
-    dashboard: bool | DashboardOptions | None
+    launch_options: LaunchOptions | None
+    attach: CDPAttach | None
+    session_options: BrowserSessionOptions | None
     native_session: NativeSession | None
 
 
@@ -80,8 +66,28 @@ def default_browser() -> Browser:
     global _default_browser
     with _lock:
         if _default_browser is None:
-            _default_browser = Browser(**_default_options)
+            _default_browser = _new_browser(_default_options)
         return _default_browser
+
+
+def _new_browser(options: dict[str, Any]) -> Browser:
+    session_options = cast(
+        BrowserSessionOptions,
+        options.get("session_options") or BrowserSessionOptions(),
+    )
+    launch_options = cast(LaunchOptions | None, options.get("launch_options"))
+    attach = cast(CDPAttach | None, options.get("attach"))
+    native_session = cast("NativeSession | None", options.get("native_session"))
+    launch_configuration = LaunchConfiguration.from_public_options(
+        launch_options,
+        attach=attach,
+        allowed_domains=session_options.allowed_domains,
+    )
+    return Browser._from_configuration(
+        launch_configuration,
+        session_options=session_options,
+        native_session=native_session,
+    )
 
 
 def configure(
@@ -92,10 +98,8 @@ def configure(
     """Replace the process-local default browser configuration.
 
     The current default browser is closed before a new default `Browser` object
-    is created. Browser launch remains lazy unless CDP attachment options are
-    supplied. `cdp_port`, `cdp_url`, and `auto_connect=True` perform an
-    immediate connection handshake so non-navigation namespaces such as `tabs`
-    can be used right away.
+    is created. Browser launch and CDP attachment remain lazy until code calls
+    `browser.connect()` or a namespace method that needs a page.
 
     Parameters
     ----------
@@ -104,7 +108,8 @@ def configure(
         even if the native close command fails. Use it when an interrupted
         notebook run leaves a stale default browser.
     **options
-        `Browser` constructor options.
+        Named lifecycle option objects: `launch_options`, `attach`,
+        `session_options`, and `native_session`.
 
     Returns
     -------
@@ -113,34 +118,19 @@ def configure(
     """
 
     global _default_browser, _default_options
+    next_options = {key: value for key, value in options.items()}
+    replacement = _new_browser(next_options)
     with _lock:
         current = _default_browser
-        previous_options = _default_options
-        _default_browser = None
-        _default_options = {key: value for key, value in options.items()}
-
-    if current is not None:
-        try:
-            current.close()
-        except BaseException:
-            if not force:
-                with _lock:
-                    if _default_browser is None:
-                        _default_browser = current
-                        _default_options = previous_options
-                raise
-    browser = default_browser()
-    if _should_connect_on_configure(options):
-        browser.connect()
-    return browser
-
-
-def _should_connect_on_configure(options: Mapping[str, Any]) -> bool:
-    return (
-        bool(options.get("cdp_url"))
-        or options.get("cdp_port") is not None
-        or bool(options.get("auto_connect"))
-    )
+        if current is not None:
+            try:
+                current.close()
+            except BaseException:
+                if not force:
+                    raise
+        _default_browser = replacement
+        _default_options = next_options
+        return replacement
 
 
 def close(*, force: bool = False) -> None:
@@ -203,22 +193,25 @@ class _DefaultNamespaceProxy:
         return f"<pyagentbrowser default namespace {self._name!r} for {target}>"
 
 
+active_frame = cast(ActiveFrame, _DefaultNamespaceProxy("active_frame"))
 page = cast(Page, _DefaultNamespaceProxy("page"))
 agent = cast(Agent, _DefaultNamespaceProxy("agent"))
 capture = cast(Capture, _DefaultNamespaceProxy("capture"))
 cdp = cast(CDP, _DefaultNamespaceProxy("cdp"))
 clipboard = cast(Clipboard, _DefaultNamespaceProxy("clipboard"))
 cookies = cast(Cookies, _DefaultNamespaceProxy("cookies"))
+dashboard = cast(Dashboard, _DefaultNamespaceProxy("dashboard"))
 dialogs = cast(Dialogs, _DefaultNamespaceProxy("dialogs"))
 diagnostics = cast(Diagnostics, _DefaultNamespaceProxy("diagnostics"))
 diff = cast(Diff, _DefaultNamespaceProxy("diff"))
 downloads = cast(Downloads, _DefaultNamespaceProxy("downloads"))
 find = cast(Find, _DefaultNamespaceProxy("find"))
-frames = cast(Frames, _DefaultNamespaceProxy("frames"))
 keyboard = cast(Keyboard, _DefaultNamespaceProxy("keyboard"))
 mouse = cast(Mouse, _DefaultNamespaceProxy("mouse"))
 network = cast(Network, _DefaultNamespaceProxy("network"))
 scripts = cast(Scripts, _DefaultNamespaceProxy("scripts"))
+restore = cast(Restore, _DefaultNamespaceProxy("restore"))
+runtime = cast(Runtime, _DefaultNamespaceProxy("runtime"))
 state = cast(State, _DefaultNamespaceProxy("state"))
 storage = cast(Storage, _DefaultNamespaceProxy("storage"))
 tabs = cast(Tabs, _DefaultNamespaceProxy("tabs"))

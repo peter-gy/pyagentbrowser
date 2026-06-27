@@ -13,6 +13,8 @@ import pytest
 
 from scripts import package_smoke
 
+pytestmark = pytest.mark.packaging
+
 PROJECT = package_smoke.project_metadata()
 PROJECT_VERSION = str(PROJECT["version"])
 PROJECT_CLASSIFIERS = cast(list[str], PROJECT["classifiers"])
@@ -77,8 +79,12 @@ def _write_wheel(
     *,
     empty: set[str] | None = None,
     metadata: str | None = None,
+    native_extensions: dict[str, bytes] | None = None,
 ) -> None:
     empty = set(empty or ())
+    native_extensions = native_extensions or {
+        "pyagentbrowser/_native.cpython-314-darwin.so": b"native extension"
+    }
     with zipfile.ZipFile(path, "w") as archive:
         for name in sorted(names):
             if name == "pyagentbrowser/py.typed" or name in empty:
@@ -90,7 +96,8 @@ def _write_wheel(
         archive.writestr(
             f"pyagentbrowser-{PROJECT_VERSION}.dist-info/METADATA", metadata or _metadata()
         )
-        archive.writestr("pyagentbrowser/_native.cpython-314-darwin.so", "")
+        for name, data in native_extensions.items():
+            archive.writestr(name, data)
 
 
 def _write_sdist(path: Path, names: AbstractSet[str], *, metadata: str | None = None) -> None:
@@ -138,6 +145,62 @@ def test_wheel_smoke_rejects_empty_python_modules(tmp_path: Path) -> None:
         package_smoke.check_wheel(wheel)
 
 
+def test_wheel_smoke_rejects_agentbrowser_package_payload(tmp_path: Path) -> None:
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    _write_wheel(wheel, WHEEL_PAYLOAD | {"agentbrowser/__init__.py"})
+
+    with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
+        package_smoke.check_wheel(wheel)
+
+
+@pytest.mark.parametrize("payload", ["agentbrowser.py", "pyagentbrowser.py"])
+def test_wheel_smoke_rejects_module_payload(tmp_path: Path, payload: str) -> None:
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    _write_wheel(wheel, WHEEL_PAYLOAD | {payload})
+
+    with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
+        package_smoke.check_wheel(wheel)
+
+
+def test_wheel_smoke_rejects_empty_native_extension(tmp_path: Path) -> None:
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    _write_wheel(
+        wheel,
+        WHEEL_PAYLOAD,
+        native_extensions={"pyagentbrowser/_native.cpython-314-darwin.so": b""},
+    )
+
+    with pytest.raises(package_smoke.PackageSmokeError, match="empty native extension"):
+        package_smoke.check_wheel(wheel)
+
+
+def test_wheel_smoke_rejects_multiple_native_extensions(tmp_path: Path) -> None:
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    _write_wheel(
+        wheel,
+        WHEEL_PAYLOAD,
+        native_extensions={
+            "pyagentbrowser/_native.cpython-314-darwin.so": b"native extension",
+            "pyagentbrowser/_native.cpython-313-darwin.so": b"native extension",
+        },
+    )
+
+    with pytest.raises(package_smoke.PackageSmokeError, match="multiple native extensions"):
+        package_smoke.check_wheel(wheel)
+
+
+def test_wheel_smoke_rejects_native_extension_tag_mismatch(tmp_path: Path) -> None:
+    wheel = tmp_path / _artifact("pyagentbrowser-{version}-cp314-cp314-macosx_11_0_arm64.whl")
+    _write_wheel(
+        wheel,
+        WHEEL_PAYLOAD,
+        native_extensions={"pyagentbrowser/_native.cpython-313-darwin.so": b"native extension"},
+    )
+
+    with pytest.raises(package_smoke.PackageSmokeError, match="wheel Python tag"):
+        package_smoke.check_wheel(wheel)
+
+
 @pytest.mark.parametrize("missing", sorted(WHEEL_PAYLOAD))
 def test_wheel_smoke_rejects_missing_required_runtime_file(
     tmp_path: Path,
@@ -156,6 +219,22 @@ def test_sdist_smoke_accepts_required_categories(tmp_path: Path) -> None:
     _write_sdist(sdist, names)
 
     package_smoke.check_sdist(sdist)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    ["src/agentbrowser/__init__.py", "src/agentbrowser.py", "src/pyagentbrowser.py"],
+)
+def test_sdist_smoke_rejects_agentbrowser_source_payload(
+    tmp_path: Path,
+    payload: str,
+) -> None:
+    sdist = tmp_path / _artifact("pyagentbrowser-{version}.tar.gz")
+    names = SDIST_BUILD_PAYLOAD | SDIST_DOCS_AND_EXAMPLES | SDIST_UPSTREAM_PAYLOAD | {payload}
+    _write_sdist(sdist, names)
+
+    with pytest.raises(package_smoke.PackageSmokeError, match="forbidden import payload"):
+        package_smoke.check_sdist(sdist)
 
 
 @pytest.mark.parametrize(

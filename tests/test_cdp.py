@@ -13,8 +13,10 @@ import pytest
 from pyagentbrowser import AgentBrowserError, AsyncBrowser, Browser
 from pyagentbrowser.cdp import (
     AsyncCDPClient,
+    AsyncCDPController,
     AsyncCDPPageSession,
     CDPClient,
+    CDPClosedError,
     CDPContextNotFoundError,
     CDPController,
     CDPError,
@@ -56,6 +58,25 @@ class FakeWebSocket:
         return self.messages.popleft()
 
     def close(self) -> None:
+        self.closed = True
+
+
+class DelayedAsyncWebSocket:
+    def __init__(self) -> None:
+        self.sent: list[dict[str, Any]] = []
+        self.sent_event = asyncio.Event()
+        self.response_event = asyncio.Event()
+        self.closed = False
+
+    async def send(self, message: str) -> None:
+        self.sent.append(json.loads(message))
+        self.sent_event.set()
+
+    async def recv(self) -> str:
+        await self.response_event.wait()
+        return json.dumps({"id": self.sent[0]["id"], "result": {"ok": True}})
+
+    async def close(self) -> None:
         self.closed = True
 
 
@@ -237,7 +258,7 @@ class MultiTargetBrowser:
             ),
         )
 
-    def command(self, action: str, **_params: Any) -> Mapping[str, Any]:
+    def _command(self, action: str, **_params: Any) -> Mapping[str, Any]:
         assert action == "cdp_url"
         return {"cdpUrl": "ws://cdp"}
 
@@ -341,6 +362,57 @@ def test_cdp_client_timeout_is_typed_sdk_error() -> None:
     assert exc_info.value.method == "Runtime.evaluate"
     assert isinstance(exc_info.value, CDPError)
     assert isinstance(exc_info.value, AgentBrowserError)
+
+
+def test_cdp_client_rejects_send_after_close() -> None:
+    client = CDPClient("ws://cdp", connect=lambda _url: FakeWebSocket([]))
+
+    client.close()
+
+    with pytest.raises(CDPClosedError, match="CDP client is closed"):
+        client.send("Runtime.evaluate", {"expression": "1"})
+
+
+def test_cdp_client_rejects_event_drain_after_close() -> None:
+    client = CDPClient("ws://cdp", connect=lambda _url: FakeWebSocket([]))
+
+    client.close()
+
+    with pytest.raises(CDPClosedError, match="CDP client is closed"):
+        client.drain_events()
+
+
+def test_async_cdp_client_rejects_send_after_close() -> None:
+    async def run() -> None:
+        client = AsyncCDPClient("ws://cdp")
+
+        await client.close()
+
+        with pytest.raises(CDPClosedError, match="CDP client is closed"):
+            await client.send("Runtime.evaluate", {"expression": "1"})
+
+    asyncio.run(run())
+
+
+def test_async_cdp_client_close_wins_over_in_flight_response() -> None:
+    async def run() -> None:
+        websocket = DelayedAsyncWebSocket()
+
+        async def connect(_url: str) -> DelayedAsyncWebSocket:
+            return websocket
+
+        client = AsyncCDPClient("ws://cdp", connect=connect)
+        pending = asyncio.create_task(client.send("Runtime.evaluate"))
+        await websocket.sent_event.wait()
+
+        await client.close()
+        websocket.response_event.set()
+
+        with pytest.raises(CDPClosedError, match="CDP client is closed"):
+            await pending
+        assert websocket.closed is True
+
+    asyncio.run(run())
 
 
 def test_cdp_controller_reresolves_active_target_after_invalidation() -> None:
@@ -473,7 +545,7 @@ def test_active_target_ambiguity_is_explicit() -> None:
         def url(self) -> str:
             return "https://example.com"
 
-        def command(self, action: str, **_params: Any) -> Mapping[str, Any]:
+        def _command(self, action: str, **_params: Any) -> Mapping[str, Any]:
             assert action == "cdp_url"
             return {"cdpUrl": "ws://cdp"}
 
@@ -519,6 +591,39 @@ def test_stale_frame_errors_after_invalidation() -> None:
         frame.evaluate("location.href")
 
 
+def test_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
+    browser = MultiTargetBrowser()
+    controller = _multi_target_controller(browser)
+    frame = controller.frame()
+
+    controller.close()
+
+    with pytest.raises(CDPStaleObjectError, match="frame is stale"):
+        frame.evaluate("location.href")
+    with pytest.raises(CDPClosedError, match="CDP controller is closed"):
+        controller.evaluate("location.href")
+
+
+def test_async_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
+    async def run() -> None:
+        browser = AsyncBrowser(native_session=AsyncNativeSession(native=PublicPathNative()))
+        controller = AsyncCDPController(
+            browser,
+            client_factory=cast(Any, PublicPathAsyncCDPClient),
+        )
+        frame = await controller.frame()
+
+        await controller.close()
+
+        with pytest.raises(CDPStaleObjectError, match="frame is stale"):
+            await frame.evaluate("location.href")
+        with pytest.raises(CDPClosedError, match="CDP controller is closed"):
+            await controller.evaluate("location.href")
+        await browser.aclose()
+
+    asyncio.run(run())
+
+
 def test_page_evaluate_without_context_uses_native_command() -> None:
     browser = Browser(native_session=NativeSession(native=PublicPathNative()))
 
@@ -531,30 +636,30 @@ def _browser_with_public_path_cdp(monkeypatch: pytest.MonkeyPatch) -> Browser:
     return Browser(native_session=NativeSession(native=PublicPathNative()))
 
 
-def test_browser_frames_list_uses_public_namespace(
+def test_browser_cdp_frames_list_uses_public_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     browser = _browser_with_public_path_cdp(monkeypatch)
 
-    frames = {frame.id: frame for frame in browser.frames.list()}
+    frames = {frame.id: frame for frame in browser.cdp.frames.list()}
     assert frames["main"].url == "https://example.com"
     assert frames["child"].name == "target"
 
 
-def test_browser_frames_lookup_by_name_uses_public_namespace(
+def test_browser_cdp_frames_lookup_by_name_uses_public_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     browser = _browser_with_public_path_cdp(monkeypatch)
 
-    assert browser.frames.get(name="target").id == "child"
+    assert browser.cdp.frames.get(name="target").id == "child"
 
 
-def test_browser_frames_lookup_by_selector_uses_public_namespace(
+def test_browser_cdp_frames_lookup_by_selector_uses_public_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     browser = _browser_with_public_path_cdp(monkeypatch)
 
-    assert browser.frames.get(selector="#target").id == "child"
+    assert browser.cdp.frames.get(selector="#target").id == "child"
 
 
 def test_browser_cdp_evaluate_uses_frame_selector(
@@ -660,13 +765,13 @@ async def _async_browser_with_public_path_cdp(
     return AsyncBrowser(native_session=AsyncNativeSession(native=PublicPathNative()))
 
 
-def test_browser_async_frames_list_uses_public_namespace(
+def test_browser_async_cdp_frames_list_uses_public_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def run() -> None:
         browser = await _async_browser_with_public_path_cdp(monkeypatch)
 
-        frames = {frame.id: frame for frame in await browser.frames.list()}
+        frames = {frame.id: frame for frame in await browser.cdp.frames.list()}
         assert frames["main"].url == "https://example.com"
         assert frames["child"].name == "target"
         await browser.aclose()
@@ -674,25 +779,25 @@ def test_browser_async_frames_list_uses_public_namespace(
     asyncio.run(run())
 
 
-def test_browser_async_frames_lookup_by_name_uses_public_namespace(
+def test_browser_async_cdp_frames_lookup_by_name_uses_public_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def run() -> None:
         browser = await _async_browser_with_public_path_cdp(monkeypatch)
 
-        assert (await browser.frames.get(name="target")).id == "child"
+        assert (await browser.cdp.frames.get(name="target")).id == "child"
         await browser.aclose()
 
     asyncio.run(run())
 
 
-def test_browser_async_frames_lookup_by_selector_uses_public_namespace(
+def test_browser_async_cdp_frames_lookup_by_selector_uses_public_namespace(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     async def run() -> None:
         browser = await _async_browser_with_public_path_cdp(monkeypatch)
 
-        assert (await browser.frames.get(selector="#target")).id == "child"
+        assert (await browser.cdp.frames.get(selector="#target")).id == "child"
         await browser.aclose()
 
     asyncio.run(run())

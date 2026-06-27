@@ -34,6 +34,8 @@ mod skill_data {
     include!(concat!(env!("OUT_DIR"), "/pyagentbrowser_skill_data.rs"));
 }
 
+const INTERNAL_SHUTDOWN_ACTION: &str = "__agent_browser_internal_shutdown";
+
 #[pyclass(name = "NativeBrowser", module = "pyagentbrowser._native")]
 struct PyNativeBrowser {
     state: Mutex<DaemonState>,
@@ -44,7 +46,12 @@ struct PyNativeBrowser {
 #[derive(Default, Deserialize)]
 struct NativeBrowserOptions {
     session: Option<String>,
-    session_name: Option<String>,
+    restore_key: Option<String>,
+    restore_save: Option<String>,
+    restore_check_url: Option<String>,
+    restore_check_text: Option<String>,
+    restore_check_fn: Option<String>,
+    namespace: Option<String>,
     default_timeout_ms: Option<u64>,
     allowed_domains: Option<String>,
     engine: Option<String>,
@@ -101,9 +108,16 @@ impl PyNativeBrowser {
             .map_err(|err| {
                 PyRuntimeError::new_err(format!("failed to create tokio runtime: {err}"))
             })?;
+        let namespace = options.namespace.clone();
         let mut state = native_state(&options)?;
         let dashboard = match options.dashboard.and_then(DashboardOption::into_config) {
-            Some(config) => Some(start_dashboard(py, &runtime, &mut state, config)?),
+            Some(config) => Some(start_dashboard(
+                py,
+                &runtime,
+                &mut state,
+                namespace.as_deref(),
+                config,
+            )?),
             None => None,
         };
 
@@ -134,8 +148,9 @@ impl PyNativeBrowser {
             })
             .map_err(PyRuntimeError::new_err)?;
         let response = with_python_error_code(response);
-        let should_shutdown_dashboard = command.get("action").and_then(Value::as_str)
-            == Some("close")
+        let action = command.get("action").and_then(Value::as_str);
+        let should_shutdown_dashboard = (action == Some("close")
+            || action == Some(INTERNAL_SHUTDOWN_ACTION))
             && response
                 .get("success")
                 .and_then(Value::as_bool)
@@ -206,8 +221,28 @@ fn native_state(options: &NativeBrowserOptions) -> PyResult<DaemonState> {
     if let Some(session) = &options.session {
         daemon.session_id.clone_from(session);
     }
-    if let Some(session_name) = &options.session_name {
-        daemon.session_name = Some(session_name.clone());
+    daemon.namespace.clone_from(&options.namespace);
+    if let Some(restore_key) = &options.restore_key {
+        daemon.session_name = Some(restore_key.clone());
+        daemon.restore_status = "pending".to_string();
+    }
+    if let Some(restore_save) = &options.restore_save {
+        if !matches!(restore_save.as_str(), "auto" | "always" | "never") {
+            return Err(PyValueError::new_err(format!(
+                "Invalid restore save policy '{}'. Use auto, always, or never.",
+                restore_save
+            )));
+        }
+        daemon.restore_save.clone_from(restore_save);
+    }
+    if let Some(check) = &options.restore_check_url {
+        daemon.restore_check_url = Some(check.clone());
+    }
+    if let Some(check) = &options.restore_check_text {
+        daemon.restore_check_text = Some(check.clone());
+    }
+    if let Some(check) = &options.restore_check_fn {
+        daemon.restore_check_fn = Some(check.clone());
     }
     if let Some(default_timeout_ms) = options.default_timeout_ms {
         daemon.default_timeout_ms = default_timeout_ms;
@@ -243,10 +278,11 @@ fn start_dashboard(
     py: Python<'_>,
     runtime: &Runtime,
     state: &mut DaemonState,
+    namespace: Option<&str>,
     config: DashboardConfig,
 ) -> PyResult<DashboardSidecar> {
     validate_dashboard_session_id(&state.session_id)?;
-    let socket_dir = agent_browser::socket_dir();
+    let socket_dir = agent_browser::socket_dir_for_namespace(namespace);
     fs::create_dir_all(&socket_dir).map_err(|err| {
         PyRuntimeError::new_err(format!(
             "failed to create agent-browser socket directory '{}': {err}",

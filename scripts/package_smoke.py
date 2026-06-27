@@ -60,6 +60,10 @@ WHEEL_FORBIDDEN_EXACT = frozenset(
         "pyagentbrowser/cli.py",
         "pyagentbrowser/__main__.py",
         "pyagentbrowser/upstream.py",
+        "pyagentbrowser.py",
+        "pyagentbrowser.pyi",
+        "agentbrowser.py",
+        "agentbrowser.pyi",
         "Cargo.lock",
         "rust-toolchain.toml",
         "rustfmt.toml",
@@ -67,10 +71,10 @@ WHEEL_FORBIDDEN_EXACT = frozenset(
 )
 WHEEL_FORBIDDEN_PREFIXES = (
     "pyagentbrowser/_skill_data/",
+    "agentbrowser/",
     "third_party/",
     "crates/",
     "docs/figures/",
-    "nogit/",
     "target/",
     "tests/",
     "examples/",
@@ -170,7 +174,6 @@ FORBIDDEN_SUPPORT_PREFIXES = (
     ".github/",
     "crates/agent-browser-adapter/target/",
     "docs/figures/",
-    "nogit/",
     "target/",
     "tests/",
 )
@@ -243,10 +246,53 @@ def _is_native_extension(name: str) -> bool:
     return name.startswith("pyagentbrowser/_native.") and name.endswith((".so", ".pyd"))
 
 
-def assert_wheel_runtime_payload(names: set[str]) -> None:
+def _native_extensions(names: set[str]) -> list[str]:
+    return sorted(name for name in names if _is_native_extension(name))
+
+
+def _wheel_python_tag(artifact_name: str) -> str | None:
+    match = re.match(r"^pyagentbrowser-[^-]+-(cp\d+)-", artifact_name)
+    return match.group(1) if match else None
+
+
+def _native_extension_matches_python_tag(name: str, python_tag: str) -> bool:
+    tag_digits = python_tag.removeprefix("cp")
+    basename = name.rsplit("/", 1)[-1]
+    return f"cpython-{tag_digits}" in basename or f".{python_tag}-" in basename
+
+
+def _is_agentbrowser_import_payload(name: str) -> bool:
+    return name.startswith("agentbrowser/") or (
+        name.startswith("agentbrowser.") and name.endswith((".py", ".pyi", ".so", ".pyd"))
+    )
+
+
+def _is_agentbrowser_source_payload(name: str) -> bool:
+    return name.startswith("src/agentbrowser/") or (
+        name.startswith("src/agentbrowser.") and name.endswith((".py", ".pyi", ".so", ".pyd"))
+    )
+
+
+def assert_wheel_runtime_payload(
+    names: set[str],
+    sizes: Mapping[str, int],
+    artifact_name: str,
+) -> None:
     _assert_present(names, WHEEL_REQUIRED_FILES, "wheel")
-    if not any(_is_native_extension(name) for name in names):
+    native_extensions = _native_extensions(names)
+    if not native_extensions:
         _fail("wheel is missing native extension")
+    if len(native_extensions) != 1:
+        _fail(f"wheel contains multiple native extensions: {native_extensions}")
+    native_extension = native_extensions[0]
+    if sizes.get(native_extension, 0) <= 0:
+        _fail(f"wheel contains empty native extension: {native_extension}")
+    python_tag = _wheel_python_tag(artifact_name)
+    if python_tag and not _native_extension_matches_python_tag(native_extension, python_tag):
+        _fail(
+            f"wheel native extension {native_extension} does not match "
+            f"wheel Python tag {python_tag}"
+        )
 
 
 def assert_wheel_python_modules_are_nonempty(sizes: Mapping[str, int]) -> None:
@@ -257,7 +303,11 @@ def assert_wheel_python_modules_are_nonempty(sizes: Mapping[str, int]) -> None:
 
 def assert_wheel_excludes_source_and_junk(names: set[str]) -> None:
     for name in names:
-        if name in WHEEL_FORBIDDEN_EXACT or name.startswith(WHEEL_FORBIDDEN_PREFIXES):
+        if (
+            name in WHEEL_FORBIDDEN_EXACT
+            or name.startswith(WHEEL_FORBIDDEN_PREFIXES)
+            or _is_agentbrowser_import_payload(name)
+        ):
             _fail(f"wheel contains forbidden payload: {name}")
         if name.endswith((".pth", ".pyc", ".pyo")) or "__pycache__/" in name:
             _fail(f"wheel contains development artifact: {name}")
@@ -465,6 +515,10 @@ def assert_sdist_excludes_junk_and_dashboard_payload(names: set[str]) -> None:
             or "__pycache__/" in name
         ):
             _fail(f"sdist contains support/development junk: {name}")
+        if _is_agentbrowser_source_payload(name) or _is_agentbrowser_import_payload(name):
+            _fail(f"sdist contains forbidden import payload: {name}")
+        if name in {"src/pyagentbrowser.py", "src/pyagentbrowser.pyi"}:
+            _fail(f"sdist contains forbidden import payload: {name}")
         if name in FORBIDDEN_UPSTREAM_EXACT or name.startswith(FORBIDDEN_UPSTREAM_PREFIXES):
             _fail(f"sdist contains forbidden upstream dashboard/assets/docs payload: {name}")
         if name.startswith("third_party/agent-browser/") and not _is_allowed_upstream_source(name):
@@ -474,7 +528,7 @@ def assert_sdist_excludes_junk_and_dashboard_payload(names: set[str]) -> None:
 def check_wheel(path: Path) -> None:
     names = wheel_names(path)
     sizes = wheel_file_sizes(path)
-    assert_wheel_runtime_payload(names)
+    assert_wheel_runtime_payload(names, sizes, path.name)
     assert_wheel_python_modules_are_nonempty(sizes)
     assert_wheel_excludes_source_and_junk(names)
     assert_metadata_invariants(_metadata_from_wheel(path), path.name)

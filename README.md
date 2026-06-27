@@ -4,10 +4,10 @@
 [![Release Check](https://github.com/peter-gy/pyagentbrowser/actions/workflows/check-release.yml/badge.svg)](https://github.com/peter-gy/pyagentbrowser/actions/workflows/check-release.yml)
 [![License](https://img.shields.io/github/license/peter-gy/pyagentbrowser)](LICENSE)
 
-`pyagentbrowser` drives the native Rust `agent-browser` engine from Python. It
-exposes page navigation, browser snapshots, element refs, action evidence,
-screenshots, cookies, storage, frames, and CDP helpers through one Python
-package.
+The `pyagentbrowser` distribution drives the native Rust `agent-browser` engine
+from Python. Import it as `pyagentbrowser`. It exposes page navigation, browser
+snapshots, element refs, action evidence, screenshots, cookies, storage, native
+active-frame state, and CDP helpers through one Python package.
 
 ```bash
 python -m pip install pyagentbrowser
@@ -19,15 +19,27 @@ available on the host.
 ## Usage
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True) as browser:
-    browser.page.open("https://example.com")
+with Browser.launch(LaunchOptions(headless=True)) as browser:
+    browser.page.set_content(
+        """
+        <h1>Example catalog</h1>
+        <button>More information</button>
+        <p id="status"></p>
+        <script>
+        document.querySelector("button").addEventListener("click", () => {
+          document.querySelector("#status").textContent = "Details loaded"
+        })
+        </script>
+        """
+    )
 
     page = browser.agent.observe()
     print(page.text)
 
     browser.find.text("More information").click()
+    print(browser.find.css("#status").text())
 ```
 
 Snapshot refs stay tied to the page state that created them. After navigation
@@ -38,19 +50,32 @@ For notebooks and REPL sessions, `pyagentbrowser` also exposes one process-local
 default browser:
 
 ```python
-import pyagentbrowser as pab
+import pyagentbrowser as ab
+from pyagentbrowser import LaunchOptions
 
-pab.configure(headless=True, allowed_domains="*.example.com")
-pab.page.open("example.com")
+ab.notebook.configure(launch_options=LaunchOptions(headless=True))
+ab.notebook.page.set_content(
+    """
+    <h1>Notebook page</h1>
+    <button>More information</button>
+    <p id="status"></p>
+    <script>
+    document.querySelector("button").addEventListener("click", () => {
+      document.querySelector("#status").textContent = "Notebook details loaded"
+    })
+    </script>
+    """
+)
 
-page = pab.agent.observe()
-pab.find.text("More information").click()
+page = ab.notebook.agent.observe()
+ab.notebook.find.text("More information").click()
 
-print(pab.page.title(), pab.page.url())
-pab.close()
+print(page.text)
+print(ab.notebook.find.css("#status").text())
+ab.notebook.close()
 ```
 
-Use `pab.reset(force=True)` after an interrupted notebook run when the native
+Use `ab.notebook.reset(force=True)` after an interrupted notebook run when the native
 browser state should be discarded.
 
 ## Capabilities
@@ -63,9 +88,11 @@ browser state should be discarded.
 - **Evidence after actions:** Use `click_and_observe()` to capture the next
   page snapshot and a text diff after a click.
 - **Artifacts and state:** Capture screenshots, save and restore browser state,
-  inspect cookies, storage, network entries, and frame content.
-- **Typed escape hatches:** Call `Browser.command(action, **params)` for raw
-  native commands, or use `browser.cdp` for frame and execution-context work.
+  derive stable session ids, inspect cookies, storage, network entries, CDP
+  frames, and native active-frame state.
+- **Typed escape hatches:** Call `browser.native.execute(action, **params)` for
+  raw native responses, or use `browser.cdp` for CDP frame and
+  execution-context work.
 
 ## Optional Extras
 

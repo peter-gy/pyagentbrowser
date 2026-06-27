@@ -1,4 +1,4 @@
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
 HTML = """
 <label>Email <input aria-label="Email" /></label>
@@ -12,8 +12,7 @@ document.querySelector("button").addEventListener("click", () => {
 """
 
 
-with Browser(headless=True) as browser:
-    browser.launch()
+with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.set_content(HTML)
 
     page = browser.agent.observe()

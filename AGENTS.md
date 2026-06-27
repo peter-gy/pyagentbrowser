@@ -25,9 +25,11 @@ Use `make help` for the supported target list.
 
 ## Rules
 
-- Keep `Browser.command(action, **params)` as the raw native escape hatch.
+- Keep `browser.native.execute(action, **params)` and
+  `browser.native.data(action, **params)` as the raw native escape hatches.
 - Prefer namespaced public API: `browser.page`, `browser.find`, `browser.capture`,
-  `browser.frames`, `browser.cdp`, `browser.scripts`, and matching async surfaces.
+  `browser.active_frame`, `browser.cdp.frames`, `browser.scripts`, and matching
+  async surfaces.
 - Do not patch `third_party/agent-browser`. Native behavior differences must be
   generated in `OUT_DIR`, documented in `docs/adr/0001-native-safety-patches.md`,
   and covered by tests.

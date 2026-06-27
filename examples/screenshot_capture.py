@@ -1,6 +1,6 @@
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True, hide_scrollbars=False) as browser:
+with Browser.launch(LaunchOptions(headless=True, hide_scrollbars=False)) as browser:
     browser.page.open("https://example.com")
     shot = browser.capture.screenshot("page.png", full_page=True)
 

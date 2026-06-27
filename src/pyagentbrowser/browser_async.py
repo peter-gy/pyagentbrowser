@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any, Literal, cast, overload
 from weakref import proxy as weak_proxy
 
 from typing_extensions import Self
 
 from pyagentbrowser._browser_common import (
+    ConfirmationTarget,
     action_clears_pending_confirmation,
     action_closes_browser,
     action_invalidates_cdp,
@@ -26,6 +29,7 @@ from pyagentbrowser.command_params import (
     viewport_params,
 )
 from pyagentbrowser.domains_async import (
+    AsyncActiveFrame,
     AsyncCapture,
     AsyncCDP,
     AsyncClipboard,
@@ -36,32 +40,35 @@ from pyagentbrowser.domains_async import (
     AsyncDiff,
     AsyncDownloads,
     AsyncFind,
-    AsyncFrames,
     AsyncKeyboard,
     AsyncMouse,
     AsyncNetwork,
     AsyncPage,
+    AsyncRestore,
+    AsyncRuntime,
     AsyncScripts,
     AsyncState,
     AsyncStorage,
     AsyncTabs,
 )
-from pyagentbrowser.launch import LaunchConfiguration
+from pyagentbrowser.launch import (
+    BrowserSessionOptions,
+    CDPAttach,
+    LaunchConfiguration,
+    LaunchOptions,
+)
 from pyagentbrowser.models import (
     ActionConfirmationRequired,
-    BrowserError,
     BrowserResponse,
-    ColorScheme,
     DashboardOptions,
     JSONMapping,
     JSONValue,
-    ProxyConfig,
+    RestoreOptions,
     Snapshot,
     SnapshotDiff,
     snapshot_from_data,
 )
 from pyagentbrowser.session import (
-    DEFAULT_TIMEOUT_MS,
     _checked_response,
     _require_response_data_mapping,
     _try_unwrap_confirmed_response,
@@ -72,134 +79,190 @@ if TYPE_CHECKING:
     from pyagentbrowser.cdp import AsyncCDPController
 
 
+@dataclass(frozen=True, slots=True)
+class AsyncNative:
+    """Raw native command boundary for an `AsyncBrowser`."""
+
+    _browser: AsyncBrowser
+
+    async def execute(self, action: str, **params: Any) -> BrowserResponse:
+        """Run a native command and return the response envelope."""
+        return await self._browser._native_execute(action, **params)
+
+    @overload
+    async def data(self, action: str, **params: Any) -> JSONMapping: ...
+
+    @overload
+    async def data(
+        self,
+        action: str,
+        *,
+        expect: Literal["object"],
+        **params: Any,
+    ) -> JSONMapping: ...
+
+    @overload
+    async def data(
+        self,
+        action: str,
+        *,
+        expect: Literal["any"],
+        **params: Any,
+    ) -> JSONValue: ...
+
+    async def data(
+        self,
+        action: str,
+        *,
+        expect: str = "object",
+        **params: Any,
+    ) -> JSONMapping | JSONValue:
+        """Run a native command and return checked response data.
+
+        `expect="object"` requires object-shaped response data. Use
+        `expect="any"` for native actions whose `data` is a scalar, array, or
+        `null`.
+        """
+        return await self._browser._native_data(action, expect=expect, **params)
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncDashboard:
+    """Dashboard observability lifecycle for an `AsyncBrowser`."""
+
+    _browser: AsyncBrowser
+
+    async def start(self, options: DashboardOptions | None = None) -> Mapping[str, Any]:
+        """Start dashboard observability and return the stream status."""
+        self._browser._session.set_dashboard(True if options is None else options)
+        return await self._browser._command("stream_status")
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncPendingAction:
+    """Native action awaiting explicit async confirmation or denial."""
+
+    _browser: AsyncBrowser
+    confirmation_id: str
+    action: str
+    data: Mapping[str, Any]
+
+    async def confirm(self) -> Mapping[str, Any]:
+        """Confirm this pending action."""
+        return await self._browser.confirm(self)
+
+    async def deny(self) -> Mapping[str, Any]:
+        """Deny this pending action."""
+        return await self._browser.deny(self)
+
+
 class AsyncBrowser:
     """Async controller for the native agent-browser engine.
 
     `AsyncBrowser` mirrors `Browser` while keeping native calls off the event
     loop. It owns one native browser session and exposes async command
     namespaces such as `page`, `find`, `capture`, `tabs`, `network`, and `cdp`.
-    Construction is lazy. The native browser launches on `launch()`,
-    `connect()`, or the first helper that needs a page.
-
-    Parameters
-    ----------
-    headless
-        Whether browser windows should be hidden when the browser launches.
-    executable_path
-        Path to a Chrome-compatible browser executable.
-    engine
-        Native engine name passed through to agent-browser.
-    session, session_name
-        Native session identifiers used for browser state isolation.
-    default_timeout_ms
-        Default native command timeout in milliseconds. Defaults to 15,000.
-    allowed_domains
-        Comma-separated host allowlist such as `example.com`,
-        `*.example.com`, `localhost`, or `::1`. The SDK checks raw URL targets,
-        host-qualified URL patterns, cookie targets, and permission origins
-        before native execution. Storage-state loads are filtered before native
-        import. Storage-state saves and cookie reads are filtered before they
-        return unless the unsafe export option is used.
-    action_policy
-        Path to a native action policy file.
-    confirm_actions
-        Native action names that require confirmation.
-    profile
-        Browser profile directory.
-    storage_state
-        Storage-state file loaded during launch. When `allowed_domains` is set,
-        disallowed cookies and origins are filtered before native import.
-    extensions
-        Browser extension paths loaded at launch.
-    proxy
-        Browser proxy configuration.
-    provider
-        Native provider name.
-    cdp_url
-        Browser-level CDP WebSocket URL to attach to.
-    cdp_port
-        Local CDP port to attach to.
-    auto_connect
-        Attach immediately when native launch options request auto-connect.
-    color_scheme
-        Emulated browser color scheme.
-    hide_scrollbars
-        Whether headless Chromium launches with native scrollbars hidden.
-        `None` leaves the native default and `AGENT_BROWSER_HIDE_SCROLLBARS`
-        in control.
-    args
-        Extra browser process arguments.
-    no_auto_dialog
-        Disable native automatic dialog handling.
-    dashboard
-        Enable SDK-owned dashboard observability. Pass `DashboardOptions` to
-        set dashboard sidecar options.
-    native_session
-        Existing `AsyncNativeSession` to use instead of constructing one.
+    Construction is lazy. Use `await AsyncBrowser.launch(LaunchOptions(...))`
+    to create and start a browser, `await AsyncBrowser.attach(CDPAttach(...))`
+    to attach to a running browser, or `AsyncBrowser.from_session(...)` to name
+    a restorable session before the first native command.
     """
 
     def __init__(
         self,
         *,
-        headless: bool = True,
-        executable_path: str | Path | None = None,
-        engine: str | None = None,
-        session: str | None = None,
-        session_name: str | None = None,
-        default_timeout_ms: int | None = DEFAULT_TIMEOUT_MS,
-        allowed_domains: str | None = None,
-        action_policy: str | Path | None = None,
-        confirm_actions: Sequence[str] | None = None,
-        profile: str | Path | None = None,
-        storage_state: str | Path | None = None,
-        extensions: Sequence[str | Path] = (),
-        proxy: str | ProxyConfig | Mapping[str, Any] | None = None,
-        provider: str | None = None,
-        cdp_url: str | None = None,
-        cdp_port: int | None = None,
-        auto_connect: bool = False,
-        color_scheme: ColorScheme | None = None,
-        hide_scrollbars: bool | None = None,
-        args: Sequence[str] = (),
-        no_auto_dialog: bool = False,
-        dashboard: bool | DashboardOptions | None = False,
+        session_options: BrowserSessionOptions | None = None,
         native_session: AsyncNativeSession | None = None,
     ) -> None:
+        base_options = session_options or BrowserSessionOptions()
+        launch_configuration = LaunchConfiguration.from_public_options(
+            allowed_domains=base_options.allowed_domains
+        )
+        self._init(
+            launch_configuration,
+            session_options=base_options,
+            native_session=native_session,
+        )
+
+    @classmethod
+    def _from_configuration(
+        cls,
+        launch_configuration: LaunchConfiguration,
+        *,
+        session_options: BrowserSessionOptions | None = None,
+        native_session: AsyncNativeSession | None = None,
+    ) -> AsyncBrowser:
+        browser = cls.__new__(cls)
+        browser._init(
+            launch_configuration,
+            session_options=session_options,
+            native_session=native_session,
+        )
+        return browser
+
+    def _init(
+        self,
+        launch_configuration: LaunchConfiguration,
+        *,
+        session_options: BrowserSessionOptions | None = None,
+        native_session: AsyncNativeSession | None = None,
+    ) -> None:
+        session_options = session_options or BrowserSessionOptions()
         self._session = native_session or AsyncNativeSession(
-            session=session,
-            session_name=session_name,
-            default_timeout_ms=default_timeout_ms,
-            allowed_domains=allowed_domains,
-            engine=engine,
-            action_policy=action_policy,
-            confirm_actions=confirm_actions,
-            no_auto_dialog=no_auto_dialog,
-            dashboard=dashboard,
+            session=session_options.session_id,
+            restore=session_options.restore,
+            namespace=session_options.namespace,
+            default_timeout_ms=session_options.default_timeout_ms,
+            allowed_domains=session_options.allowed_domains,
+            engine=launch_configuration.engine,
+            action_policy=session_options.action_policy,
+            confirm_actions=session_options.confirm_actions,
+            no_auto_dialog=session_options.no_auto_dialog,
         )
-        if native_session is not None and allowed_domains is not None:
-            self._session.set_allowed_domains(allowed_domains)
-        self._launch_configuration = LaunchConfiguration.from_options(
-            headless=headless,
-            executable_path=executable_path,
-            engine=engine,
-            allowed_domains=allowed_domains,
-            profile=profile,
-            storage_state=storage_state,
-            extensions=extensions,
-            proxy=proxy,
-            provider=provider,
-            cdp_url=cdp_url,
-            cdp_port=cdp_port,
-            auto_connect=auto_connect,
-            color_scheme=color_scheme,
-            hide_scrollbars=hide_scrollbars,
-            args=args,
-        )
+        if native_session is not None and session_options.allowed_domains is not None:
+            self._session.set_allowed_domains(session_options.allowed_domains)
+        default_session_options = BrowserSessionOptions()
+        if native_session is not None and session_options.namespace is not None:
+            raise ValueError(
+                "namespace must be set on AsyncNativeSession when native_session is supplied"
+            )
+        if native_session is not None and session_options.session_id is not None:
+            raise ValueError(
+                "session_id must be set on AsyncNativeSession when native_session is supplied"
+            )
+        if native_session is not None and session_options.restore is not None:
+            raise ValueError(
+                "restore must be set on AsyncNativeSession when native_session is supplied"
+            )
+        if (
+            native_session is not None
+            and session_options.default_timeout_ms != default_session_options.default_timeout_ms
+        ):
+            raise ValueError(
+                "default_timeout_ms must be set on AsyncNativeSession "
+                "when native_session is supplied"
+            )
+        if native_session is not None and session_options.action_policy is not None:
+            raise ValueError(
+                "action_policy must be set on AsyncNativeSession when native_session is supplied"
+            )
+        if native_session is not None and session_options.confirm_actions is not None:
+            raise ValueError(
+                "confirm_actions must be set on AsyncNativeSession when native_session is supplied"
+            )
+        if (
+            native_session is not None
+            and session_options.no_auto_dialog != default_session_options.no_auto_dialog
+        ):
+            raise ValueError(
+                "no_auto_dialog must be set on AsyncNativeSession when native_session is supplied"
+            )
+        self._launch_configuration = launch_configuration
         self._launched = False
-        self._pending_confirmation_id: str | None = None
         self._cdp_controller: AsyncCDPController | None = None
 
         command_target = cast(AsyncCommandTarget, weak_proxy(self))
+        self.active_frame = AsyncActiveFrame(command_target)
         self.agent = AsyncAgent(self)
         self.capture = AsyncCapture(command_target)
         self.cdp = AsyncCDP(self)
@@ -207,14 +270,17 @@ class AsyncBrowser:
         self.cookies = AsyncCookies(command_target)
         self.dialogs = AsyncDialogs(command_target)
         self.diagnostics = AsyncDiagnostics(command_target)
+        self.dashboard = AsyncDashboard(self)
         self.diff = AsyncDiff(command_target)
         self.downloads = AsyncDownloads(command_target)
         self.find = AsyncFind(self)
-        self.frames = AsyncFrames(command_target)
         self.keyboard = AsyncKeyboard(command_target)
         self.mouse = AsyncMouse(command_target)
+        self.native = AsyncNative(self)
         self.network = AsyncNetwork(command_target)
         self.page = AsyncPage(self)
+        self.restore = AsyncRestore(command_target)
+        self.runtime = AsyncRuntime(command_target)
         self.scripts = AsyncScripts(self)
         self.state = AsyncState(command_target)
         self.storage = AsyncStorage(command_target)
@@ -234,6 +300,80 @@ class AsyncBrowser:
     def is_launched(self) -> bool:
         """Whether the native browser has been launched in this session."""
         return self._launched
+
+    @classmethod
+    async def launch(
+        cls,
+        options: LaunchOptions | None = None,
+        *,
+        session_options: BrowserSessionOptions | None = None,
+        native_session: AsyncNativeSession | None = None,
+    ) -> AsyncBrowser:
+        """Create a browser and start the native browser process."""
+        session_options = session_options or BrowserSessionOptions()
+        browser = cls._from_configuration(
+            LaunchConfiguration.from_public_options(
+                options,
+                allowed_domains=session_options.allowed_domains,
+            ),
+            session_options=session_options,
+            native_session=native_session,
+        )
+        await browser.launch_process()
+        return browser
+
+    @classmethod
+    async def attach(
+        cls,
+        target: CDPAttach,
+        *,
+        launch_options: LaunchOptions | None = None,
+        session_options: BrowserSessionOptions | None = None,
+        native_session: AsyncNativeSession | None = None,
+    ) -> AsyncBrowser:
+        """Create a browser and attach to a running CDP target."""
+        session_options = session_options or BrowserSessionOptions()
+        browser = cls._from_configuration(
+            LaunchConfiguration.from_public_options(
+                launch_options,
+                attach=target,
+                allowed_domains=session_options.allowed_domains,
+            ),
+            session_options=session_options,
+            native_session=native_session,
+        )
+        await browser.connect()
+        return browser
+
+    @classmethod
+    def from_session(
+        cls,
+        session_id: str,
+        *,
+        restore: RestoreOptions | None = None,
+        launch_options: LaunchOptions | None = None,
+        session_options: BrowserSessionOptions | None = None,
+        native_session: AsyncNativeSession | None = None,
+    ) -> AsyncBrowser:
+        """Create a lazy async browser controller for a named native session."""
+        base_options = session_options or BrowserSessionOptions()
+        if base_options.session_id not in {None, session_id}:
+            raise ValueError("session_options.session_id must match session_id")
+        if restore is not None and base_options.restore is not None:
+            raise ValueError("pass restore or session_options.restore, not both")
+        resolved_options = replace(
+            base_options,
+            session_id=session_id,
+            restore=restore or base_options.restore,
+        )
+        return cls._from_configuration(
+            LaunchConfiguration.from_public_options(
+                launch_options,
+                allowed_domains=resolved_options.allowed_domains,
+            ),
+            session_options=resolved_options,
+            native_session=native_session,
+        )
 
     async def observe(
         self,
@@ -272,7 +412,7 @@ class AsyncBrowser:
             urls=urls,
         )
 
-    async def command(self, action: str, **params: Any) -> JSONMapping:
+    async def _command(self, action: str, **params: Any) -> JSONMapping:
         """Run a native command and require object-shaped response data.
 
         Parameters
@@ -287,79 +427,76 @@ class AsyncBrowser:
         Mapping[str, object]
             Response `data` object returned by the native engine.
         """
+        data = await self._native_data(action, expect="object", **params)
+        return cast(JSONMapping, data)
+
+    async def _native_data(
+        self,
+        action: str,
+        *,
+        expect: str = "object",
+        **params: Any,
+    ) -> JSONMapping | JSONValue:
+        if expect not in {"object", "any"}:
+            raise ValueError('expect must be "object" or "any"')
         try:
             response = _checked_response(action, await self._session.execute(action, **params))
         except ActionConfirmationRequired as err:
-            self._pending_confirmation_id = err.confirmation_id
-            raise
-        data = _require_response_data_mapping(response)
-        self._record_successful_action(response.action)
-        return data
-
-    async def execute_raw(self, action: str, **params: Any) -> JSONValue:
-        """Run a native command and return response data without shape checks.
-
-        Low-level native commands may return scalar, array, or null `data`.
-
-        Parameters
-        ----------
-        action
-            Native agent-browser command action.
-        **params
-            JSON-compatible command parameters.
-
-        Returns
-        -------
-        object
-            Raw `data` value returned by the native engine.
-        """
-        try:
-            response = _checked_response(action, await self._session.execute(action, **params))
-        except ActionConfirmationRequired as err:
-            self._pending_confirmation_id = err.confirmation_id
+            if err.confirmation_id is not None:
+                err.pending_action = self.pending_action(err)
             raise
         self._record_successful_action(response.action)
-        return response.data
+        if expect == "any":
+            return response.data
+        return _require_response_data_mapping(response)
 
-    async def try_command(self, action: str, **params: Any) -> BrowserResponse:
-        """Run a native command without raising for unsuccessful responses.
-
-        Parameters
-        ----------
-        action
-            Native agent-browser command action.
-        **params
-            JSON-compatible command parameters.
-
-        Returns
-        -------
-        BrowserResponse
-            Full native response envelope.
-        """
+    async def _native_execute(self, action: str, **params: Any) -> BrowserResponse:
         response = await self._session.execute(action, **params)
         confirmation_consumed = action == "confirm" and response.success
         if confirmation_consumed:
             response = _try_unwrap_confirmed_response(response)
         data = response_data_mapping(response)
         if data is not None and bool(data.get("confirmation_required")):
-            self._pending_confirmation_id = response_confirmation_id(response)
             return response
         if confirmation_consumed:
             if response.success:
                 self._record_successful_action(response.action)
-            self._pending_confirmation_id = None
             return response
         if response.success:
             self._record_successful_action(response.action)
         return response
 
+    def pending_action(
+        self,
+        confirmation: ActionConfirmationRequired | BrowserResponse | str,
+    ) -> AsyncPendingAction:
+        """Return a named pending action for a confirmation exception, response, or id."""
+        if isinstance(confirmation, BrowserResponse):
+            pending_id = response_confirmation_id(confirmation)
+            action = confirmation.action
+            data = response_data_mapping(confirmation) or {}
+        else:
+            pending_id = confirmation_id(confirmation)
+            if isinstance(confirmation, ActionConfirmationRequired):
+                action = confirmation.action
+                data = confirmation.data
+            else:
+                action = "confirm"
+                data = {}
+        if pending_id is None:
+            raise ValueError("pending action requires a confirmation id")
+        return AsyncPendingAction(
+            _browser=self,
+            confirmation_id=pending_id,
+            action=action,
+            data=dict(data),
+        )
+
     def _record_successful_action(self, action: str) -> None:
         if action_sets_launched(action):
             self._launched = True
-        elif action_clears_pending_confirmation(action):
-            if action_closes_browser(action):
-                self._launched = False
-            self._pending_confirmation_id = None
+        elif action_clears_pending_confirmation(action) and action_closes_browser(action):
+            self._launched = False
         if action_invalidates_cdp(action):
             self._invalidate_cdp()
 
@@ -375,158 +512,126 @@ class AsyncBrowser:
             self._cdp_controller.invalidate()
 
     async def connect(self) -> Mapping[str, Any]:
-        """Establish the browser connection without navigating.
+        """Attach to the configured CDP target without navigating.
 
-        Calling `connect()` gives configured CDP attachment options such as
-        `cdp_port`, `cdp_url`, or `auto_connect` an explicit launch or attach
-        step.
+        `connect()` is only valid for browsers created through
+        `AsyncBrowser.attach(CDPAttach(...))`.
 
         Returns
         -------
         Mapping[str, object]
-            Native launch response data.
+            Native attach response data.
         """
-        return await self.launch()
+        if (
+            self._launch_configuration.cdp_url is None
+            and self._launch_configuration.cdp_port is None
+        ):
+            raise RuntimeError("connect requires AsyncBrowser.attach(CDPAttach(...))")
+        return await self._launch_native()
 
-    async def launch(
+    async def launch_process(
         self,
         *,
-        headless: bool | None = None,
-        executable_path: str | Path | None = None,
-        engine: str | None = None,
-        args: Sequence[str] | None = None,
-        allow_file_access: bool = False,
-        ignore_https_errors: bool = False,
-        user_agent: str | None = None,
-        download_path: str | Path | None = None,
-        profile: str | Path | None = None,
-        storage_state: str | Path | None = None,
-        extensions: Sequence[str | Path] | None = None,
-        proxy: str | ProxyConfig | Mapping[str, Any] | None = None,
-        provider: str | None = None,
-        cdp_url: str | None = None,
-        cdp_port: int | None = None,
-        auto_connect: bool | None = None,
-        color_scheme: ColorScheme | None = None,
-        hide_scrollbars: bool | None = None,
+        options: LaunchOptions | None = None,
     ) -> Mapping[str, Any]:
-        """Launch the browser, overriding constructor launch options if needed.
+        """Launch a native browser process using explicit process options.
 
         Parameters
         ----------
-        headless, executable_path, engine, args
-            Core browser process options.
-        allow_file_access, ignore_https_errors
-            Browser security and certificate options.
-        user_agent, download_path, profile, storage_state
-            Browser environment options.
-        extensions, proxy, provider
-            Optional launch integrations.
-        cdp_url, cdp_port, auto_connect
-            Chrome DevTools Protocol connection options.
-        color_scheme
-            Emulated browser color scheme.
-        hide_scrollbars
-            Whether headless Chromium screenshots hide native scrollbars.
-            `None` uses the constructor option, then the native default.
+        options
+            Optional full replacement `LaunchOptions` for this launch command.
 
         Returns
         -------
         Mapping[str, object]
             Native launch response data.
         """
-        launch_params = self._launch_configuration.command_params(
-            headless=headless,
-            executable_path=executable_path,
-            engine=engine,
-            args=args,
-            allow_file_access=allow_file_access,
-            ignore_https_errors=ignore_https_errors,
-            user_agent=user_agent,
-            download_path=download_path,
-            profile=profile,
-            storage_state=storage_state,
-            extensions=extensions,
-            proxy=proxy,
-            provider=provider,
-            cdp_url=cdp_url,
-            cdp_port=cdp_port,
-            auto_connect=auto_connect,
-            color_scheme=color_scheme,
-            hide_scrollbars=hide_scrollbars,
-        )
-        data = await self.command("launch", **launch_params)
+        if (
+            self._launch_configuration.cdp_url is not None
+            or self._launch_configuration.cdp_port is not None
+        ):
+            raise RuntimeError("launch_process cannot use CDPAttach; call connect()")
+        return await self._launch_native(options=options)
+
+    async def _launch_native(
+        self,
+        *,
+        options: LaunchOptions | None = None,
+    ) -> Mapping[str, Any]:
+        launch_params = self._launch_configuration.command_params(options=options)
+        data = await self._command("launch", **launch_params)
         self._launched = True
         return data
 
-    async def close(self) -> None:
-        """Close the native browser session and any active CDP connection."""
+    async def _close_browser(self) -> None:
         if self._cdp_controller is not None:
             with suppress(Exception):
                 await self._cdp_controller.close()
             self._cdp_controller = None
-        await self.command("close")
-        self._launched = False
+        response = await self._session.shutdown_native()
+        if response is not None:
+            _checked_response("close", replace(response, action="close"))
+            self._record_successful_action("close")
 
-    async def aclose(self) -> None:
+    async def close(self, *, timeout: float = 5.0) -> None:
         """Close the browser and stop the async native worker."""
         try:
-            await self.close()
+            if not self._session.closed:
+                await asyncio.wait_for(self._close_browser(), timeout=timeout)
         finally:
-            await self._session.aclose()
+            await self._session.aclose(timeout=timeout)
+
+    aclose = close
 
     async def confirm(
         self,
-        confirmation: ActionConfirmationRequired | str | None = None,
+        confirmation: ConfirmationTarget,
     ) -> Mapping[str, Any]:
         """Confirm a pending native action.
 
         Parameters
         ----------
         confirmation
-            Confirmation exception, confirmation id, or `None` to use the last
-            pending confirmation tracked by this browser.
+            Confirmation exception, pending action, or confirmation id.
 
         Returns
         -------
         Mapping[str, object]
             Native response data for the confirmed action.
         """
-        pending_id = confirmation_id(confirmation) or self._pending_confirmation_id
+        pending_id = (
+            confirmation.confirmation_id
+            if isinstance(confirmation, AsyncPendingAction)
+            else confirmation_id(confirmation)
+        )
         if pending_id is None:
             raise ValueError("confirm requires an ActionConfirmationRequired or confirmation id")
-        try:
-            data = await self.command("confirm", confirmation_id=pending_id)
-        except BrowserError as err:
-            if err.action != "confirm":
-                self._pending_confirmation_id = None
-            raise
-        self._pending_confirmation_id = None
-        return data
+        return await self._command("confirm", confirmation_id=pending_id)
 
     async def deny(
         self,
-        confirmation: ActionConfirmationRequired | str | None = None,
+        confirmation: ConfirmationTarget,
     ) -> Mapping[str, Any]:
         """Deny a pending native action.
 
         Parameters
         ----------
         confirmation
-            Confirmation exception, confirmation id, or `None` to use the last
-            pending confirmation tracked by this browser.
+            Confirmation exception, pending action, or confirmation id.
 
         Returns
         -------
         Mapping[str, object]
             Native response data for the denial command.
         """
-        pending_id = confirmation_id(confirmation) or self._pending_confirmation_id
+        pending_id = (
+            confirmation.confirmation_id
+            if isinstance(confirmation, AsyncPendingAction)
+            else confirmation_id(confirmation)
+        )
         if pending_id is None:
             raise ValueError("deny requires an ActionConfirmationRequired or confirmation id")
-        data = await self.command("deny", confirmation_id=pending_id)
-        self._pending_confirmation_id = None
-        return data
+        return await self._command("deny", confirmation_id=pending_id)
 
     async def snapshot(
         self,
@@ -557,7 +662,7 @@ class AsyncBrowser:
         Snapshot
             Parsed snapshot text, refs, origin, and raw response data.
         """
-        data = await self.command(
+        data = await self._command(
             "snapshot",
             selector=optional(selector),
             interactive=interactive,
@@ -627,7 +732,7 @@ class AsyncBrowser:
         Mapping[str, object]
             Native response data.
         """
-        return await self.command(
+        return await self._command(
             "viewport",
             **viewport_params(
                 width,
@@ -639,19 +744,19 @@ class AsyncBrowser:
 
     async def set_device(self, name: str) -> Mapping[str, Any]:
         """Set a named device preset."""
-        return await self.command("device", name=name)
+        return await self._command("device", name=name)
 
     async def set_headers(self, headers: Mapping[str, str]) -> Mapping[str, Any]:
         """Set extra HTTP headers for subsequent page requests."""
-        return await self.command("headers", headers=dict(headers))
+        return await self._command("headers", headers=dict(headers))
 
     async def set_offline(self, enabled: bool = True) -> Mapping[str, Any]:
         """Enable or disable offline network emulation."""
-        return await self.command("offline", offline=enabled)
+        return await self._command("offline", offline=enabled)
 
     async def set_user_agent(self, user_agent: str) -> Mapping[str, Any]:
         """Set the browser user-agent string."""
-        return await self.command("useragent", userAgent=user_agent)
+        return await self._command("useragent", userAgent=user_agent)
 
     async def set_media(
         self,
@@ -662,7 +767,7 @@ class AsyncBrowser:
         features: Mapping[str, str] | None = None,
     ) -> Mapping[str, Any]:
         """Set emulated CSS media features."""
-        return await self.command(
+        return await self._command(
             "set_media",
             **media_params(
                 media=media,
@@ -674,11 +779,11 @@ class AsyncBrowser:
 
     async def set_timezone(self, timezone_id: str) -> Mapping[str, Any]:
         """Set the emulated timezone id, for example `Europe/Vienna`."""
-        return await self.command("timezone", timezoneId=timezone_id)
+        return await self._command("timezone", timezoneId=timezone_id)
 
     async def set_locale(self, locale: str) -> Mapping[str, Any]:
         """Set the emulated browser locale, for example `en-US`."""
-        return await self.command("locale", locale=locale)
+        return await self._command("locale", locale=locale)
 
     async def set_geolocation(
         self,
@@ -688,7 +793,7 @@ class AsyncBrowser:
         accuracy: float | None = None,
     ) -> Mapping[str, Any]:
         """Set emulated geolocation coordinates."""
-        return await self.command(
+        return await self._command(
             "geolocation",
             **geolocation_params(latitude, longitude, accuracy=accuracy),
         )
@@ -700,8 +805,8 @@ class AsyncBrowser:
         origin: str | None = None,
     ) -> Mapping[str, Any]:
         """Grant browser permissions, optionally scoped to an origin."""
-        return await self.command("permissions", **permissions_params(permissions, origin=origin))
+        return await self._command("permissions", **permissions_params(permissions, origin=origin))
 
     async def bring_to_front(self) -> Mapping[str, Any]:
         """Bring the browser window to the foreground."""
-        return await self.command("bringtofront")
+        return await self._command("bringtofront")

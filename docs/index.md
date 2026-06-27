@@ -1,13 +1,14 @@
 # Documentation
 
-`pyagentbrowser` runs the native Rust `agent-browser` engine in-process from
-Python. It exposes `Browser`, `AgentSnapshot`, element refs, action evidence,
-screenshots, browser state, CDP handles, and embedded upstream skills.
+The `pyagentbrowser` distribution runs the native Rust `agent-browser` engine
+in-process from Python. Import it as `pyagentbrowser`. It exposes `Browser`,
+`AgentSnapshot`, element refs, action evidence, screenshots, browser state, CDP
+handles, and embedded upstream skills.
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True) as browser:
+with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.open("https://example.com")
     page = browser.agent.observe()
     print(page.text)

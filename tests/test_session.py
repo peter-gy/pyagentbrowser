@@ -20,6 +20,7 @@ from fakes import (
 
 import pyagentbrowser.session as session_module
 from pyagentbrowser import BrowserError, DashboardOptions
+from pyagentbrowser._browser_common import INTERNAL_SHUTDOWN_ACTION
 from pyagentbrowser.models import OMIT, ActionConfirmationRequired
 from pyagentbrowser.session import NativeSession
 from pyagentbrowser.session_async import AsyncNativeSession
@@ -225,7 +226,7 @@ def test_native_session_defaults_to_15_second_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _captured_native_options(monkeypatch)
-    NativeSession()
+    NativeSession().command("device_list")
 
     default_options = json.loads(str(captured[0]))
     assert default_options["default_timeout_ms"] == 15_000
@@ -235,7 +236,7 @@ def test_native_session_serializes_explicit_timeout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _captured_native_options(monkeypatch)
-    NativeSession(default_timeout_ms=5_000)
+    NativeSession(default_timeout_ms=5_000).command("device_list")
 
     explicit_options = json.loads(str(captured[0]))
     assert explicit_options["default_timeout_ms"] == 5_000
@@ -245,7 +246,7 @@ def test_native_session_omits_timeout_when_disabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured = _captured_native_options(monkeypatch)
-    NativeSession(default_timeout_ms=None)
+    NativeSession(default_timeout_ms=None).command("device_list")
 
     disabled_options = json.loads(str(captured[0]))
     assert "default_timeout_ms" not in disabled_options
@@ -373,13 +374,15 @@ def test_session_async_skips_cancelled_commands_before_native_dispatch() -> None
     asyncio.run(run())
 
 
-def test_session_async_close_dispatches_native_close() -> None:
+def test_session_async_close_dispatches_internal_shutdown() -> None:
     async def run() -> None:
         explicit_native = EchoNative()
         explicit = AsyncNativeSession(native=explicit_native)
         await explicit.command("status")
         await explicit.aclose(timeout=1.0)
-        assert any(command["action"] == "close" for command in explicit_native.commands)
+        assert any(
+            command["action"] == INTERNAL_SHUTDOWN_ACTION for command in explicit_native.commands
+        )
 
     asyncio.run(run())
 
@@ -395,7 +398,7 @@ def test_session_async_rejects_reuse_after_close() -> None:
     asyncio.run(run())
 
 
-def test_session_async_finalizer_dispatches_native_close() -> None:
+def test_session_async_finalizer_dispatches_internal_shutdown() -> None:
     async def run() -> None:
         dropped_native = EchoNative()
         dropped = AsyncNativeSession(native=dropped_native)
@@ -404,10 +407,14 @@ def test_session_async_finalizer_dispatches_native_close() -> None:
         del dropped
         for _ in range(20):
             gc.collect()
-            if any(command["action"] == "close" for command in dropped_native.commands):
+            if any(
+                command["action"] == INTERNAL_SHUTDOWN_ACTION for command in dropped_native.commands
+            ):
                 break
             await asyncio.sleep(0.05)
         assert session_ref() is None
-        assert any(command["action"] == "close" for command in dropped_native.commands)
+        assert any(
+            command["action"] == INTERNAL_SHUTDOWN_ACTION for command in dropped_native.commands
+        )
 
     asyncio.run(run())

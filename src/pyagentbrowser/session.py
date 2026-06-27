@@ -18,6 +18,7 @@ from pyagentbrowser.models import (
     JSONMapping,
     JSONObject,
     JSONValue,
+    RestoreOptions,
 )
 
 DEFAULT_TIMEOUT_MS = 15_000
@@ -69,7 +70,8 @@ class NativeSession:
         self,
         *,
         session: str | None = None,
-        session_name: str | None = None,
+        restore: RestoreOptions | None = None,
+        namespace: str | None = None,
         default_timeout_ms: int | None = DEFAULT_TIMEOUT_MS,
         allowed_domains: str | None = None,
         engine: str | None = None,
@@ -79,19 +81,25 @@ class NativeSession:
         dashboard: bool | DashboardOptions | None = False,
         native: NativeEngine | None = None,
     ) -> None:
-        self._native = native or NativeBrowser(
-            _native_options_json(
-                session=session,
-                session_name=session_name,
-                default_timeout_ms=default_timeout_ms,
-                allowed_domains=allowed_domains,
-                engine=engine,
-                action_policy=str(action_policy) if action_policy is not None else None,
-                confirm_actions=list(confirm_actions) if confirm_actions is not None else None,
-                no_auto_dialog=no_auto_dialog,
-                dashboard=_dashboard_options(dashboard),
-            )
-        )
+        self._restore = restore
+        self._native = native
+        self._native_started = native is not None
+        self._native_options: dict[str, Any] = {
+            "session": session,
+            "restore_key": restore.key if restore is not None else None,
+            "restore_save": restore.save if restore is not None else None,
+            "restore_check_url": restore.check_url if restore is not None else None,
+            "restore_check_text": restore.check_text if restore is not None else None,
+            "restore_check_fn": restore.check_fn if restore is not None else None,
+            "namespace": namespace,
+            "default_timeout_ms": default_timeout_ms,
+            "allowed_domains": allowed_domains,
+            "engine": engine,
+            "action_policy": str(action_policy) if action_policy is not None else None,
+            "confirm_actions": list(confirm_actions) if confirm_actions is not None else None,
+            "no_auto_dialog": no_auto_dialog,
+            "dashboard": _dashboard_options(dashboard),
+        }
         self._ids = count(1)
         self._allowlist = DomainAllowlist(allowed_domains)
         self._pending_confirmations: dict[str, PendingConfirmation] = {}
@@ -99,6 +107,14 @@ class NativeSession:
     def set_allowed_domains(self, allowed_domains: str | None) -> None:
         """Replace the Python-side domain allowlist for this session."""
         self._allowlist = DomainAllowlist(allowed_domains)
+        if not self._native_started:
+            self._native_options["allowed_domains"] = allowed_domains
+
+    def set_dashboard(self, dashboard: bool | DashboardOptions | None) -> None:
+        """Configure dashboard startup before the native session exists."""
+        if self._native_started:
+            raise RuntimeError("dashboard must be started before native session startup")
+        self._native_options["dashboard"] = _dashboard_options(dashboard)
 
     def command(self, action: str, **params: Any) -> JSONValue:
         """Run a native command and return checked response data."""
@@ -110,7 +126,7 @@ class NativeSession:
         command = self.build_command(action, **params)
         prepared = self._allowlist.prepare(command)
         try:
-            raw_json = self._native.execute_json(json.dumps(prepared.command))
+            raw_json = self._ensure_native().execute_json(json.dumps(prepared.command))
         finally:
             prepared.cleanup()
 
@@ -152,9 +168,16 @@ class NativeSession:
             self._record_pending_confirmation(response, prepared.command, prepared.policy)
         return response
 
+    def _ensure_native(self) -> NativeEngine:
+        if self._native is None:
+            self._native = NativeBrowser(_native_options_json(**self._native_options))
+            self._native_started = True
+        return self._native
+
     def build_command(self, action: str, **params: Any) -> JSONObject:
         """Build the JSON command object sent to the native engine."""
         command: JSONObject = {"id": f"py{next(self._ids)}", "action": action}
+        command.update(_restore_command_fields(self._restore))
         command.update(
             {key: _jsonable(value) for key, value in params.items() if value is not OMIT}
         )
@@ -208,6 +231,21 @@ def _dashboard_options(value: bool | DashboardOptions | None) -> JSONValue:
     if isinstance(value, DashboardOptions):
         return {"enabled": True, "port": value.port, "cli_version": value.cli_version}
     raise TypeError("dashboard must be a bool or DashboardOptions")
+
+
+def _restore_command_fields(restore: RestoreOptions | None) -> dict[str, str]:
+    if restore is None:
+        return {}
+    fields: dict[str, str] = {"restoreKey": restore.key}
+    if restore.save is not None:
+        fields["restoreSave"] = restore.save
+    if restore.check_url is not None:
+        fields["restoreCheckUrl"] = restore.check_url
+    if restore.check_text is not None:
+        fields["restoreCheckText"] = restore.check_text
+    if restore.check_fn is not None:
+        fields["restoreCheckFn"] = restore.check_fn
+    return fields
 
 
 def _checked_response(action: str, response: BrowserResponse) -> BrowserResponse:
@@ -280,7 +318,8 @@ def _require_response_data_mapping(
     if data is None:
         raise BrowserError(
             action or response.action,
-            "native response data was not an object. Use execute_raw() for arbitrary JSON data",
+            "native response data was not an object. Use "
+            'native.data(..., expect="any") for arbitrary JSON data',
             response.raw,
         )
     return data

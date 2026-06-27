@@ -3,24 +3,22 @@
 ## Open a page
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True) as browser:
+with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.open("https://example.com")
     page = browser.agent.observe()
     print(page.text)
-
-    browser.find.text("More information").click()
-    print(browser.page.url())
 ```
 
 ## Read page content
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions, ReadMode
 
-with Browser(headless=True, allowed_domains="example.com") as browser:
-    result = browser.page.read("example.com/docs", require_md=True)
+with Browser.launch(LaunchOptions(headless=True)) as browser:
+    browser.page.set_content("<article><h1>Guide</h1><p>Read this page.</p></article>")
+    result = browser.page.read(mode=ReadMode.markdown(require=True))
     print(result.content)
 ```
 
@@ -31,11 +29,18 @@ active page.
 ## Use selectors
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True) as browser:
-    browser.page.open("https://example.com")
-    browser.find.text("More information").click()
+with Browser.launch(LaunchOptions(headless=True)) as browser:
+    browser.page.set_content(
+        """
+        <main>
+          <h1>Account settings</h1>
+          <a href="#billing">Billing</a>
+        </main>
+        """
+    )
+    browser.find.text("Billing").click()
     browser.find.css("h1").wait()
     print(browser.find.xpath("//h1").text())
 ```
@@ -43,10 +48,9 @@ with Browser(headless=True) as browser:
 ## Use snapshot refs
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True) as browser:
-    browser.launch()
+with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.set_content(
         """
         <label>Email <input aria-label="Email" /></label>
@@ -75,12 +79,31 @@ with Browser(headless=True) as browser:
 Refs are scoped to the snapshot that produced them. After navigation or large DOM
 changes, observe again.
 
+## Restore a session
+
+```python
+import pyagentbrowser as ab
+from pyagentbrowser import Browser, RestoreOptions
+
+session_id = ab.session_id(prefix="example").session
+
+with Browser.from_session(
+    session_id,
+    restore=RestoreOptions(key=session_id, check_text="Example Domain"),
+) as browser:
+    browser.page.open("https://example.com")
+    print(browser.restore.info()["restoreStatus"])
+```
+
+Use `ab.session_id(prefix="my-app")` to derive a stable session id
+from the current worktree without creating a browser.
+
 ## Capture a screenshot
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(headless=True) as browser:
+with Browser.launch(LaunchOptions(headless=True)) as browser:
     browser.page.open("https://example.com")
     shot = browser.capture.screenshot("page.png", full_page=True)
     print(shot.path)
@@ -88,14 +111,16 @@ with Browser(headless=True) as browser:
 
 Install `pyagentbrowser[images]` to access `shot.image` and `shot.pil()`.
 Headless Chromium screenshots hide native scrollbars by default. Construct
-`Browser(hide_scrollbars=False)` when scrollbars are part of the artifact.
+`Browser.launch(LaunchOptions(hide_scrollbars=False))` when scrollbars are part
+of the artifact.
 
 ## Async
 
 ```python
-from pyagentbrowser import AsyncBrowser
+from pyagentbrowser import AsyncBrowser, LaunchOptions
 
-async with AsyncBrowser(headless=True) as browser:
+browser = await AsyncBrowser.launch(LaunchOptions(headless=True))
+async with browser:
     await browser.page.open("https://example.com")
     page = await browser.agent.observe()
     print(page.text)
@@ -105,24 +130,37 @@ async with AsyncBrowser(headless=True) as browser:
 
 ```python
 import pyagentbrowser as ab
+from pyagentbrowser import CDPAttach
 
-browser = ab.configure(cdp_port=9222)
+browser = ab.notebook.configure(attach=CDPAttach(port=9222))
+browser.connect()
 print(browser.tabs.list())
 ```
 
-`Browser(cdp_port=...)` stays lazy until first use. Call `browser.connect()` to
-perform the same no-navigation handshake explicitly.
-For notebook recovery after an interrupted run, use `ab.reset(force=True)` or
-`ab.configure(..., force=True)` to discard a stale default browser.
+`CDPAttach` keeps attachment target selection separate from browser process
+launch options. Call `browser.connect()` to perform the no-navigation handshake.
+For notebook recovery after an interrupted run, use `ab.notebook.reset(force=True)` or
+`ab.notebook.configure(..., force=True)` to discard a stale default browser.
 
 ## Notebook scratchpad helpers
 
 ```python
-browser.tabs.open("https://example.com", label="scratch")
-browser.page.ready(timeout_ms=15_000)
-heading = browser.find.xpath("//h1").text()
-href = browser.find.xpath("//a[contains(., 'More information')]").attribute("href")
-shot = browser.capture.screenshot("page.png")
+from pyagentbrowser import Browser, LaunchOptions
+
+with Browser.launch(LaunchOptions(headless=True)) as browser:
+    browser.tabs.open("about:blank", label="scratch")
+    browser.page.set_content(
+        """
+        <main>
+          <h1>Scratch page</h1>
+          <a href="#details">More information</a>
+        </main>
+        """
+    )
+    browser.page.ready(timeout_ms=15_000)
+    heading = browser.find.xpath("//h1").text()
+    href = browser.find.xpath("//a[contains(., 'More information')]").attribute("href")
+    shot = browser.capture.screenshot("page.png")
 ```
 
 `tabs.open(..., label=...)` reuses the labelled tab when it already exists.

@@ -117,6 +117,10 @@ fn write_upstream_modules(out_dir: &Path) {
     for (name, relative_path) in ROOT_MODULES {
         let path = upstream_root.join(relative_path);
         require_file(&path);
+        let module_path = match *name {
+            "connection" => rewrite_connection_module(out_dir, &path),
+            _ => path,
+        };
         line(
             &mut output,
             format_args!(
@@ -125,7 +129,7 @@ fn write_upstream_modules(out_dir: &Path) {
         );
         line(
             &mut output,
-            format_args!("#[path = \"{}\"]", path_literal(&path)),
+            format_args!("#[path = \"{}\"]", path_literal(&module_path)),
         );
         line(&mut output, format_args!("pub(crate) mod {name};"));
     }
@@ -175,6 +179,7 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
         let module_path = match *name {
             "actions" => rewrite_actions_module(out_dir, &path),
             "browser" => rewrite_browser_module(out_dir, &path),
+            "state" => rewrite_state_module(out_dir, &path),
             "stream" => rewrite_stream_module(out_dir, &path),
             _ => path,
         };
@@ -204,6 +209,117 @@ fn rewrite_browser_module(out_dir: &Path, source: &Path) -> PathBuf {
     destination
 }
 
+fn rewrite_connection_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let destination = out_dir.join("agent_browser_connection.rs");
+    let contents = fs::read_to_string(source)
+        .unwrap_or_else(|err| panic!("failed to read upstream connection file: {err}"));
+    let contents = rewrite_connection_namespace(contents);
+    fs::write(destination.as_path(), contents).expect("failed to write generated connection file");
+    destination
+}
+
+fn rewrite_connection_namespace(contents: String) -> String {
+    const UPSTREAM_SOCKET_DIR: &str = r#"pub fn get_socket_dir() -> PathBuf {
+    // 1. Explicit override (ignore empty string)
+    let base = if let Ok(dir) = env::var("AGENT_BROWSER_SOCKET_DIR") {
+        if !dir.is_empty() {
+            PathBuf::from(dir)
+        } else if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+            if !runtime_dir.is_empty() {
+                PathBuf::from(runtime_dir).join("agent-browser")
+            } else if let Some(home) = dirs::home_dir() {
+                home.join(".agent-browser")
+            } else {
+                env::temp_dir().join("agent-browser")
+            }
+        } else if let Some(home) = dirs::home_dir() {
+            home.join(".agent-browser")
+        } else {
+            env::temp_dir().join("agent-browser")
+        }
+    } else if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+        if !runtime_dir.is_empty() {
+            PathBuf::from(runtime_dir).join("agent-browser")
+        } else if let Some(home) = dirs::home_dir() {
+            home.join(".agent-browser")
+        } else {
+            env::temp_dir().join("agent-browser")
+        }
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".agent-browser")
+    } else {
+        env::temp_dir().join("agent-browser")
+    };
+
+    if let Ok(namespace) = env::var("AGENT_BROWSER_NAMESPACE") {
+        let namespace = sanitize_session_component(&namespace);
+        if !namespace.is_empty() {
+            return base.join("namespaces").join(namespace).join("run");
+        }
+    }
+
+    base
+}"#;
+    const REWRITTEN_SOCKET_DIR: &str = r#"pub fn get_socket_dir() -> PathBuf {
+    let namespace = env::var("AGENT_BROWSER_NAMESPACE").ok();
+    get_socket_dir_for_namespace(namespace.as_deref())
+}
+
+pub fn get_socket_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
+    // 1. Explicit override (ignore empty string)
+    let base = if let Ok(dir) = env::var("AGENT_BROWSER_SOCKET_DIR") {
+        if !dir.is_empty() {
+            PathBuf::from(dir)
+        } else if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+            if !runtime_dir.is_empty() {
+                PathBuf::from(runtime_dir).join("agent-browser")
+            } else if let Some(home) = dirs::home_dir() {
+                home.join(".agent-browser")
+            } else {
+                env::temp_dir().join("agent-browser")
+            }
+        } else if let Some(home) = dirs::home_dir() {
+            home.join(".agent-browser")
+        } else {
+            env::temp_dir().join("agent-browser")
+        }
+    } else if let Ok(runtime_dir) = env::var("XDG_RUNTIME_DIR") {
+        if !runtime_dir.is_empty() {
+            PathBuf::from(runtime_dir).join("agent-browser")
+        } else if let Some(home) = dirs::home_dir() {
+            home.join(".agent-browser")
+        } else {
+            env::temp_dir().join("agent-browser")
+        }
+    } else if let Some(home) = dirs::home_dir() {
+        home.join(".agent-browser")
+    } else {
+        env::temp_dir().join("agent-browser")
+    };
+
+    if let Some(namespace) = namespace {
+        let namespace = sanitize_session_component(namespace);
+        if !namespace.is_empty() {
+            return base.join("namespaces").join(namespace).join("run");
+        }
+    }
+
+    base
+}"#;
+
+    let rewritten = replace_once_named(
+        contents,
+        "connection namespace socket dir",
+        UPSTREAM_SOCKET_DIR,
+        REWRITTEN_SOCKET_DIR,
+    );
+    assert!(
+        rewritten.contains("pub fn get_socket_dir_for_namespace("),
+        "upstream socket directory helper changed"
+    );
+    rewritten
+}
+
 fn rewrite_tab_list_target_id(contents: String) -> String {
     const UPSTREAM_TAB_LIST_FIELDS: &str = r#"                    "tabId": format_tab_id(p.tab_id),
                     "label": p.label,
@@ -231,6 +347,7 @@ fn rewrite_actions_module(out_dir: &Path, source: &Path) -> PathBuf {
     let contents = fs::read_to_string(source)
         .unwrap_or_else(|err| panic!("failed to read upstream actions file: {err}"));
     let contents = rewrite_confirmation_handling(contents);
+    let contents = rewrite_actions_namespace(contents);
     let contents = rewrite_dashboard_streaming(contents);
     let contents = rewrite_stream_result_success(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated actions file");
@@ -559,6 +676,183 @@ async fn handle_deny(cmd: &Value, state: &mut DaemonState) -> Result<Value, Stri
     rewritten
 }
 
+fn rewrite_actions_namespace(contents: String) -> String {
+    const UPSTREAM_CONNECTION_IMPORT: &str =
+        r#"use crate::connection::{get_socket_dir, INTERNAL_DAEMON_SHUTDOWN_ACTION};"#;
+    const REWRITTEN_CONNECTION_IMPORT: &str = r#"use crate::connection::{
+    get_socket_dir,
+    get_socket_dir_for_namespace,
+    INTERNAL_DAEMON_SHUTDOWN_ACTION,
+};"#;
+    const UPSTREAM_SESSION_FIELD: &str = r#"    pub restore_saved_path: Option<String>,
+    pub session_id: String,"#;
+    const REWRITTEN_SESSION_FIELD: &str = r#"    pub restore_saved_path: Option<String>,
+    pub session_id: String,
+    pub namespace: Option<String>,"#;
+    const UPSTREAM_SESSION_INIT: &str = r#"            session_id: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),"#;
+    const REWRITTEN_SESSION_INIT: &str = r#"            session_id: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),
+            namespace: env::var("AGENT_BROWSER_NAMESPACE").ok(),"#;
+    const UPSTREAM_SESSION_INFO: &str = r#"async fn handle_session_info(state: &DaemonState) -> Result<Value, String> {
+    Ok(json!({
+        "session": state.session_id,
+        "namespace": env::var("AGENT_BROWSER_NAMESPACE").ok(),
+        "socketDir": get_socket_dir().to_string_lossy(),
+        "backgroundPid": std::process::id(),
+        "browserLaunched": state.browser.is_some(),
+        "pageCount": state.browser.as_ref().map(|mgr| mgr.page_count()).unwrap_or(0),
+        "engine": state.engine,
+        "launchHash": state.launch_hash,
+        "compatibilityStatus": "current",
+        "effectiveLaunch": {
+            "browserLaunched": state.browser.is_some(),
+            "engine": state.engine,
+            "launchHash": state.launch_hash,
+        },
+        "restoreKey": state.session_name,
+        "restoreStatus": state.restore_status,
+        "restoreStatusDetail": state.restore_status_detail,
+        "restoreLoadedPath": state.restore_loaded_path,
+        "restoreValidationPending": state.restore_validation_pending,
+        "restoreSave": state.restore_save,
+        "saveStatus": state.restore_save_status,
+        "restoreSavedPath": state.restore_saved_path,
+        "restoreCheckUrl": state.restore_check_url,
+        "restoreCheckText": state.restore_check_text,
+        "restoreCheckFn": state.restore_check_fn,
+    }))
+}"#;
+    const REWRITTEN_SESSION_INFO: &str = r#"async fn handle_session_info(state: &DaemonState) -> Result<Value, String> {
+    Ok(json!({
+        "session": state.session_id,
+        "namespace": state.namespace.as_deref(),
+        "socketDir": get_socket_dir_for_namespace(state.namespace.as_deref()).to_string_lossy(),
+        "backgroundPid": std::process::id(),
+        "browserLaunched": state.browser.is_some(),
+        "pageCount": state.browser.as_ref().map(|mgr| mgr.page_count()).unwrap_or(0),
+        "engine": state.engine,
+        "launchHash": state.launch_hash,
+        "compatibilityStatus": "current",
+        "effectiveLaunch": {
+            "browserLaunched": state.browser.is_some(),
+            "engine": state.engine,
+            "launchHash": state.launch_hash,
+        },
+        "restoreKey": state.session_name,
+        "restoreStatus": state.restore_status,
+        "restoreStatusDetail": state.restore_status_detail,
+        "restoreLoadedPath": state.restore_loaded_path,
+        "restoreValidationPending": state.restore_validation_pending,
+        "restoreSave": state.restore_save,
+        "saveStatus": state.restore_save_status,
+        "restoreSavedPath": state.restore_saved_path,
+        "restoreCheckUrl": state.restore_check_url,
+        "restoreCheckText": state.restore_check_text,
+        "restoreCheckFn": state.restore_check_fn,
+    }))
+}"#;
+    const UPSTREAM_STATE_DISPATCH: &str = r#"            state::dispatch_state_command(cmd)
+                .expect("dispatch_state_command must handle all state_* actions matched here")"#;
+    const REWRITTEN_STATE_DISPATCH: &str = r#"            state::dispatch_state_command_for_namespace(cmd, state.namespace.as_deref())
+                .expect("dispatch_state_command must handle all state_* actions matched here")"#;
+    const UPSTREAM_AUTO_STATE: &str =
+        r#"    if let Some(path) = state::find_auto_state_file(&session_name) {"#;
+    const REWRITTEN_AUTO_STATE: &str = r#"    if let Some(path) = state::find_auto_state_file_for_namespace(&session_name, state.namespace.as_deref()) {"#;
+    const UPSTREAM_SAVE_AUTO: &str = r#"    match state::save_auto_state_transactional(
+        &mgr.client,
+        &active_session_id,
+        &session_name,
+        &state.session_id,
+        mgr.visited_origins(),
+    )
+    .await"#;
+    const REWRITTEN_SAVE_AUTO: &str = r#"    match state::save_auto_state_transactional_for_namespace(
+        &mgr.client,
+        &active_session_id,
+        &session_name,
+        &state.session_id,
+        mgr.visited_origins(),
+        state.namespace.as_deref(),
+    )
+    .await"#;
+    const UPSTREAM_STATE_SAVE: &str = r#"    let saved_path = state::save_state(
+        &mgr.client,
+        &session_id,
+        path,
+        state.session_name.as_deref(),
+        &state.session_id,
+        mgr.visited_origins(),
+    )
+    .await?;"#;
+    const REWRITTEN_STATE_SAVE: &str = r#"    let saved_path = state::save_state_for_namespace(
+        &mgr.client,
+        &session_id,
+        path,
+        state.session_name.as_deref(),
+        &state.session_id,
+        mgr.visited_origins(),
+        state.namespace.as_deref(),
+    )
+    .await?;"#;
+
+    let mut rewritten = replace_once_named(
+        contents,
+        "actions namespace connection import",
+        UPSTREAM_CONNECTION_IMPORT,
+        REWRITTEN_CONNECTION_IMPORT,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace state field",
+        UPSTREAM_SESSION_FIELD,
+        REWRITTEN_SESSION_FIELD,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace state init",
+        UPSTREAM_SESSION_INIT,
+        REWRITTEN_SESSION_INIT,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace session info",
+        UPSTREAM_SESSION_INFO,
+        REWRITTEN_SESSION_INFO,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace state dispatch",
+        UPSTREAM_STATE_DISPATCH,
+        REWRITTEN_STATE_DISPATCH,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace auto restore",
+        UPSTREAM_AUTO_STATE,
+        REWRITTEN_AUTO_STATE,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace auto save",
+        UPSTREAM_SAVE_AUTO,
+        REWRITTEN_SAVE_AUTO,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace explicit state save",
+        UPSTREAM_STATE_SAVE,
+        REWRITTEN_STATE_SAVE,
+    );
+    assert!(
+        rewritten.contains("pub namespace: Option<String>"),
+        "upstream DaemonState namespace layout changed"
+    );
+    assert!(
+        rewritten.contains("dispatch_state_command_for_namespace("),
+        "upstream state command dispatch changed"
+    );
+    rewritten
+}
+
 fn rewrite_dashboard_streaming(contents: String) -> String {
     assert!(
         contents.contains("use super::stream::{self, StreamServer};"),
@@ -600,6 +894,290 @@ fn rewrite_stream_result_success(contents: String) -> String {
     assert!(
         rewritten.contains(".get(\"success\")"),
         "upstream stream result success handling changed"
+    );
+    rewritten
+}
+
+fn rewrite_state_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let destination = out_dir.join("agent_browser_state.rs");
+    let contents = fs::read_to_string(source)
+        .unwrap_or_else(|err| panic!("failed to read upstream state file: {err}"));
+    let contents = rewrite_state_namespace(contents);
+    fs::write(destination.as_path(), contents).expect("failed to write generated state file");
+    destination
+}
+
+fn rewrite_state_namespace(contents: String) -> String {
+    const UPSTREAM_SAVE_STATE_SIG: &str = r#"pub async fn save_state(
+    client: &CdpClient,
+    session_id: &str,
+    path: Option<&str>,
+    session_name: Option<&str>,
+    session_id_str: &str,
+    visited_origins: &HashSet<String>,
+) -> Result<String, String> {"#;
+    const REWRITTEN_SAVE_STATE_SIG: &str = r#"pub async fn save_state(
+    client: &CdpClient,
+    session_id: &str,
+    path: Option<&str>,
+    session_name: Option<&str>,
+    session_id_str: &str,
+    visited_origins: &HashSet<String>,
+) -> Result<String, String> {
+    save_state_for_namespace(
+        client,
+        session_id,
+        path,
+        session_name,
+        session_id_str,
+        visited_origins,
+        None,
+    )
+    .await
+}
+
+pub async fn save_state_for_namespace(
+    client: &CdpClient,
+    session_id: &str,
+    path: Option<&str>,
+    session_name: Option<&str>,
+    session_id_str: &str,
+    visited_origins: &HashSet<String>,
+    namespace: Option<&str>,
+) -> Result<String, String> {"#;
+    const UPSTREAM_SAVE_AUTO_SIG: &str = r#"pub async fn save_auto_state_transactional(
+    client: &CdpClient,
+    session_id: &str,
+    session_name: &str,
+    session_id_str: &str,
+    visited_origins: &HashSet<String>,
+) -> Result<String, String> {"#;
+    const REWRITTEN_SAVE_AUTO_SIG: &str = r#"pub async fn save_auto_state_transactional(
+    client: &CdpClient,
+    session_id: &str,
+    session_name: &str,
+    session_id_str: &str,
+    visited_origins: &HashSet<String>,
+) -> Result<String, String> {
+    save_auto_state_transactional_for_namespace(
+        client,
+        session_id,
+        session_name,
+        session_id_str,
+        visited_origins,
+        None,
+    )
+    .await
+}
+
+pub async fn save_auto_state_transactional_for_namespace(
+    client: &CdpClient,
+    session_id: &str,
+    session_name: &str,
+    session_id_str: &str,
+    visited_origins: &HashSet<String>,
+    namespace: Option<&str>,
+) -> Result<String, String> {"#;
+    const UPSTREAM_STATE_LIST_SIG: &str = r#"pub fn state_list() -> Result<Value, String> {"#;
+    const REWRITTEN_STATE_LIST_SIG: &str = r#"pub fn state_list() -> Result<Value, String> {
+    state_list_for_namespace(None)
+}
+
+pub fn state_list_for_namespace(namespace: Option<&str>) -> Result<Value, String> {"#;
+    const UPSTREAM_STATE_CLEAR_SIG: &str =
+        r#"pub fn state_clear(path: Option<&str>) -> Result<Value, String> {"#;
+    const REWRITTEN_STATE_CLEAR_SIG: &str = r#"pub fn state_clear(path: Option<&str>) -> Result<Value, String> {
+    state_clear_for_namespace(path, None)
+}
+
+pub fn state_clear_for_namespace(
+    path: Option<&str>,
+    namespace: Option<&str>,
+) -> Result<Value, String> {"#;
+    const UPSTREAM_STATE_CLEAN_SIG: &str =
+        r#"pub fn state_clean(max_age_days: u64) -> Result<Value, String> {"#;
+    const REWRITTEN_STATE_CLEAN_SIG: &str = r#"pub fn state_clean(max_age_days: u64) -> Result<Value, String> {
+    state_clean_for_namespace(max_age_days, None)
+}
+
+pub fn state_clean_for_namespace(
+    max_age_days: u64,
+    namespace: Option<&str>,
+) -> Result<Value, String> {"#;
+    const UPSTREAM_FIND_AUTO_SIG: &str =
+        r#"pub fn find_auto_state_file(session_name: &str) -> Option<String> {"#;
+    const REWRITTEN_FIND_AUTO_SIG: &str = r#"pub fn find_auto_state_file(session_name: &str) -> Option<String> {
+    find_auto_state_file_for_namespace(session_name, None)
+}
+
+pub fn find_auto_state_file_for_namespace(
+    session_name: &str,
+    namespace: Option<&str>,
+) -> Option<String> {"#;
+    const UPSTREAM_DISPATCH_SIG: &str =
+        r#"pub fn dispatch_state_command(cmd: &Value) -> Option<Result<Value, String>> {"#;
+    const REWRITTEN_DISPATCH_SIG: &str = r#"pub fn dispatch_state_command(cmd: &Value) -> Option<Result<Value, String>> {
+    dispatch_state_command_for_namespace(cmd, None)
+}
+
+pub fn dispatch_state_command_for_namespace(
+    cmd: &Value,
+    namespace: Option<&str>,
+) -> Option<Result<Value, String>> {"#;
+    const UPSTREAM_STATE_DIR: &str = r#"pub fn get_state_dir() -> PathBuf {
+    let base = if let Some(home) = dirs::home_dir() {
+        home.join(".agent-browser")
+    } else {
+        std::env::temp_dir().join("agent-browser")
+    };
+
+    if let Ok(namespace) = std::env::var("AGENT_BROWSER_NAMESPACE") {
+        let namespace = sanitize_session_component(&namespace);
+        if !namespace.is_empty() {
+            return base.join("namespaces").join(namespace).join("state");
+        }
+    }
+
+    base
+}
+
+pub fn get_sessions_dir() -> PathBuf {
+    get_state_dir().join("sessions")
+}"#;
+    const REWRITTEN_STATE_DIR: &str = r#"pub fn get_state_dir() -> PathBuf {
+    let namespace = std::env::var("AGENT_BROWSER_NAMESPACE").ok();
+    get_state_dir_for_namespace(namespace.as_deref())
+}
+
+pub fn get_state_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
+    let base = if let Some(home) = dirs::home_dir() {
+        home.join(".agent-browser")
+    } else {
+        std::env::temp_dir().join("agent-browser")
+    };
+
+    if let Some(namespace) = namespace {
+        let namespace = sanitize_session_component(namespace);
+        if !namespace.is_empty() {
+            return base.join("namespaces").join(namespace).join("state");
+        }
+    }
+
+    base
+}
+
+pub fn get_sessions_dir() -> PathBuf {
+    let namespace = std::env::var("AGENT_BROWSER_NAMESPACE").ok();
+    get_sessions_dir_for_namespace(namespace.as_deref())
+}
+
+pub fn get_sessions_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
+    get_state_dir_for_namespace(namespace).join("sessions")
+}"#;
+
+    let mut rewritten = replace_once_named(
+        contents,
+        "state save namespace signature",
+        UPSTREAM_SAVE_STATE_SIG,
+        REWRITTEN_SAVE_STATE_SIG,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state auto-save namespace signature",
+        UPSTREAM_SAVE_AUTO_SIG,
+        REWRITTEN_SAVE_AUTO_SIG,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state list namespace signature",
+        UPSTREAM_STATE_LIST_SIG,
+        REWRITTEN_STATE_LIST_SIG,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state clear namespace signature",
+        UPSTREAM_STATE_CLEAR_SIG,
+        REWRITTEN_STATE_CLEAR_SIG,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state clean namespace signature",
+        UPSTREAM_STATE_CLEAN_SIG,
+        REWRITTEN_STATE_CLEAN_SIG,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state auto-restore namespace signature",
+        UPSTREAM_FIND_AUTO_SIG,
+        REWRITTEN_FIND_AUTO_SIG,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state dispatch namespace signature",
+        UPSTREAM_DISPATCH_SIG,
+        REWRITTEN_DISPATCH_SIG,
+    );
+    rewritten = replace_n_named(
+        rewritten,
+        "state namespace sessions dir",
+        "let dir = get_sessions_dir();",
+        "let dir = get_sessions_dir_for_namespace(namespace);",
+        6,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state transactional save namespace call",
+        r#"    let candidate_path = save_state(
+        client,
+        session_id,
+        Some(&candidate_arg),
+        Some(session_name),
+        session_id_str,
+        visited_origins,
+    )
+    .await?;"#,
+        r#"    let candidate_path = save_state_for_namespace(
+        client,
+        session_id,
+        Some(&candidate_arg),
+        Some(session_name),
+        session_id_str,
+        visited_origins,
+        namespace,
+    )
+    .await?;"#,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state list dispatch namespace",
+        r#""state_list" => Some(state_list()),"#,
+        r#""state_list" => Some(state_list_for_namespace(namespace)),"#,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state clear dispatch namespace",
+        r#"            Some(state_clear(path))"#,
+        r#"            Some(state_clear_for_namespace(path, namespace))"#,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state clean dispatch namespace",
+        r#"            Some(state_clean(days))"#,
+        r#"            Some(state_clean_for_namespace(days, namespace))"#,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state directory namespace helpers",
+        UPSTREAM_STATE_DIR,
+        REWRITTEN_STATE_DIR,
+    );
+    assert!(
+        rewritten.contains("pub fn get_state_dir_for_namespace("),
+        "upstream state directory helper changed"
+    );
+    assert!(
+        rewritten.contains("pub async fn save_auto_state_transactional_for_namespace("),
+        "upstream transactional state save changed"
     );
     rewritten
 }
@@ -767,6 +1345,24 @@ fn replace_once_named(
         "generated upstream rewrite expected exactly one {patch_name} block, found {occurrences}"
     );
     contents.replacen(expected, replacement, 1)
+}
+
+fn replace_n_named(
+    mut contents: String,
+    patch_name: &str,
+    expected: &str,
+    replacement: &str,
+    expected_count: usize,
+) -> String {
+    let occurrences = contents.matches(expected).count();
+    assert!(
+        occurrences >= expected_count,
+        "generated upstream rewrite expected at least {expected_count} {patch_name} blocks, found {occurrences}"
+    );
+    for _ in 0..expected_count {
+        contents = contents.replacen(expected, replacement, 1);
+    }
+    contents
 }
 
 fn upstream_cli_src_dir() -> PathBuf {

@@ -32,8 +32,8 @@ class CDPTarget:
 
     def frame(
         self,
-        selector: str | None = None,
         *,
+        selector: str | None = None,
         name: str | None = None,
         url: str | None = None,
     ) -> Frame:
@@ -105,8 +105,8 @@ class AsyncCDPTarget:
 
     async def frame(
         self,
-        selector: str | None = None,
         *,
+        selector: str | None = None,
         name: str | None = None,
         url: str | None = None,
     ) -> AsyncFrame:

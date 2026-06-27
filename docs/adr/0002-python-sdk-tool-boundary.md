@@ -23,7 +23,7 @@ in-process and typed as Python objects.
 
 The public surface should grow around snapshots, refs, policy, evidence, skills,
 CDP, and Python lifecycle ergonomics. New helpers should expose one of those
-contracts above the raw `Browser.command(...)` surface.
+contracts above the raw `browser.native.execute(...)` surface.
 
 The user-facing comparison table lives in
 [docs/choosing-a-tool.md](../choosing-a-tool.md).

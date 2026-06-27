@@ -1,10 +1,14 @@
 import pyagentbrowser as ab
+from pyagentbrowser import BrowserSessionOptions, LaunchOptions
 
-ab.configure(headless=True, allowed_domains="*.example.com")
+ab.notebook.configure(
+    launch_options=LaunchOptions(headless=True),
+    session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
+)
 try:
-    ab.page.open("example.com")
-    page = ab.agent.observe()
+    ab.notebook.page.open("example.com")
+    page = ab.notebook.agent.observe()
     print(page.text)
-    print(ab.page.title(), ab.page.url())
+    print(ab.notebook.page.title(), ab.notebook.page.url())
 finally:
-    ab.close()
+    ab.notebook.close()

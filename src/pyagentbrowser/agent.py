@@ -123,7 +123,7 @@ class AgentRef:
     ) -> Self:
         """Click this ref and return it."""
         return self._run(
-            lambda: self.browser.command(
+            lambda: self.browser._command(
                 "click",
                 **click_params(
                     self.selector,
@@ -136,59 +136,59 @@ class AgentRef:
 
     def fill(self, value: str) -> Self:
         """Fill this ref as a form control."""
-        return self._run(lambda: self.browser.command("fill", selector=self.selector, value=value))
+        return self._run(lambda: self.browser._command("fill", selector=self.selector, value=value))
 
     def type(self, text: str) -> Self:
         """Type text into this ref."""
-        return self._run(lambda: self.browser.command("type", selector=self.selector, text=text))
+        return self._run(lambda: self.browser._command("type", selector=self.selector, text=text))
 
     def press(self, key: str) -> Self:
         """Focus this ref and press a key."""
         return self._run(
             lambda: (
-                self.browser.command("click", selector=self.selector),
+                self.browser._command("click", selector=self.selector),
                 self.browser.keyboard.press(key),
             )
         )
 
     def hover(self) -> Self:
         """Hover this ref."""
-        return self._run(lambda: self.browser.command("hover", selector=self.selector))
+        return self._run(lambda: self.browser._command("hover", selector=self.selector))
 
     def tap(self) -> Self:
         """Tap this ref."""
-        return self._run(lambda: self.browser.command("tap", selector=self.selector))
+        return self._run(lambda: self.browser._command("tap", selector=self.selector))
 
     def focus(self) -> Self:
         """Focus this ref."""
-        return self._run(lambda: self.browser.command("focus", selector=self.selector))
+        return self._run(lambda: self.browser._command("focus", selector=self.selector))
 
     def clear(self) -> Self:
         """Clear this ref as a form control."""
-        return self._run(lambda: self.browser.command("clear", selector=self.selector))
+        return self._run(lambda: self.browser._command("clear", selector=self.selector))
 
     def select(self, value: str) -> Self:
         """Select an option value on this ref."""
         return self._run(
-            lambda: self.browser.command("select", selector=self.selector, value=value)
+            lambda: self.browser._command("select", selector=self.selector, value=value)
         )
 
     def check(self) -> Self:
         """Check this ref."""
-        return self._run(lambda: self.browser.command("check", selector=self.selector))
+        return self._run(lambda: self.browser._command("check", selector=self.selector))
 
     def uncheck(self) -> Self:
         """Uncheck this ref."""
-        return self._run(lambda: self.browser.command("uncheck", selector=self.selector))
+        return self._run(lambda: self.browser._command("uncheck", selector=self.selector))
 
     def scroll_into_view(self) -> Self:
         """Scroll this ref into view."""
-        return self._run(lambda: self.browser.command("scrollintoview", selector=self.selector))
+        return self._run(lambda: self.browser._command("scrollintoview", selector=self.selector))
 
     def wait(self, *, state: WaitSelectorState = "visible", timeout_ms: int | None = None) -> Self:
         """Wait for this ref to reach a state."""
         return self._run(
-            lambda: self.browser.command(
+            lambda: self.browser._command(
                 "wait",
                 **wait_params(
                     None,
@@ -201,34 +201,34 @@ class AgentRef:
 
     def text(self) -> str:
         """Return text content for this ref."""
-        return str(self.browser.command("gettext", selector=self.selector).get("text", ""))
+        return str(self.browser._command("gettext", selector=self.selector).get("text", ""))
 
     def inner_text(self) -> str:
         """Return rendered inner text for this ref."""
-        return str(self.browser.command("innertext", selector=self.selector).get("text", ""))
+        return str(self.browser._command("innertext", selector=self.selector).get("text", ""))
 
     def input_value(self) -> str:
         """Return this ref's input value."""
-        return str(self.browser.command("inputvalue", selector=self.selector).get("value", ""))
+        return str(self.browser._command("inputvalue", selector=self.selector).get("value", ""))
 
     def attribute(self, name: str) -> str | None:
         """Return one attribute on this ref."""
-        value = self.browser.command("getattribute", selector=self.selector, attribute=name).get(
+        value = self.browser._command("getattribute", selector=self.selector, attribute=name).get(
             "value"
         )
         return str(value) if value is not None else None
 
     def is_visible(self) -> bool:
         """Return whether this ref is visible."""
-        return bool(self.browser.command("isvisible", selector=self.selector).get("visible"))
+        return bool(self.browser._command("isvisible", selector=self.selector).get("visible"))
 
     def is_enabled(self) -> bool:
         """Return whether this ref is enabled."""
-        return bool(self.browser.command("isenabled", selector=self.selector).get("enabled"))
+        return bool(self.browser._command("isenabled", selector=self.selector).get("enabled"))
 
     def is_checked(self) -> bool:
         """Return whether this ref is checked."""
-        return bool(self.browser.command("ischecked", selector=self.selector).get("checked"))
+        return bool(self.browser._command("ischecked", selector=self.selector).get("checked"))
 
     def click_and_observe(
         self,

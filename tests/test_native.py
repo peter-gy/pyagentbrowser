@@ -22,8 +22,11 @@ from pyagentbrowser import (
     ActionConfirmationRequired,
     Browser,
     BrowserError,
+    BrowserSessionOptions,
     DashboardOptions,
+    ReadMode,
     ReadResult,
+    RestoreOptions,
 )
 from pyagentbrowser._native import NativeBrowser, __agent_browser_version__
 
@@ -119,7 +122,7 @@ def test_native_binding_exposes_agent_browser_version() -> None:
 @DEVICE_LIST_ONLY_ON_MACOS
 def test_native_device_list_returns_device_records() -> None:
     with Browser() as browser:
-        data = browser.command("device_list")
+        data = browser.native.data("device_list")
 
     assert "devices" in data
     devices = data["devices"]
@@ -175,8 +178,10 @@ def test_native_read_fetches_markdown_through_page_namespace() -> None:
         thread.start()
         try:
             url = f"http://127.0.0.1:{server.server_port}/docs"
-            with Browser(allowed_domains="127.0.0.1") as browser:
-                result = browser.page.read(url, require_md=True)
+            with Browser(
+                session_options=BrowserSessionOptions(allowed_domains="127.0.0.1")
+            ) as browser:
+                result = browser.page.read(url, mode=ReadMode.markdown(require=True))
         finally:
             server.shutdown()
             thread.join(timeout=2)
@@ -187,15 +192,50 @@ def test_native_read_fetches_markdown_through_page_namespace() -> None:
     assert result.content_type == "text/markdown"
 
 
+def test_native_restore_constructor_configures_session_info() -> None:
+    with Browser.from_session(
+        "py-restore",
+        restore=RestoreOptions(key="py-restore", save="never", check_text="Dashboard"),
+    ) as browser:
+        info = browser.restore.info()
+
+    assert info["session"] == "py-restore"
+    assert info["restoreKey"] == "py-restore"
+    assert info["restoreSave"] == "never"
+    assert info["restoreCheckText"] == "Dashboard"
+    assert info["restoreStatus"] == "pending"
+
+
+def test_native_namespace_scopes_session_info(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket_dir = tmp_path / "sockets"
+    monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
+    monkeypatch.delenv("AGENT_BROWSER_NAMESPACE", raising=False)
+
+    with Browser.from_session(
+        "py-namespace",
+        session_options=BrowserSessionOptions(namespace="Worktree: One"),
+    ) as browser:
+        info = browser.runtime.info()
+
+    socket_path = Path(str(info["socketDir"]))
+    assert info["namespace"] == "Worktree: One"
+    assert socket_path == socket_dir / "namespaces" / "worktree-one" / "run"
+    assert "AGENT_BROWSER_NAMESPACE" not in os.environ
+
+
 def test_native_dashboard_writes_discovery_sidecars(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as socket_dir_raw:
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
-        browser = Browser(session="py-dashboard", dashboard=True)
+        browser = Browser.from_session("py-dashboard")
 
         try:
+            browser.dashboard.start()
             stream_path = socket_dir / "py-dashboard.stream"
             pid_path = socket_dir / "py-dashboard.pid"
             socket_path = socket_dir / "py-dashboard.sock"
@@ -211,16 +251,33 @@ def test_native_dashboard_writes_discovery_sidecars(
             browser.close()
 
 
+def test_native_dashboard_start_is_explicit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as socket_dir_raw:
+        socket_dir = Path(socket_dir_raw)
+        monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
+        browser = Browser.from_session("py-dashboard")
+
+        try:
+            assert _dashboard_sidecars(socket_dir, "py-dashboard") == []
+            browser.dashboard.start()
+            assert (socket_dir / "py-dashboard.stream").exists()
+        finally:
+            browser.close()
+
+
 def test_native_dashboard_stream_status_reports_enabled(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as socket_dir_raw:
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
-        browser = Browser(session="py-dashboard", dashboard=True)
+        browser = Browser.from_session("py-dashboard")
 
         try:
-            assert browser.command("stream_status")["enabled"] is True
+            browser.dashboard.start()
+            assert browser.native.data("stream_status")["enabled"] is True
         finally:
             browser.close()
 
@@ -231,9 +288,10 @@ def test_native_dashboard_control_close_is_observable_only(
     with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as socket_dir_raw:
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
-        browser = Browser(session="py-dashboard", dashboard=True)
+        browser = Browser.from_session("py-dashboard")
 
         try:
+            browser.dashboard.start()
             stream_path = socket_dir / "py-dashboard.stream"
             socket_path = socket_dir / "py-dashboard.sock"
 
@@ -246,7 +304,7 @@ def test_native_dashboard_control_close_is_observable_only(
             assert response["data"]["observable_only"] is True
             assert response["data"]["detached"] is True
             _wait_until(lambda: not stream_path.exists())
-            assert browser.command("stream_status")["enabled"] is True
+            assert browser.native.data("stream_status")["enabled"] is True
         finally:
             browser.close()
 
@@ -255,7 +313,8 @@ def test_native_dashboard_close_removes_sidecars(monkeypatch: pytest.MonkeyPatch
     with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as socket_dir_raw:
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
-        browser = Browser(session="py-dashboard", dashboard=True)
+        browser = Browser.from_session("py-dashboard")
+        browser.dashboard.start()
 
         browser.close()
 
@@ -279,7 +338,8 @@ def test_native_dashboard_rejects_hostile_control(
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
 
-        with Browser(session="py-dashboard-hostile", dashboard=True):
+        with Browser.from_session("py-dashboard-hostile") as browser:
+            browser.dashboard.start()
             socket_path = socket_dir / "py-dashboard-hostile.sock"
             response = _send_dashboard_control(socket_path, payload)
 
@@ -297,11 +357,12 @@ def test_native_dashboard_hostile_control_keeps_browser_alive(
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
 
-        with Browser(session="py-dashboard-hostile", dashboard=True) as browser:
+        with Browser.from_session("py-dashboard-hostile") as browser:
+            browser.dashboard.start()
             socket_path = socket_dir / "py-dashboard-hostile.sock"
             _send_dashboard_control(socket_path, b'{"id":"dash-nav","action":"navigate"}\n')
 
-            assert browser.command("stream_status")["enabled"] is True
+            assert browser.native.data("stream_status")["enabled"] is True
 
 
 def test_native_dashboard_close_does_not_hang_on_partial_control_client() -> None:
@@ -320,7 +381,8 @@ from pyagentbrowser import Browser
 
 socket_dir = Path({str(socket_dir)!r})
 session = {session!r}
-browser = Browser(session=session, dashboard=True)
+browser = Browser.from_session(session)
+browser.dashboard.start()
 client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 client.connect(str(socket_dir / f"{{session}}.sock"))
 client.sendall(b'{{"id":"partial","action":"close"}}')
@@ -355,10 +417,8 @@ def test_native_dashboard_writes_configured_cli_version_sidecar(
     with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as socket_dir_raw:
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
-        with Browser(
-            session="py-dashboard-version",
-            dashboard=DashboardOptions(cli_version="999.888.777"),
-        ):
+        with Browser.from_session("py-dashboard-version") as browser:
+            browser.dashboard.start(DashboardOptions(cli_version="999.888.777"))
             assert (socket_dir / "py-dashboard-version.version").read_text() == "999.888.777"
 
 
@@ -381,7 +441,8 @@ from pyagentbrowser import Browser
 
 socket_dir = Path({str(socket_dir)!r})
 session = {session!r}
-browser = Browser(session=session, dashboard=True)
+browser = Browser.from_session(session)
+browser.dashboard.start()
 pid = (socket_dir / f"{{session}}.pid").read_text()
 Path({str(marker)!r}).write_text(json.dumps({{"pid": pid}}))
 os._exit(23)
@@ -403,10 +464,11 @@ def test_native_dashboard_stream_result_reports_success(
         socket_dir = Path(socket_dir_raw)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
 
-        with Browser(session="py-dashboard-result", dashboard=True) as browser:
+        with Browser.from_session("py-dashboard-result") as browser:
+            browser.dashboard.start()
             port = int((socket_dir / "py-dashboard-result.stream").read_text())
             with closing(_websocket_connect(port)) as websocket:
-                browser.command("stream_status")
+                browser.native.data("stream_status")
                 result = None
                 deadline = time.monotonic() + 5
                 while time.monotonic() < deadline:
@@ -421,7 +483,7 @@ def test_native_dashboard_stream_result_reports_success(
 
 def test_native_errors_raise_typed_browser_error() -> None:
     with Browser() as browser, pytest.raises(BrowserError) as exc_info:
-        browser.command("not_an_agent_browser_action")
+        browser.native.data("not_an_agent_browser_action")
 
     assert exc_info.value.action == "not_an_agent_browser_action"
     assert exc_info.value.response["success"] is False
@@ -430,15 +492,21 @@ def test_native_errors_raise_typed_browser_error() -> None:
 
 
 def test_native_tab_new_rejects_disallowed_url() -> None:
-    with Browser(allowed_domains="example.com") as browser, pytest.raises(BrowserError) as exc_info:
-        browser.command("tab_new", url="https://evil.example")
+    with (
+        Browser(session_options=BrowserSessionOptions(allowed_domains="example.com")) as browser,
+        pytest.raises(BrowserError) as exc_info,
+    ):
+        browser.native.data("tab_new", url="https://evil.example")
 
     assert exc_info.value.action == "tab_new"
     assert "allowed domains" in str(exc_info.value)
 
 
 def test_native_cookie_set_rejects_disallowed_domain() -> None:
-    with Browser(allowed_domains="example.com") as browser, pytest.raises(BrowserError) as exc_info:
+    with (
+        Browser(session_options=BrowserSessionOptions(allowed_domains="example.com")) as browser,
+        pytest.raises(BrowserError) as exc_info,
+    ):
         browser.cookies.set("session", "abc", domain="evil.example")
 
     assert exc_info.value.action == "cookies_set"
@@ -446,22 +514,26 @@ def test_native_cookie_set_rejects_disallowed_domain() -> None:
 
 
 def test_native_confirmation_requires_matching_confirmation_id() -> None:
-    with Browser(confirm_actions=[CONFIRMABLE_ACTION]) as browser:
+    with Browser(
+        session_options=BrowserSessionOptions(confirm_actions=[CONFIRMABLE_ACTION])
+    ) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
-            browser.command(CONFIRMABLE_ACTION)
+            browser.native.data(CONFIRMABLE_ACTION)
 
         confirmation = exc_info.value
         assert confirmation.confirmation_id
 
         with pytest.raises(BrowserError) as wrong_id:
-            browser.command("confirm", confirmation_id=f"{confirmation.confirmation_id}-wrong")
+            browser.native.data("confirm", confirmation_id=f"{confirmation.confirmation_id}-wrong")
         assert "confirmation_id does not match" in str(wrong_id.value)
 
 
 def test_native_confirmation_replays_with_matching_confirmation_id() -> None:
-    with Browser(confirm_actions=[CONFIRMABLE_ACTION]) as browser:
+    with Browser(
+        session_options=BrowserSessionOptions(confirm_actions=[CONFIRMABLE_ACTION])
+    ) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
-            browser.command(CONFIRMABLE_ACTION)
+            browser.native.data(CONFIRMABLE_ACTION)
 
         data = browser.confirm(exc_info.value)
 
@@ -474,9 +546,9 @@ def test_native_confirmation_replay_rechecks_policy_deny(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(action_policy=policy) as browser:
+    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
-            browser.command(CONFIRMABLE_ACTION)
+            browser.native.data(CONFIRMABLE_ACTION)
 
         policy.write_text(json.dumps({"deny": [CONFIRMABLE_ACTION]}))
 
@@ -492,9 +564,9 @@ def test_native_confirmation_replay_fails_closed_when_policy_is_invalid(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(action_policy=policy) as browser:
+    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
-            browser.command(CONFIRMABLE_ACTION)
+            browser.native.data(CONFIRMABLE_ACTION)
 
         policy.write_text("{not-json")
 
@@ -511,9 +583,9 @@ def test_native_confirmation_can_replay_after_policy_repair(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(action_policy=policy) as browser:
+    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
-            browser.command(CONFIRMABLE_ACTION)
+            browser.native.data(CONFIRMABLE_ACTION)
 
         policy.write_text("{not-json")
         with pytest.raises(BrowserError):
@@ -529,9 +601,9 @@ def test_native_confirmation_replay_fails_closed_when_policy_is_deleted(
     policy = tmp_path / "policy.json"
     policy.write_text(json.dumps({"confirm": [CONFIRMABLE_ACTION]}))
 
-    with Browser(action_policy=policy) as browser:
+    with Browser(session_options=BrowserSessionOptions(action_policy=policy)) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
-            browser.command(CONFIRMABLE_ACTION)
+            browser.native.data(CONFIRMABLE_ACTION)
 
         policy.unlink()
 
@@ -544,10 +616,15 @@ def test_native_confirmation_replay_fails_closed_when_policy_is_deleted(
 
 def test_native_confirmation_policy_cannot_bypass_python_url_allowlist() -> None:
     with (
-        Browser(allowed_domains="example.com", confirm_actions=["tab_new"]) as browser,
+        Browser(
+            session_options=BrowserSessionOptions(
+                allowed_domains="example.com",
+                confirm_actions=["tab_new"],
+            )
+        ) as browser,
         pytest.raises(BrowserError) as denied,
     ):
-        browser.command("tab_new", url="https://evil.example")
+        browser.native.data("tab_new", url="https://evil.example")
 
     assert denied.value.action == "tab_new"
     assert denied.value.code == "allowed_domains"
@@ -556,7 +633,12 @@ def test_native_confirmation_policy_cannot_bypass_python_url_allowlist() -> None
 
 def test_native_confirmation_policy_cannot_bypass_python_cookie_allowlist() -> None:
     with (
-        Browser(allowed_domains="example.com", confirm_actions=["cookies_set"]) as browser,
+        Browser(
+            session_options=BrowserSessionOptions(
+                allowed_domains="example.com",
+                confirm_actions=["cookies_set"],
+            )
+        ) as browser,
         pytest.raises(BrowserError) as denied,
     ):
         browser.cookies.set("session", "abc", domain="evil.example")
@@ -572,7 +654,12 @@ def test_native_confirmation_replay_fails_closed_for_unvalidated_allowlist_targe
     state_path = tmp_path / "state.json"
     state_path.write_text(json.dumps({"cookies": [], "origins": []}))
 
-    with Browser(allowed_domains="example.com", confirm_actions=["state_load"]) as browser:
+    with Browser(
+        session_options=BrowserSessionOptions(
+            allowed_domains="example.com",
+            confirm_actions=["state_load"],
+        )
+    ) as browser:
         with pytest.raises(ActionConfirmationRequired) as exc_info:
             browser.state.load(state_path)
 

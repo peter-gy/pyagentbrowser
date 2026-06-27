@@ -6,6 +6,8 @@ from pathlib import Path
 from threading import Event
 from typing import Any
 
+LIFECYCLE_CLOSE_ACTIONS = {"close", "__agent_browser_internal_shutdown"}
+
 
 class EchoNative:
     def __init__(self) -> None:
@@ -36,7 +38,7 @@ class CloseErrorNative:
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
         self.commands.append(command)
-        if command["action"] == "close":
+        if command["action"] in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps(
                 {
                     "id": command["id"],
@@ -67,7 +69,7 @@ class ConfirmationNative:
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
         self.commands.append(command)
-        if command["action"] == "close":
+        if command["action"] in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps({"id": command["id"], "success": True, "data": {}})
         if command["action"] == "confirm":
             return json.dumps(
@@ -153,7 +155,7 @@ class ConfirmedCookieNative:
                     },
                 }
             )
-        if command["action"] == "close":
+        if command["action"] in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps({"id": command["id"], "success": True, "data": {}})
         return json.dumps({"id": command["id"], "success": True, "data": {}})
 
@@ -195,9 +197,7 @@ class ConfirmingActionNative:
             }
             self.confirmed = True
             return json.dumps(response)
-        if action == "close" and self.confirmed_action != "close":
-            return json.dumps({"id": command["id"], "success": True, "data": {}})
-        if action == "close" and self.confirmed:
+        if action in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps({"id": command["id"], "success": True, "data": {}})
         if action == "launch":
             return json.dumps({"id": command["id"], "success": True, "data": {"launched": True}})
@@ -220,7 +220,7 @@ class ConfirmingActionNative:
 class FailingConfirmationNative:
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
-        if command["action"] == "close":
+        if command["action"] in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps({"id": command["id"], "success": True, "data": {}})
         if command["action"] == "confirm":
             return json.dumps(
@@ -261,7 +261,7 @@ class StatefulConfirmationNative:
         command = json.loads(command_json)
         self.commands.append(command)
         action = command["action"]
-        if action == "close":
+        if action in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps({"id": command["id"], "success": True, "data": {}})
         if action in {"confirm", "deny"}:
             confirmation_id = command.get("confirmation_id")
@@ -337,7 +337,7 @@ class RawValueNative:
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
         self.commands.append(command)
-        if command["action"] == "close":
+        if command["action"] in LIFECYCLE_CLOSE_ACTIONS:
             return json.dumps({"id": command["id"], "success": True, "data": {}})
         return json.dumps({"id": command["id"], "success": True, "data": self.value})
 

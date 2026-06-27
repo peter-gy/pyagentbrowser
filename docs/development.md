@@ -42,8 +42,8 @@ When changing public API:
    `make package` for artifact or packaging changes.
 
 Keep the public surface namespaced. Prefer `browser.page`, `browser.find`,
-`browser.capture`, `browser.frames`, `browser.cdp`, `browser.scripts`, and
-domain namespaces over new direct `Browser` helpers.
+`browser.capture`, `browser.active_frame`, `browser.cdp`, `browser.scripts`,
+and domain namespaces over new direct `Browser` helpers.
 
 ## Upstream Submodule
 

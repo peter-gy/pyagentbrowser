@@ -10,6 +10,10 @@ class CDPError(AgentBrowserError):
     """Base error for Python-owned CDP workflows."""
 
 
+class CDPClosedError(CDPError):
+    """Raised when CDP is used after its client or controller is closed."""
+
+
 class CDPProtocolError(CDPError):
     """Raised when CDP returns an error response for a method."""
 

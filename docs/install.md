@@ -8,7 +8,7 @@ uv add pyagentbrowser
 python -m pip install pyagentbrowser
 ```
 
-The package name is `pyagentbrowser`. Import it as `pyagentbrowser`.
+The distribution package is `pyagentbrowser`. Import it as `pyagentbrowser`.
 
 ```python
 from pyagentbrowser import Browser
@@ -24,9 +24,11 @@ from pyagentbrowser import Browser
 If Chrome is not on the default path, pass an executable path:
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, LaunchOptions
 
-with Browser(executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") as browser:
+with Browser.launch(
+    LaunchOptions(executable_path="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")
+) as browser:
     browser.page.open("https://example.com")
 ```
 

@@ -104,7 +104,7 @@ class AsyncAgentRef:
     ) -> Self:
         """Click this ref and return it."""
         return await self._run(
-            lambda: self.browser.command(
+            lambda: self.browser._command(
                 "click",
                 **click_params(
                     self.selector,
@@ -118,58 +118,58 @@ class AsyncAgentRef:
     async def fill(self, value: str) -> Self:
         """Fill this ref as a form control."""
         return await self._run(
-            lambda: self.browser.command("fill", selector=self.selector, value=value)
+            lambda: self.browser._command("fill", selector=self.selector, value=value)
         )
 
     async def type(self, text: str) -> Self:
         """Type text into this ref."""
         return await self._run(
-            lambda: self.browser.command("type", selector=self.selector, text=text)
+            lambda: self.browser._command("type", selector=self.selector, text=text)
         )
 
     async def press(self, key: str) -> Self:
         """Focus this ref and press a key."""
 
         async def action() -> None:
-            await self.browser.command("click", selector=self.selector)
+            await self.browser._command("click", selector=self.selector)
             await self.browser.keyboard.press(key)
 
         return await self._run(action)
 
     async def hover(self) -> Self:
         """Hover this ref."""
-        return await self._run(lambda: self.browser.command("hover", selector=self.selector))
+        return await self._run(lambda: self.browser._command("hover", selector=self.selector))
 
     async def tap(self) -> Self:
         """Tap this ref."""
-        return await self._run(lambda: self.browser.command("tap", selector=self.selector))
+        return await self._run(lambda: self.browser._command("tap", selector=self.selector))
 
     async def focus(self) -> Self:
         """Focus this ref."""
-        return await self._run(lambda: self.browser.command("focus", selector=self.selector))
+        return await self._run(lambda: self.browser._command("focus", selector=self.selector))
 
     async def clear(self) -> Self:
         """Clear this ref as a form control."""
-        return await self._run(lambda: self.browser.command("clear", selector=self.selector))
+        return await self._run(lambda: self.browser._command("clear", selector=self.selector))
 
     async def select(self, value: str) -> Self:
         """Select an option value on this ref."""
         return await self._run(
-            lambda: self.browser.command("select", selector=self.selector, value=value)
+            lambda: self.browser._command("select", selector=self.selector, value=value)
         )
 
     async def check(self) -> Self:
         """Check this ref."""
-        return await self._run(lambda: self.browser.command("check", selector=self.selector))
+        return await self._run(lambda: self.browser._command("check", selector=self.selector))
 
     async def uncheck(self) -> Self:
         """Uncheck this ref."""
-        return await self._run(lambda: self.browser.command("uncheck", selector=self.selector))
+        return await self._run(lambda: self.browser._command("uncheck", selector=self.selector))
 
     async def scroll_into_view(self) -> Self:
         """Scroll this ref into view."""
         return await self._run(
-            lambda: self.browser.command("scrollintoview", selector=self.selector)
+            lambda: self.browser._command("scrollintoview", selector=self.selector)
         )
 
     async def wait(
@@ -180,7 +180,7 @@ class AsyncAgentRef:
     ) -> Self:
         """Wait for this ref to reach a state."""
         return await self._run(
-            lambda: self.browser.command(
+            lambda: self.browser._command(
                 "wait",
                 **wait_params(
                     None,
@@ -193,43 +193,43 @@ class AsyncAgentRef:
 
     async def text(self) -> str:
         """Return text content for this ref."""
-        return str((await self.browser.command("gettext", selector=self.selector)).get("text", ""))
+        return str((await self.browser._command("gettext", selector=self.selector)).get("text", ""))
 
     async def inner_text(self) -> str:
         """Return rendered inner text for this ref."""
         return str(
-            (await self.browser.command("innertext", selector=self.selector)).get("text", "")
+            (await self.browser._command("innertext", selector=self.selector)).get("text", "")
         )
 
     async def input_value(self) -> str:
         """Return this ref's input value."""
         return str(
-            (await self.browser.command("inputvalue", selector=self.selector)).get("value", "")
+            (await self.browser._command("inputvalue", selector=self.selector)).get("value", "")
         )
 
     async def attribute(self, name: str) -> str | None:
         """Return one attribute on this ref."""
         value = (
-            await self.browser.command("getattribute", selector=self.selector, attribute=name)
+            await self.browser._command("getattribute", selector=self.selector, attribute=name)
         ).get("value")
         return str(value) if value is not None else None
 
     async def is_visible(self) -> bool:
         """Return whether this ref is visible."""
         return bool(
-            (await self.browser.command("isvisible", selector=self.selector)).get("visible")
+            (await self.browser._command("isvisible", selector=self.selector)).get("visible")
         )
 
     async def is_enabled(self) -> bool:
         """Return whether this ref is enabled."""
         return bool(
-            (await self.browser.command("isenabled", selector=self.selector)).get("enabled")
+            (await self.browser._command("isenabled", selector=self.selector)).get("enabled")
         )
 
     async def is_checked(self) -> bool:
         """Return whether this ref is checked."""
         return bool(
-            (await self.browser.command("ischecked", selector=self.selector)).get("checked")
+            (await self.browser._command("ischecked", selector=self.selector)).get("checked")
         )
 
     async def click_and_observe(

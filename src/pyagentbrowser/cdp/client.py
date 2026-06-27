@@ -9,7 +9,7 @@ from threading import RLock
 from typing import Any, cast
 
 from pyagentbrowser.cdp._protocol import _decode_message, _response_result
-from pyagentbrowser.cdp.errors import CDPTimeoutError
+from pyagentbrowser.cdp.errors import CDPClosedError, CDPTimeoutError
 from pyagentbrowser.cdp.transport import AsyncConnect, AsyncWebSocket, SyncConnect, SyncWebSocket
 
 
@@ -41,6 +41,7 @@ class CDPClient:
         self._responses: dict[int, Mapping[str, Any]] = {}
         self._events: deque[Mapping[str, Any]] = deque()
         self._lock = RLock()
+        self._closed = False
 
     def send(
         self,
@@ -61,6 +62,7 @@ class CDPClient:
             Optional flattened target session id.
         """
         with self._lock:
+            self._check_open()
             request_id = next(self._ids)
             message: dict[str, Any] = {"id": request_id, "method": method}
             if params:
@@ -75,6 +77,7 @@ class CDPClient:
     def pop_events(self) -> list[Mapping[str, Any]]:
         """Return queued CDP event messages and clear the queue."""
         with self._lock:
+            self._check_open()
             events = list(self._events)
             self._events.clear()
             return events
@@ -82,6 +85,7 @@ class CDPClient:
     def drain_events(self, *, timeout: float = 0.05) -> list[Mapping[str, Any]]:
         """Read available CDP events until a short timeout expires."""
         with self._lock:
+            self._check_open()
             while True:
                 try:
                     self._receive_one(timeout=timeout)
@@ -91,28 +95,37 @@ class CDPClient:
 
     def close(self) -> None:
         """Close the underlying WebSocket if connected."""
+        self._closed = True
         websocket = self._websocket
         self._websocket = None
         if websocket is not None:
             websocket.close()
 
     def _ensure_connected(self) -> SyncWebSocket:
+        self._check_open()
         if self._websocket is None:
             connect = self._connect or _load_sync_websocket_connect()
             self._websocket = connect(self._url)
         return self._websocket
 
+    def _check_open(self) -> None:
+        if self._closed:
+            raise CDPClosedError("CDP client is closed")
+
     def _wait_for_response(self, method: str, request_id: int) -> Mapping[str, Any]:
         if request_id in self._responses:
+            self._check_open()
             return self._responses.pop(request_id)
 
         while True:
+            self._check_open()
             try:
                 message = self._receive_one(timeout=self._timeout)
             except TimeoutError as err:
                 raise CDPTimeoutError(method, self._timeout) from err
             response_id = message.get("id")
             if response_id == request_id:
+                self._check_open()
                 return message
             if isinstance(response_id, int):
                 self._responses[response_id] = message
@@ -143,6 +156,7 @@ class AsyncCDPClient:
         self._responses: dict[int, Mapping[str, Any]] = {}
         self._events: deque[Mapping[str, Any]] = deque()
         self._lock = asyncio.Lock()
+        self._closed = False
 
     async def send(
         self,
@@ -153,6 +167,7 @@ class AsyncCDPClient:
     ) -> Mapping[str, Any]:
         """Send one CDP method call and return its result object."""
         async with self._lock:
+            self._check_open()
             request_id = next(self._ids)
             message: dict[str, Any] = {"id": request_id, "method": method}
             if params:
@@ -167,6 +182,7 @@ class AsyncCDPClient:
     async def pop_events(self) -> list[Mapping[str, Any]]:
         """Return queued CDP event messages and clear the queue."""
         async with self._lock:
+            self._check_open()
             events = list(self._events)
             self._events.clear()
             return events
@@ -174,6 +190,7 @@ class AsyncCDPClient:
     async def drain_events(self, *, timeout: float = 0.05) -> list[Mapping[str, Any]]:
         """Read available CDP events until a short timeout expires."""
         async with self._lock:
+            self._check_open()
             while True:
                 try:
                     await self._receive_one(timeout=timeout)
@@ -185,28 +202,37 @@ class AsyncCDPClient:
 
     async def close(self) -> None:
         """Close the underlying WebSocket if connected."""
+        self._closed = True
         websocket = self._websocket
         self._websocket = None
         if websocket is not None:
             await websocket.close()
 
     async def _ensure_connected(self) -> AsyncWebSocket:
+        self._check_open()
         if self._websocket is None:
             connect = self._connect or _load_async_websocket_connect()
             self._websocket = await connect(self._url)
         return self._websocket
 
+    def _check_open(self) -> None:
+        if self._closed:
+            raise CDPClosedError("CDP client is closed")
+
     async def _wait_for_response(self, method: str, request_id: int) -> Mapping[str, Any]:
         if request_id in self._responses:
+            self._check_open()
             return self._responses.pop(request_id)
 
         while True:
+            self._check_open()
             try:
                 message = await self._receive_one(timeout=self._timeout)
             except TimeoutError as err:
                 raise CDPTimeoutError(method, self._timeout) from err
             response_id = message.get("id")
             if response_id == request_id:
+                self._check_open()
                 return message
             if isinstance(response_id, int):
                 self._responses[response_id] = message

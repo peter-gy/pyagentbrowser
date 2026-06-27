@@ -5,7 +5,7 @@ from typing import Any
 
 from pyagentbrowser.cdp._resolution import _resolve_active_target
 from pyagentbrowser.cdp.client import AsyncCDPClient, CDPClient
-from pyagentbrowser.cdp.errors import CDPError
+from pyagentbrowser.cdp.errors import CDPClosedError, CDPError
 from pyagentbrowser.cdp.models import (
     AsyncContextPredicate,
     AsyncExecutionContext,
@@ -32,6 +32,7 @@ class CDPController:
         self._client_factory = client_factory or CDPClient
         self._client: CDPClient | None = None
         self._page: CDPPageSession | None = None
+        self._closed = False
 
     def frame(
         self,
@@ -101,16 +102,20 @@ class CDPController:
 
     def invalidate(self) -> None:
         """Forget cached CDP page state after navigation-like native commands."""
+        self._check_open()
         if self._page is not None:
             self._page.invalidate()
             self._page = None
 
     def close(self) -> None:
         """Close the CDP client and forget page state."""
+        self._closed = True
+        if self._page is not None:
+            self._page.invalidate()
+            self._page = None
         if self._client is not None:
             self._client.close()
             self._client = None
-        self._page = None
 
     def _page_session(
         self,
@@ -119,6 +124,7 @@ class CDPController:
         url: str | None = None,
         target_id: str | None = None,
     ) -> CDPPageSession:
+        self._check_open()
         if self._page is not None and label is None and url is None and target_id is None:
             return self._page
 
@@ -145,13 +151,14 @@ class CDPController:
         return self._page
 
     def _cdp_client(self) -> CDPClient:
+        self._check_open()
         if self._client is not None:
             return self._client
         if not self._browser.is_launched:
-            self._browser.launch()
-        cdp_url = self._browser.command("cdp_url").get("cdpUrl")
+            self._browser.launch_process()
+        cdp_url = self._browser._command("cdp_url").get("cdpUrl")
         if not isinstance(cdp_url, str) or not cdp_url:
-            raise CDPError('browser.command("cdp_url") did not return a cdpUrl string')
+            raise CDPError('browser.native.data("cdp_url") did not return a cdpUrl string')
         self._client = self._client_factory(cdp_url)
         return self._client
 
@@ -166,6 +173,10 @@ class CDPController:
                     return target_id
             return None
         return None
+
+    def _check_open(self) -> None:
+        if self._closed:
+            raise CDPClosedError("CDP controller is closed")
 
 
 class AsyncCDPController:
@@ -187,6 +198,7 @@ class AsyncCDPController:
         self._client_factory = client_factory or AsyncCDPClient
         self._client: AsyncCDPClient | None = None
         self._page: AsyncCDPPageSession | None = None
+        self._closed = False
 
     async def frame(
         self,
@@ -256,16 +268,20 @@ class AsyncCDPController:
 
     def invalidate(self) -> None:
         """Forget cached CDP page state after navigation-like native commands."""
+        self._check_open()
         if self._page is not None:
             self._page.invalidate()
             self._page = None
 
     async def close(self) -> None:
         """Close the CDP client and forget page state."""
+        self._closed = True
+        if self._page is not None:
+            self._page.invalidate()
+            self._page = None
         if self._client is not None:
             await self._client.close()
             self._client = None
-        self._page = None
 
     async def _page_session(
         self,
@@ -274,6 +290,7 @@ class AsyncCDPController:
         url: str | None = None,
         target_id: str | None = None,
     ) -> AsyncCDPPageSession:
+        self._check_open()
         if self._page is not None and label is None and url is None and target_id is None:
             return self._page
 
@@ -300,13 +317,14 @@ class AsyncCDPController:
         return self._page
 
     async def _cdp_client(self) -> AsyncCDPClient:
+        self._check_open()
         if self._client is not None:
             return self._client
         if not self._browser.is_launched:
-            await self._browser.launch()
-        cdp_url = (await self._browser.command("cdp_url")).get("cdpUrl")
+            await self._browser.launch_process()
+        cdp_url = (await self._browser._command("cdp_url")).get("cdpUrl")
         if not isinstance(cdp_url, str) or not cdp_url:
-            raise CDPError('browser.command("cdp_url") did not return a cdpUrl string')
+            raise CDPError('browser.native.data("cdp_url") did not return a cdpUrl string')
         self._client = self._client_factory(cdp_url)
         return self._client
 
@@ -321,3 +339,7 @@ class AsyncCDPController:
                     return target_id
             return None
         return None
+
+    def _check_open(self) -> None:
+        if self._closed:
+            raise CDPClosedError("CDP controller is closed")

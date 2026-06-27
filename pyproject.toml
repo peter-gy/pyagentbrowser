@@ -1,6 +1,6 @@
 [project]
 name = "pyagentbrowser"
-version = "0.30.1rc0"
+version = "0.31.1rc0"
 description = "Python SDK for controlling the native agent-browser engine in-process"
 readme = "README.md"
 authors = [
@@ -52,7 +52,7 @@ images = [
 "agent-browser docs" = "https://agent-browser.dev/"
 "agent-browser commands" = "https://agent-browser.dev/commands"
 "agent-browser CDP mode" = "https://agent-browser.dev/cdp-mode"
-"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/7379f7d"
+"Upstream agent-browser commit" = "https://github.com/vercel-labs/agent-browser/commit/ed2e105"
 
 [build-system]
 requires = ["maturin>=1.11,<2"]
@@ -84,7 +84,6 @@ exclude = [
     "crates/agent-browser-adapter/Cargo.lock",
     "crates/agent-browser-adapter/target/**",
     "docs/figures/**",
-    "nogit/**",
     "target/**",
     "tests/**",
     "third_party/agent-browser/.claude-plugin/**",

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from asyncio import sleep as async_sleep
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -36,7 +36,7 @@ from pyagentbrowser.command_params import (
 )
 from pyagentbrowser.domains import (
     _active_tab,
-    _tab_ref,
+    _tab_selector,
     _tab_with_label,
     _xpath_selector,
 )
@@ -46,11 +46,11 @@ from pyagentbrowser.models import (
     ConsoleMessage,
     Cookie,
     JSONMapping,
-    LlmsMode,
     LoadState,
     MouseButton,
     MouseEventType,
     NetworkRequest,
+    ReadMode,
     ReadResult,
     RequestDetail,
     RouteResponse,
@@ -79,7 +79,7 @@ DEFAULT_SCREENSHOT_WAIT_MS = 100
 class AsyncCommandTarget(Protocol):
     """Protocol for objects that can execute async native commands."""
 
-    async def command(self, action: str, **params: Any) -> JSONMapping:
+    async def _command(self, action: str, **params: Any) -> JSONMapping:
         """Execute one native command."""
         ...
 
@@ -112,8 +112,8 @@ class AsyncPage:
             Native navigation response data.
         """
         if not self.browser.is_launched:
-            await self.browser.launch()
-        return await self.browser.command(
+            await self.browser.launch_process()
+        return await self.browser._command(
             "navigate",
             url=normalize_url(url),
             waitUntil=wait_until,
@@ -121,32 +121,29 @@ class AsyncPage:
 
     async def title(self) -> str:
         """Return the current page title."""
-        return str((await self.browser.command("title")).get("title", ""))
+        return str((await self.browser._command("title")).get("title", ""))
 
     async def url(self) -> str:
         """Return the current page URL."""
-        return str((await self.browser.command("url")).get("url", ""))
+        return str((await self.browser._command("url")).get("url", ""))
 
     async def content(self) -> str:
         """Return the current page HTML."""
-        return str((await self.browser.command("content")).get("html", ""))
+        return str((await self.browser._command("content")).get("html", ""))
 
     async def set_content(self, html: str) -> Mapping[str, Any]:
         """Replace the current page document with HTML."""
-        return await self.browser.command("setcontent", html=html)
+        return await self.browser._command("setcontent", html=html)
 
     async def evaluate(self, script: str) -> Any:
         """Evaluate JavaScript in the current page context."""
-        return (await self.browser.command("evaluate", script=script)).get("result")
+        return (await self.browser._command("evaluate", script=script)).get("result")
 
     async def read(
         self,
         url: str | None = None,
         *,
-        raw: bool = False,
-        require_md: bool = False,
-        llms: LlmsMode | None = None,
-        outline: bool = False,
+        mode: ReadMode | None = None,
         filter: str | None = None,
         timeout_ms: int | None = None,
         headers: Mapping[str, str] | None = None,
@@ -154,16 +151,13 @@ class AsyncPage:
     ) -> ReadResult:
         """Return agent-readable content for a URL or the active page."""
         if url is None and not self.browser.is_launched:
-            await self.browser.launch()
+            await self.browser.launch_process()
         normalized_url = normalize_url(url) if url is not None else None
-        data = await self.browser.command(
+        data = await self.browser._command(
             "read",
             **read_params(
                 normalized_url,
-                raw=raw,
-                require_md=require_md,
-                llms=llms,
-                outline=outline,
+                mode=mode,
                 filter=filter,
                 timeout_ms=timeout_ms,
                 headers=headers,
@@ -188,19 +182,19 @@ class AsyncPage:
 
     async def back(self) -> Mapping[str, Any]:
         """Navigate back in history."""
-        return await self.browser.command("back")
+        return await self.browser._command("back")
 
     async def forward(self) -> Mapping[str, Any]:
         """Navigate forward in history."""
-        return await self.browser.command("forward")
+        return await self.browser._command("forward")
 
     async def reload(self) -> Mapping[str, Any]:
         """Reload the current page."""
-        return await self.browser.command("reload")
+        return await self.browser._command("reload")
 
     async def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
         """Wait until text appears."""
-        await self.browser.command("wait", **wait_params(None, text=text, timeout_ms=timeout_ms))
+        await self.browser._command("wait", **wait_params(None, text=text, timeout_ms=timeout_ms))
 
     async def wait_for_selector(
         self,
@@ -210,25 +204,25 @@ class AsyncPage:
         timeout_ms: int | None = None,
     ) -> None:
         """Wait for a selector to reach a state."""
-        await self.browser.command(
+        await self.browser._command(
             "wait",
             **wait_params(None, selector=selector, state=state, timeout_ms=timeout_ms),
         )
 
     async def wait_for_url(self, pattern: str, *, timeout_ms: int | None = None) -> None:
         """Wait for the page URL to match a pattern."""
-        await self.browser.command("wait", **wait_params(None, url=pattern, timeout_ms=timeout_ms))
+        await self.browser._command("wait", **wait_params(None, url=pattern, timeout_ms=timeout_ms))
 
     async def wait_for_function(self, predicate: str, *, timeout_ms: int | None = None) -> None:
         """Wait for a JavaScript predicate to become truthy."""
-        await self.browser.command(
+        await self.browser._command(
             "wait",
             **wait_params(None, predicate=predicate, timeout_ms=timeout_ms),
         )
 
     async def wait_for_load_state(self, state: LoadState = "load") -> None:
         """Wait for a page load state."""
-        await self.browser.command("wait", **wait_params(None, load_state=state))
+        await self.browser._command("wait", **wait_params(None, load_state=state))
 
 
 @dataclass(frozen=True, slots=True)
@@ -343,7 +337,7 @@ class AsyncCapture:
             Parsed screenshot metadata and file path.
         """
         await _wait_before_screenshot(wait_ms)
-        data = await self.browser.command(
+        data = await self.browser._command(
             "screenshot",
             **screenshot_params(
                 path=path,
@@ -366,7 +360,7 @@ class AsyncCapture:
         prefer_css_page_size: bool = False,
     ) -> Path:
         """Print the current page to PDF."""
-        data = await self.browser.command(
+        data = await self.browser._command(
             "pdf",
             **pdf_params(
                 path=path,
@@ -393,14 +387,14 @@ class AsyncScripts:
         """Add a script that runs before future page scripts."""
         source = exclusive_source("scripts.add_init", inline=script, path=path)
         if not self.browser.is_launched:
-            await self.browser.launch()
+            await self.browser.launch_process()
 
-        data = await self.browser.command("addinitscript", script=source)
+        data = await self.browser._command("addinitscript", script=source)
         return str(data["identifier"])
 
     async def remove_init(self, identifier: str) -> Mapping[str, Any]:
         """Remove a previously registered init script."""
-        return await self.browser.command("removeinitscript", identifier=identifier)
+        return await self.browser._command("removeinitscript", identifier=identifier)
 
     async def add(
         self,
@@ -413,7 +407,7 @@ class AsyncScripts:
             raise ValueError("scripts.add requires either script=... or url=...")
         if script is not None and url is not None:
             raise ValueError("scripts.add accepts script=... or url=..., not both")
-        return await self.browser.command("addscript", script=optional(script), url=optional(url))
+        return await self.browser._command("addscript", script=optional(script), url=optional(url))
 
     async def add_style(
         self,
@@ -426,7 +420,7 @@ class AsyncScripts:
             raise ValueError("scripts.add_style requires either content=... or url=...")
         if content is not None and url is not None:
             raise ValueError("scripts.add_style accepts content=... or url=..., not both")
-        return await self.browser.command("addstyle", content=optional(content), url=optional(url))
+        return await self.browser._command("addstyle", content=optional(content), url=optional(url))
 
 
 @dataclass(frozen=True, slots=True)
@@ -438,7 +432,7 @@ class AsyncLocator:
 
     async def click(self, *, button: MouseButton = "left", click_count: int = 1) -> Self:
         """Click the located element and return this locator."""
-        await self.browser.command(
+        await self.browser._command(
             "click",
             **click_params(self.selector, button=button, click_count=click_count),
         )
@@ -446,32 +440,32 @@ class AsyncLocator:
 
     async def fill(self, value: str) -> Self:
         """Fill the located form control."""
-        await self.browser.command("fill", selector=self.selector, value=value)
+        await self.browser._command("fill", selector=self.selector, value=value)
         return self
 
     async def select(self, value: str) -> Self:
         """Select an option value."""
-        await self.browser.command("select", selector=self.selector, value=value)
+        await self.browser._command("select", selector=self.selector, value=value)
         return self
 
     async def check(self) -> Self:
         """Check the located checkbox or radio control."""
-        await self.browser.command("check", selector=self.selector)
+        await self.browser._command("check", selector=self.selector)
         return self
 
     async def uncheck(self) -> Self:
         """Uncheck the located checkbox control."""
-        await self.browser.command("uncheck", selector=self.selector)
+        await self.browser._command("uncheck", selector=self.selector)
         return self
 
     async def type(self, text: str) -> Self:
         """Type text into the located element."""
-        await self.browser.command("type", selector=self.selector, text=text)
+        await self.browser._command("type", selector=self.selector, text=text)
         return self
 
     async def press(self, key: str) -> Self:
         """Focus the element and press a key."""
-        await self.browser.command("click", selector=self.selector)
+        await self.browser._command("click", selector=self.selector)
         await self.browser.keyboard.press(key)
         return self
 
@@ -487,27 +481,27 @@ class AsyncLocator:
 
     async def hover(self) -> Self:
         """Hover the located element."""
-        await self.browser.command("hover", selector=self.selector)
+        await self.browser._command("hover", selector=self.selector)
         return self
 
     async def focus(self) -> Self:
         """Focus the located element."""
-        await self.browser.command("focus", selector=self.selector)
+        await self.browser._command("focus", selector=self.selector)
         return self
 
     async def clear(self) -> Self:
         """Clear the located form control."""
-        await self.browser.command("clear", selector=self.selector)
+        await self.browser._command("clear", selector=self.selector)
         return self
 
     async def select_all(self) -> Self:
         """Select all text in the located control."""
-        await self.browser.command("selectall", selector=self.selector)
+        await self.browser._command("selectall", selector=self.selector)
         return self
 
     async def scroll_into_view(self) -> Self:
         """Scroll the located element into view."""
-        await self.browser.command("scrollintoview", selector=self.selector)
+        await self.browser._command("scrollintoview", selector=self.selector)
         return self
 
     async def wait(
@@ -517,7 +511,7 @@ class AsyncLocator:
         timeout_ms: int | None = None,
     ) -> Self:
         """Wait for the located element to reach a state."""
-        await self.browser.command(
+        await self.browser._command(
             "wait",
             **wait_params(None, selector=self.selector, state=state, timeout_ms=timeout_ms),
         )
@@ -525,45 +519,45 @@ class AsyncLocator:
 
     async def highlight(self) -> Self:
         """Highlight the located element."""
-        await self.browser.command("highlight", selector=self.selector)
+        await self.browser._command("highlight", selector=self.selector)
         return self
 
     async def tap(self) -> Self:
         """Tap the located element."""
-        await self.browser.command("tap", selector=self.selector)
+        await self.browser._command("tap", selector=self.selector)
         return self
 
     async def text(self) -> str:
         """Return text content for the located element."""
-        return str((await self.browser.command("gettext", selector=self.selector)).get("text", ""))
+        return str((await self.browser._command("gettext", selector=self.selector)).get("text", ""))
 
     async def inner_text(self) -> str:
         """Return rendered inner text."""
         return str(
-            (await self.browser.command("innertext", selector=self.selector)).get("text", "")
+            (await self.browser._command("innertext", selector=self.selector)).get("text", "")
         )
 
     async def inner_html(self) -> str:
         """Return inner HTML."""
         return str(
-            (await self.browser.command("innerhtml", selector=self.selector)).get("html", "")
+            (await self.browser._command("innerhtml", selector=self.selector)).get("html", "")
         )
 
     async def input_value(self) -> str:
         """Return the value of an input-like element."""
         return str(
-            (await self.browser.command("inputvalue", selector=self.selector)).get("value", "")
+            (await self.browser._command("inputvalue", selector=self.selector)).get("value", "")
         )
 
     async def set_value(self, value: str) -> Self:
         """Set the value of an input-like element."""
-        await self.browser.command("setvalue", selector=self.selector, value=value)
+        await self.browser._command("setvalue", selector=self.selector, value=value)
         return self
 
     async def attribute(self, name: str) -> str | None:
         """Return one element attribute."""
         value = (
-            await self.browser.command(
+            await self.browser._command(
                 "getattribute",
                 selector=self.selector,
                 attribute=name,
@@ -574,16 +568,16 @@ class AsyncLocator:
     async def bounding_box(self) -> BoundingBox | None:
         """Return the element bounding box, if available."""
         return bounding_box_from_data(
-            await self.browser.command("boundingbox", selector=self.selector)
+            await self.browser._command("boundingbox", selector=self.selector)
         )
 
     async def count(self) -> int:
         """Return the number of elements matching this selector."""
-        return int((await self.browser.command("count", selector=self.selector)).get("count", 0))
+        return int((await self.browser._command("count", selector=self.selector)).get("count", 0))
 
     async def styles(self, *properties: str) -> Mapping[str, Any]:
         """Return computed styles for selected properties."""
-        return await self.browser.command(
+        return await self.browser._command(
             "styles",
             selector=self.selector,
             properties=list(properties) or optional(None),
@@ -592,19 +586,19 @@ class AsyncLocator:
     async def is_visible(self) -> bool:
         """Return whether the element is visible."""
         return bool(
-            (await self.browser.command("isvisible", selector=self.selector)).get("visible")
+            (await self.browser._command("isvisible", selector=self.selector)).get("visible")
         )
 
     async def is_enabled(self) -> bool:
         """Return whether the element is enabled."""
         return bool(
-            (await self.browser.command("isenabled", selector=self.selector)).get("enabled")
+            (await self.browser._command("isenabled", selector=self.selector)).get("enabled")
         )
 
     async def is_checked(self) -> bool:
         """Return whether the element is checked."""
         return bool(
-            (await self.browser.command("ischecked", selector=self.selector)).get("checked")
+            (await self.browser._command("ischecked", selector=self.selector)).get("checked")
         )
 
     async def screenshot(
@@ -641,22 +635,22 @@ class AsyncSemanticLocator:
 
     async def click(self) -> Self:
         """Click the semantic match."""
-        await self.browser.command(self.action, **self.params, subaction="click")
+        await self.browser._command(self.action, **self.params, subaction="click")
         return self
 
     async def fill(self, value: str) -> Self:
         """Fill the semantic match."""
-        await self.browser.command(self.action, **self.params, subaction="fill", value=value)
+        await self.browser._command(self.action, **self.params, subaction="fill", value=value)
         return self
 
     async def check(self) -> Self:
         """Check the semantic match."""
-        await self.browser.command(self.action, **self.params, subaction="check")
+        await self.browser._command(self.action, **self.params, subaction="check")
         return self
 
     async def hover(self) -> Self:
         """Hover the semantic match."""
-        await self.browser.command(self.action, **self.params, subaction="hover")
+        await self.browser._command(self.action, **self.params, subaction="hover")
         return self
 
     async def tap(self) -> Self:
@@ -677,7 +671,7 @@ class AsyncSemanticLocator:
 
     async def text(self) -> str:
         """Return text for the semantic match."""
-        data = await self.browser.command(self.action, **self.params, subaction="text")
+        data = await self.browser._command(self.action, **self.params, subaction="text")
         return str(data.get("text", ""))
 
 
@@ -689,12 +683,12 @@ class AsyncTabs:
 
     async def list(self) -> tuple[TabInfo, ...]:
         """Return open tabs."""
-        return tabs_from_data(await self.browser.command("tab_list"))
+        return tabs_from_data(await self.browser._command("tab_list"))
 
     async def new(self, url: str | None = None, *, label: str | None = None) -> TabInfo:
         """Open a new tab and return its metadata."""
         return tab_from_data(
-            await self.browser.command("tab_new", url=optional(url), label=optional(label))
+            await self.browser._command("tab_new", url=optional(url), label=optional(label))
         )
 
     async def open(
@@ -714,21 +708,58 @@ class AsyncTabs:
         if existing is None:
             return await self.new(normalized_url, label=label)
 
-        await self.switch(label)
-        await self.browser.command("navigate", url=normalized_url, waitUntil=wait_until)
+        await self.switch(label=label)
+        await self.browser._command("navigate", url=normalized_url, waitUntil=wait_until)
         current_tabs = await self.list()
         return _active_tab(current_tabs) or _tab_with_label(current_tabs, label) or existing
 
-    async def switch(self, tab: str | int) -> Mapping[str, Any]:
-        """Switch to a tab id or zero-based tab index."""
-        return await self.browser.command("tab_switch", tabId=_tab_ref(tab))
-
-    async def close(self, tab: str | int | None = None) -> Mapping[str, Any]:
-        """Close a tab or the current tab."""
-        return await self.browser.command(
-            "tab_close",
-            tabId=_tab_ref(tab) if tab is not None else optional(None),
+    async def switch(
+        self,
+        *,
+        id: str | None = None,
+        label: str | None = None,
+        index: int | None = None,
+    ) -> Mapping[str, Any]:
+        """Switch to a tab by id, label, or zero-based index."""
+        return await self.browser._command(
+            "tab_switch",
+            tabId=await self._resolve_selector(id=id, label=label, index=index, required=True),
         )
+
+    async def close(
+        self,
+        *,
+        id: str | None = None,
+        label: str | None = None,
+        index: int | None = None,
+    ) -> Mapping[str, Any]:
+        """Close a tab or the current tab."""
+        return await self.browser._command(
+            "tab_close",
+            tabId=await self._resolve_selector(id=id, label=label, index=index),
+        )
+
+    async def _resolve_selector(
+        self,
+        *,
+        id: str | None = None,
+        label: str | None = None,
+        index: int | None = None,
+        required: bool = False,
+    ) -> str | Any:
+        selected = [value is not None for value in (id, label, index)]
+        if sum(selected) == 0:
+            if required:
+                raise ValueError("pass one of id, label, or index")
+            return optional(None)
+        if sum(selected) > 1:
+            raise ValueError("pass exactly one of id, label, or index")
+        if label is not None:
+            tab = _tab_with_label(await self.list(), label)
+            if tab is None:
+                raise ValueError(f"no tab with label {label!r}")
+            return tab.id
+        return _tab_selector(id=id, index=index, required=required)
 
 
 @dataclass(frozen=True, slots=True)
@@ -744,7 +775,7 @@ class AsyncCookies:
         unsafe_export_all: bool = False,
     ) -> tuple[Cookie, ...]:
         """Return cookies visible to the selected URLs."""
-        data = await self.browser.command(
+        data = await self.browser._command(
             "cookies_get",
             **cookies_get_params(urls, unsafe_export_all=unsafe_export_all),
         )
@@ -765,7 +796,7 @@ class AsyncCookies:
         same_site: SameSite | None = None,
     ) -> Mapping[str, Any]:
         """Set one cookie or a sequence of cookie dictionaries."""
-        return await self.browser.command(
+        return await self.browser._command(
             "cookies_set",
             **cookies_set_params(
                 name=name,
@@ -783,7 +814,7 @@ class AsyncCookies:
 
     async def clear(self, *, unsafe_clear_all: bool = False) -> Mapping[str, Any]:
         """Clear browser cookies."""
-        return await self.browser.command(
+        return await self.browser._command(
             "cookies_clear",
             **cookies_clear_params(unsafe_clear_all=unsafe_clear_all),
         )
@@ -797,18 +828,18 @@ class AsyncStorage:
 
     async def get(self, key: str | None = None, *, area: StorageArea = "local") -> Any:
         """Return one storage value or the whole storage area."""
-        data = await self.browser.command("storage_get", **storage_get_params(key, area=area))
+        data = await self.browser._command("storage_get", **storage_get_params(key, area=area))
         return data.get("value") if key is not None else data.get("data", {})
 
     async def set(self, key: str, value: str, *, area: StorageArea = "local") -> Mapping[str, Any]:
         """Set one storage value."""
-        return await self.browser.command(
+        return await self.browser._command(
             "storage_set", **storage_set_params(key, value, area=area)
         )
 
     async def clear(self, *, area: StorageArea = "local") -> Mapping[str, Any]:
         """Clear a storage area."""
-        return await self.browser.command("storage_clear", **storage_clear_params(area=area))
+        return await self.browser._command("storage_clear", **storage_clear_params(area=area))
 
 
 @dataclass(frozen=True, slots=True)
@@ -831,7 +862,7 @@ class AsyncNetwork:
         resource_types: Sequence[str] | None = None,
     ) -> Mapping[str, Any]:
         """Register a request route."""
-        return await self.browser.command(
+        return await self.browser._command(
             "route",
             **route_params(
                 url=url,
@@ -848,7 +879,7 @@ class AsyncNetwork:
 
     async def unroute(self, url: str | None = None) -> Mapping[str, Any]:
         """Remove one route or all routes."""
-        return await self.browser.command("unroute", url=optional(url))
+        return await self.browser._command("unroute", url=optional(url))
 
     async def requests(
         self,
@@ -860,7 +891,7 @@ class AsyncNetwork:
         status: str | int | None = None,
     ) -> tuple[NetworkRequest, ...]:
         """Return captured network requests."""
-        data = await self.browser.command(
+        data = await self.browser._command(
             "requests",
             **requests_params(
                 clear=clear,
@@ -875,23 +906,23 @@ class AsyncNetwork:
     async def request_detail(self, request_id: str) -> RequestDetail:
         """Return detailed request data for a captured request id."""
         return request_detail_from_data(
-            await self.browser.command("request_detail", requestId=request_id)
+            await self.browser._command("request_detail", requestId=request_id)
         )
 
     async def har_start(self) -> Mapping[str, Any]:
         """Start HAR capture."""
-        return await self.browser.command("har_start")
+        return await self.browser._command("har_start")
 
     async def har_stop(self, path: str | Path | None = None) -> Path:
         """Stop HAR capture and return the written file path."""
-        data = await self.browser.command("har_stop", path=optional(path_value(path)))
+        data = await self.browser._command("har_stop", path=optional(path_value(path)))
         if "path" not in data:
             raise BrowserError("har_stop", "native response did not include a path", data)
         return Path(str(data["path"]))
 
     async def credentials(self, username: str, password: str) -> Mapping[str, Any]:
         """Set HTTP authentication credentials."""
-        return await self.browser.command("credentials", username=username, password=password)
+        return await self.browser._command("credentials", username=username, password=password)
 
 
 @dataclass(frozen=True, slots=True)
@@ -902,15 +933,15 @@ class AsyncKeyboard:
 
     async def type(self, text: str) -> Mapping[str, Any]:
         """Type text with the keyboard."""
-        return await self.browser.command("keyboard", subaction="type", text=text)
+        return await self.browser._command("keyboard", subaction="type", text=text)
 
     async def insert_text(self, text: str) -> Mapping[str, Any]:
         """Insert text without key events when supported."""
-        return await self.browser.command("keyboard", subaction="insertText", text=text)
+        return await self.browser._command("keyboard", subaction="insertText", text=text)
 
     async def press(self, key: str) -> Mapping[str, Any]:
         """Press a key such as `Enter` or `Meta+K`."""
-        return await self.browser.command("press", key=key)
+        return await self.browser._command("press", key=key)
 
     async def down(
         self, key: str, *, code: str | None = None, text: str | None = None
@@ -931,7 +962,7 @@ class AsyncKeyboard:
         text: str | None = None,
     ) -> Mapping[str, Any]:
         """Dispatch a low-level keyboard event."""
-        return await self.browser.command(
+        return await self.browser._command(
             "keyboard",
             **keyboard_params(event_type, key=key, code=code, text=text),
         )
@@ -945,15 +976,15 @@ class AsyncMouse:
 
     async def move(self, x: float, y: float) -> Mapping[str, Any]:
         """Move the mouse to page coordinates."""
-        return await self.browser.command("mousemove", x=x, y=y)
+        return await self.browser._command("mousemove", x=x, y=y)
 
     async def down(self, *, button: MouseButton = "left") -> Mapping[str, Any]:
         """Press a mouse button."""
-        return await self.browser.command("mousedown", button=button)
+        return await self.browser._command("mousedown", button=button)
 
     async def up(self, *, button: MouseButton = "left") -> Mapping[str, Any]:
         """Release a mouse button."""
-        return await self.browser.command("mouseup", button=button)
+        return await self.browser._command("mouseup", button=button)
 
     async def wheel(
         self,
@@ -964,7 +995,7 @@ class AsyncMouse:
         y: float = 0,
     ) -> Mapping[str, Any]:
         """Scroll with the mouse wheel."""
-        return await self.browser.command(
+        return await self.browser._command(
             "wheel",
             **wheel_params(delta_y, delta_x=delta_x, x=x, y=y),
         )
@@ -979,10 +1010,32 @@ class AsyncMouse:
         click_count: int = 0,
     ) -> Mapping[str, Any]:
         """Dispatch a low-level mouse event."""
-        return await self.browser.command(
+        return await self.browser._command(
             "mouse",
             **mouse_params(event_type, x=x, y=y, button=button, click_count=click_count),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncRuntime:
+    """Async native runtime diagnostics."""
+
+    browser: AsyncCommandTarget
+
+    async def info(self) -> Mapping[str, Any]:
+        """Return native session and launch diagnostics."""
+        return await self.browser._command("session_info")
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncRestore:
+    """Async native restore diagnostics."""
+
+    browser: AsyncCommandTarget
+
+    async def info(self) -> Mapping[str, Any]:
+        """Return native restore diagnostics."""
+        return await self.browser._command("session_info")
 
 
 @dataclass(frozen=True, slots=True)
@@ -998,7 +1051,7 @@ class AsyncState:
         unsafe_export_all: bool = False,
     ) -> Path:
         """Save browser storage state and return the written file path."""
-        data = await self.browser.command(
+        data = await self.browser._command(
             "state_save",
             **state_path_params(path, unsafeExportAll=unsafe_export_all),
         )
@@ -1006,30 +1059,30 @@ class AsyncState:
 
     async def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> Mapping[str, Any]:
         """Load browser storage state from a file."""
-        return await self.browser.command(
+        return await self.browser._command(
             "state_load",
             **state_path_params(path, unsafeImportAll=unsafe_import_all),
         )
 
     async def list(self) -> Mapping[str, Any]:
         """List saved storage states."""
-        return await self.browser.command("state_list")
+        return await self.browser._command("state_list")
 
     async def show(self, path: str | Path) -> Mapping[str, Any]:
         """Show metadata for a saved storage state."""
-        return await self.browser.command("state_show", **state_path_params(path))
+        return await self.browser._command("state_show", **state_path_params(path))
 
     async def clear(self, path: str | Path | None = None) -> Mapping[str, Any]:
         """Clear one saved state or all saved states."""
-        return await self.browser.command("state_clear", **state_path_params(path))
+        return await self.browser._command("state_clear", **state_path_params(path))
 
     async def clean(self, *, days: int = 30) -> Mapping[str, Any]:
         """Delete saved states older than a number of days."""
-        return await self.browser.command("state_clean", days=days)
+        return await self.browser._command("state_clean", days=days)
 
     async def rename(self, path: str | Path, name: str) -> Mapping[str, Any]:
         """Rename a saved storage state."""
-        return await self.browser.command("state_rename", **state_path_params(path, name=name))
+        return await self.browser._command("state_rename", **state_path_params(path, name=name))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1040,19 +1093,19 @@ class AsyncClipboard:
 
     async def read(self) -> str:
         """Read text from the clipboard."""
-        return str((await self.browser.command("clipboard", subAction="read")).get("text", ""))
+        return str((await self.browser._command("clipboard", subAction="read")).get("text", ""))
 
     async def write(self, text: str) -> Mapping[str, Any]:
         """Write text to the clipboard."""
-        return await self.browser.command("clipboard", subAction="write", text=text)
+        return await self.browser._command("clipboard", subAction="write", text=text)
 
     async def copy(self) -> Mapping[str, Any]:
         """Copy the current selection."""
-        return await self.browser.command("clipboard", subAction="copy")
+        return await self.browser._command("clipboard", subAction="copy")
 
     async def paste(self) -> Mapping[str, Any]:
         """Paste clipboard content."""
-        return await self.browser.command("clipboard", subAction="paste")
+        return await self.browser._command("clipboard", subAction="paste")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1063,11 +1116,11 @@ class AsyncDialogs:
 
     async def status(self) -> Mapping[str, Any]:
         """Return current dialog status."""
-        return await self.browser.command("dialog", response="status")
+        return await self.browser._command("dialog", response="status")
 
     async def accept(self, prompt_text: str | None = None) -> Mapping[str, Any]:
         """Accept the active dialog, optionally with prompt text."""
-        return await self.browser.command(
+        return await self.browser._command(
             "dialog",
             response="accept",
             promptText=optional(prompt_text),
@@ -1075,7 +1128,7 @@ class AsyncDialogs:
 
     async def dismiss(self) -> Mapping[str, Any]:
         """Dismiss the active dialog."""
-        return await self.browser.command("dialog", response="dismiss")
+        return await self.browser._command("dialog", response="dismiss")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1086,12 +1139,12 @@ class AsyncDownloads:
 
     async def download(self, selector: str, path: str | Path) -> Path:
         """Click a selector that starts a download and return the path."""
-        data = await self.browser.command("download", selector=selector, path=path_value(path))
+        data = await self.browser._command("download", selector=selector, path=path_value(path))
         return Path(str(data["path"]))
 
     async def wait(self, path: str | Path | None = None, *, timeout_ms: int | None = None) -> Path:
         """Wait for the next download and return the path."""
-        data = await self.browser.command(
+        data = await self.browser._command(
             "waitfordownload",
             path=optional(path_value(path)),
             timeout=optional(timeout_ms),
@@ -1100,10 +1153,35 @@ class AsyncDownloads:
 
 
 @dataclass(frozen=True, slots=True)
+class AsyncCDPFrames:
+    """Async CDP frame discovery helpers."""
+
+    browser: Any
+
+    async def list(self) -> Sequence[Any]:
+        """Return frames for the active CDP page target."""
+        return await self.browser._cdp().frames()
+
+    async def get(
+        self,
+        *,
+        selector: str | None = None,
+        name: str | None = None,
+        url: str | None = None,
+    ) -> Any:
+        """Return one CDP frame selected by iframe selector, name, or URL."""
+        return await self.browser._cdp().frame(selector=selector, name=name, url=url)
+
+
+@dataclass(frozen=True, slots=True)
 class AsyncCDP:
     """Async high-level Chrome DevTools Protocol helpers."""
 
     browser: Any
+    frames: AsyncCDPFrames = field(init=False)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "frames", AsyncCDPFrames(self.browser))
 
     async def evaluate(
         self,
@@ -1137,34 +1215,20 @@ class AsyncCDP:
 
 
 @dataclass(frozen=True, slots=True)
-class AsyncFrames:
-    """Async frame discovery and switching helpers."""
+class AsyncActiveFrame:
+    """Async native active-frame selection helpers."""
 
     browser: Any
 
-    async def list(self) -> Sequence[Any]:
-        """Return frames for the active CDP page target."""
-        return await self.browser._cdp().frames()
-
-    async def get(
+    async def select(
         self,
-        selector: str | None = None,
         *,
-        name: str | None = None,
-        url: str | None = None,
-    ) -> Any:
-        """Return one frame selected by iframe selector, name, or URL."""
-        return await self.browser._cdp().frame(selector=selector, name=name, url=url)
-
-    async def switch(
-        self,
         selector: str | None = None,
-        *,
         name: str | None = None,
         url: str | None = None,
     ) -> Mapping[str, Any]:
-        """Switch the active frame using native frame selection."""
-        return await self.browser.command(
+        """Select the active native frame."""
+        return await self.browser._command(
             "frame",
             selector=optional(selector),
             name=optional(name),
@@ -1172,8 +1236,8 @@ class AsyncFrames:
         )
 
     async def main(self) -> Mapping[str, Any]:
-        """Switch back to the main frame."""
-        return await self.browser.command("mainframe")
+        """Select the main native frame."""
+        return await self.browser._command("mainframe")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1191,7 +1255,7 @@ class AsyncDiff:
         max_depth: int | None = None,
     ) -> SnapshotDiff:
         """Compare the current snapshot with a baseline."""
-        data = await self.browser.command(
+        data = await self.browser._command(
             "diff_snapshot",
             baseline=optional(path_value(baseline) if isinstance(baseline, Path) else baseline),
             selector=optional(selector),
@@ -1209,19 +1273,19 @@ class AsyncDiagnostics:
 
     async def console(self, *, clear: bool = False) -> tuple[ConsoleMessage, ...]:
         """Return captured console messages."""
-        return console_messages_from_data(await self.browser.command("console", clear=clear))
+        return console_messages_from_data(await self.browser._command("console", clear=clear))
 
     async def errors(self) -> Mapping[str, Any]:
         """Return captured page errors."""
-        return await self.browser.command("errors")
+        return await self.browser._command("errors")
 
     async def vitals(self) -> Mapping[str, Any]:
         """Return page vitals when supported by the native engine."""
-        return await self.browser.command("vitals")
+        return await self.browser._command("vitals")
 
     async def react_tree(self, *, selector: str | None = None) -> Mapping[str, Any]:
         """Return React tree diagnostics, optionally scoped by selector."""
-        return await self.browser.command("react_tree", selector=optional(selector))
+        return await self.browser._command("react_tree", selector=optional(selector))
 
 
 def _snapshot_diff(data: Mapping[str, Any]) -> SnapshotDiff:

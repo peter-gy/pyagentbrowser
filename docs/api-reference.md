@@ -1,52 +1,78 @@
 # API Reference
 
-The import package is `pyagentbrowser`. A `Browser` owns one native
-`agent-browser` session and exposes namespaced helpers over the native command
-protocol.
+The distribution package is `pyagentbrowser`. The import package is
+`pyagentbrowser`. A `Browser` owns one native `agent-browser` session and exposes
+namespaced helpers over the native command protocol.
 
 ```python
-from pyagentbrowser import Browser
+from pyagentbrowser import Browser, BrowserSessionOptions, LaunchOptions
 
-with Browser(headless=True, allowed_domains="example.com") as browser:
+with Browser.launch(
+    LaunchOptions(headless=True),
+    session_options=BrowserSessionOptions(allowed_domains="example.com"),
+) as browser:
     browser.page.open("https://example.com")
     page = browser.agent.observe()
     print(page.text)
 ```
 
-## `Browser(...)`
+## Browser Construction
 
 ```python
 Browser(
     *,
-    headless: bool = True,
-    executable_path: str | Path | None = None,
-    engine: str | None = None,
-    session: str | None = None,
-    session_name: str | None = None,
-    default_timeout_ms: int | None = 15_000,
-    allowed_domains: str | None = None,
-    action_policy: str | Path | None = None,
-    confirm_actions: Sequence[str] | None = None,
-    profile: str | Path | None = None,
-    storage_state: str | Path | None = None,
-    extensions: Sequence[str | Path] = (),
-    proxy: str | ProxyConfig | Mapping[str, Any] | None = None,
-    provider: str | None = None,
-    cdp_url: str | None = None,
-    cdp_port: int | None = None,
-    auto_connect: bool = False,
-    color_scheme: ColorScheme | None = None,
-    hide_scrollbars: bool | None = None,
-    args: Sequence[str] = (),
-    no_auto_dialog: bool = False,
-    dashboard: bool | DashboardOptions | None = False,
+    session_options: BrowserSessionOptions | None = None,
     native_session: NativeSession | None = None,
 ) -> None
 ```
 
-Creates a synchronous browser controller. Construction is lazy: the native
-browser launches on `launch()`, `connect()`, or the first helper that needs a
-page.
+Creates a lazy synchronous browser controller for a new browser process. The
+native browser process starts on `browser.launch_process()` or the first helper
+that needs a page. Use the class factories when construction should name a
+launch, attach, or restore lifecycle:
+
+```python
+Browser.launch(
+    options: LaunchOptions | None = None,
+    *,
+    session_options: BrowserSessionOptions | None = None,
+    native_session: NativeSession | None = None,
+) -> Browser
+
+Browser.attach(
+    target: CDPAttach,
+    *,
+    launch_options: LaunchOptions | None = None,
+    session_options: BrowserSessionOptions | None = None,
+    native_session: NativeSession | None = None,
+) -> Browser
+
+Browser.from_session(
+    session_id: str,
+    *,
+    restore: RestoreOptions | None = None,
+    launch_options: LaunchOptions | None = None,
+    session_options: BrowserSessionOptions | None = None,
+    native_session: NativeSession | None = None,
+) -> Browser
+```
+
+`Browser.launch(...)` starts a browser process before returning. `Browser.attach(...)`
+connects to the configured CDP target before returning. `Browser.from_session(...)`
+returns a lazy controller for a named native session and starts on the first
+browser command.
+
+`LaunchOptions` contains browser process settings such as `headless`,
+`executable_path`, `profile`, `storage_state`, `extensions`, `proxy`,
+`provider`, `color_scheme`, `hide_scrollbars`, `args`, `download_path`,
+`allow_file_access`, `ignore_https_errors`, and `user_agent`.
+
+`CDPAttach(url=...)` or `CDPAttach(port=...)` selects a running Chrome CDP
+target. Pass exactly one target.
+
+`BrowserSessionOptions` contains session-owned settings: `session_id`,
+`restore`, `namespace`, `default_timeout_ms`, `allowed_domains`,
+`action_policy`, `confirm_actions`, and `no_auto_dialog`.
 
 `allowed_domains` accepts comma-separated exact hosts and wildcard suffixes such
 as `example.com`, `*.example.com`, `localhost`, and `::1`. When set, the SDK
@@ -54,10 +80,6 @@ checks raw URL targets, host-qualified URL patterns, cookie targets, and
 permission origins before native execution. Storage-state loads are filtered
 before import. Storage-state saves and cookie reads are filtered before return
 unless the unsafe export option is passed.
-
-`hide_scrollbars=None` leaves the native default and
-`AGENT_BROWSER_HIDE_SCROLLBARS` in control. `False` keeps native scrollbars
-visible in headless screenshots.
 
 Raises `BrowserError` when a command fails, `ActionConfirmationRequired` when a
 policy requires confirmation, and `ValueError` for invalid SDK arguments.
@@ -69,7 +91,7 @@ origins. Violations raise `BrowserError` with `code="allowed_domains"`.
 
 | Input | Treatment |
 | --- | --- |
-| `example.com`, `*.example.com` | Constructor allowlist entries. Wildcard host patterns require a wildcard entry. |
+| `example.com`, `*.example.com` | `BrowserSessionOptions.allowed_domains` entries. Wildcard host patterns require a wildcard entry. |
 | `https://example.com/path`, `example.com/path` | Raw URL targets are normalized and checked against the host allowlist. |
 | `*://example.com/*`, `//example.com/path`, `*//example.com/*` | Host-qualified URL patterns are checked before native execution. |
 | `/api`, `**/api`, `*api/message` | Relative URL patterns stay relative and do not name a host. |
@@ -79,60 +101,69 @@ origins. Violations raise `BrowserError` with `code="allowed_domains"`.
 
 ## `AsyncBrowser(...)`
 
-`AsyncBrowser` accepts the same constructor options and exposes the same
-namespaces with awaitable methods. Native commands run on one owner thread so
-browser state remains ordered while the event loop stays responsive.
+`AsyncBrowser` exposes the same factories and namespaces with awaitable methods.
+Native commands run on one owner thread so browser state remains ordered while
+the event loop stays responsive.
 
 ```python
-from pyagentbrowser import AsyncBrowser
+from pyagentbrowser import AsyncBrowser, LaunchOptions
 
-async with AsyncBrowser(headless=True) as browser:
+browser = await AsyncBrowser.launch(LaunchOptions(headless=True))
+async with browser:
     await browser.page.open("https://example.com")
     print(await browser.page.title())
 ```
 
 ## Core Methods
 
-### `browser.command(action, **params)`
+### `browser.native.execute(action, **params)`
 
-Runs one native command and returns object-shaped response data.
-`Browser.command` is the raw native command surface. The SDK still applies
-confirmation handling, allowlist checks, response validation, and lifecycle
-bookkeeping.
+Runs one native command and returns a `BrowserResponse` envelope. The SDK still
+applies allowlist checks and lifecycle bookkeeping. Native unsuccessful
+responses are returned instead of raised.
 
 ```python
-browser.command("dispatch", selector="#save", event="click")
+response = browser.native.execute("dispatch", selector="#save", event="click")
+assert response.success
 ```
 
-### `browser.try_command(action, **params)`
+### `browser.native.data(action, *, expect="object", **params)`
 
-Runs one native command and returns `BrowserResponse` without raising for a
-native unsuccessful response. Local validation errors still raise before a
-command reaches native code.
+Runs one native command and returns checked response data. `expect="object"`
+requires object-shaped `data` and raises `BrowserError` for scalar, array, or
+`null` data. Pass `expect="any"` when the native action may return arbitrary
+JSON.
 
-### `browser.execute_raw(action, **params)`
+```python
+items = browser.native.data("raw_array", expect="any")
+```
 
-Runs one native command and returns raw response data without requiring an
-object payload. Use it for native actions whose `data` is a scalar, array, or
-`null`.
+### `browser.launch_process(...)`
 
-### `browser.launch(...)`
+Launches the native browser process using stored launch options. Pass
+`options=LaunchOptions(...)` to replace browser process options for that launch
+command. Returns native launch response data.
 
-Launches or attaches the native browser using constructor defaults plus any
-method overrides. Returns native launch response data. `connect()` is an alias
-for an explicit launch or attach handshake that does not navigate.
+### `browser.connect()`
 
-### `browser.close()`
+Connects to the CDP target configured by `Browser.attach(...)` or
+`pyagentbrowser.notebook.configure(attach=...)`. It does not navigate. Calling
+`connect()` on a process-launch browser raises `RuntimeError`.
+
+### `browser.close(timeout=5.0)`
 
 Closes the native browser session and any active CDP controller. Inside a
 context manager, close errors surface only when the body completed without its
-own exception. `AsyncBrowser.aclose()` closes the browser and stops the async
-native worker.
+own exception. `AsyncBrowser.close()` and `AsyncBrowser.aclose()` are the same
+method. Async close rejects new work, reports queued work as closed, lets active
+native work finish or time out, and stops the worker.
 
-### `browser.confirm(confirmation=None)` and `browser.deny(confirmation=None)`
+### `browser.confirm(confirmation)` and `browser.deny(confirmation)`
 
-Resolve a pending `ActionConfirmationRequired`. Passing `None` uses the last
-pending confirmation tracked by the browser.
+Resolve a pending `ActionConfirmationRequired`, `PendingAction`, or explicit
+confirmation id. `ActionConfirmationRequired.pending_action.confirm()` and
+`.deny()` provide the same operation without relying on browser-local pending
+state.
 
 ### `browser.is_launched`
 
@@ -185,7 +216,7 @@ listed.
 | `content()` | Reads the active page HTML. | Returns `str`. |
 | `set_content(html)` | Replaces the active page document. The browser must already be launched or attached. | Returns native set-content data. |
 | `evaluate(script)` | Evaluates JavaScript in the active page context through the native command path. | Returns the native `result` value. |
-| `read(url=None, *, raw=False, require_md=False, llms=None, outline=False, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | Reads a URL or the active page through the native `read` command. Host-like URL values are normalized to `https://...`. `llms` accepts `"index"` or `"full"`. `llms` and `outline=True` are mutually exclusive. `allowed_domains` adds a read-scoped allowlist, and constructor `allowed_domains` still applies. | Returns `ReadResult`. Raises `ValueError` for invalid `llms` or `timeout_ms`. Raises `BrowserError` for native read failures and allowlist violations. |
+| `read(url=None, *, mode=None, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | Reads a URL or the active page through the native `read` command. Host-like URL values are normalized to `https://...`. `mode` accepts `ReadMode.markdown()`, `ReadMode.html()`, `ReadMode.llms_index()`, `ReadMode.llms_full()`, or `ReadMode.outline_only()`. `allowed_domains` adds a read-scoped allowlist, and constructor `allowed_domains` still applies. | Returns `ReadResult`. Raises `ValueError` for invalid `ReadMode` or `timeout_ms`. Raises `BrowserError` for native read failures and allowlist violations. |
 | `ready(*, timeout_ms=None, min_text_length=1)` | Waits until the body contains at least `min_text_length` characters. | Returns `None`. Raises `ValueError` for negative `min_text_length`. |
 | `wait_for_text(text, *, timeout_ms=None)` | Waits for visible text. | Returns `None`. Raises `BrowserError` on timeout. |
 | `wait_for_selector(selector, *, state="visible", timeout_ms=None)` | Waits for selector state `attached`, `detached`, `hidden`, or `visible`. | Returns `None`. Raises `BrowserError` on timeout. |
@@ -222,11 +253,18 @@ listed.
 
 | Method | Behavior | Returns and raises |
 | --- | --- | --- |
-| `list()` | Reads native tab metadata. | Returns `tuple[TabInfo, ...]`. |
-| `new(url=None, *, label=None)` | Opens a new tab, optionally with a URL and label. URL targets are checked against `allowed_domains`. | Returns `TabInfo`. |
-| `open(url, *, label=None, wait_until="load")` | Reuses an existing labelled tab when one exists, otherwise creates it. Then navigates to `url`. | Returns `TabInfo`. Invalidates cached CDP page handles. |
-| `switch(tab)` | Switches to a tab id, label, or numeric tab reference. | Returns native switch data. |
-| `close(tab=None)` | Closes one tab or the active tab. | Returns native close data. Invalidates cached CDP page handles. |
+| `list()` | Reads native tab metadata. | Returns `tuple[TabInfo, ...]`. Raises `NativeParseError` when required tab fields are missing. |
+| `new(url=None, *, label=None)` | Opens a new tab, optionally with a URL and label. URL targets are checked against `allowed_domains`. | Returns `TabInfo`. Raises `NativeParseError` when required tab fields are missing. |
+| `open(url, *, label=None, wait_until="load")` | Reuses an existing labelled tab when one exists, otherwise creates it. Then navigates to `url`. | Returns `TabInfo`. Invalidates cached CDP page handles. Raises `NativeParseError` when required tab fields are missing. |
+| `switch(*, id=None, label=None, index=None)` | Switches to a tab selected by exactly one id, label, or zero-based index. `label` is resolved through `tabs.list()` before the native switch command. | Returns native switch data. Raises `ValueError` when selection is missing, mixed, invalid, or the label is absent. |
+| `close(*, id=None, label=None, index=None)` | Closes the selected tab, or the active tab when no selector is passed. `label` is resolved through `tabs.list()` before the native close command. | Returns native close data. Invalidates cached CDP page handles. Raises `ValueError` for mixed or invalid selection. |
+
+### `browser.runtime` and `browser.restore`
+
+| Method | Behavior | Returns and raises |
+| --- | --- | --- |
+| `runtime.info()` | Reads native session and launch diagnostics for this browser. | Returns native session info with fields such as `session`, `namespace`, and `browserLaunched`. |
+| `restore.info()` | Reads native restore diagnostics for this browser. | Returns native restore info with fields such as `restoreKey`, `restoreStatus`, and `saveStatus`. |
 
 ### `browser.cookies`, `browser.storage`, and `browser.state`
 
@@ -248,13 +286,13 @@ listed.
 | --- | --- | --- |
 | `route(url, *, abort=False, response=None, status=None, body=None, content_type=None, headers=None, resource_type=None, resource_types=None)` | Registers a native request route. Pass either a `RouteResponse`, a mapping, or inline response fields. With `allowed_domains`, host-qualified URL patterns are checked before native execution. | Returns native route data. Raises `BrowserError` for allowlist violations. |
 | `unroute(url=None)` | Removes one route or all routes. With `allowed_domains`, host-qualified URL patterns are checked before native execution. | Returns native unroute data. Raises `BrowserError` for allowlist violations. |
-| `requests(*, clear=False, url_pattern=None, resource_type=None, method=None, status=None)` | Reads captured network requests and optionally clears the buffer. | Returns `tuple[NetworkRequest, ...]`. |
-| `request_detail(request_id)` | Reads detailed request and response metadata. | Returns `RequestDetail`. |
+| `requests(*, clear=False, url_pattern=None, resource_type=None, method=None, status=None)` | Reads captured network requests and optionally clears the buffer. | Returns `tuple[NetworkRequest, ...]`. Raises `NativeParseError` when required request fields are missing. |
+| `request_detail(request_id)` | Reads detailed request and response metadata. | Returns `RequestDetail`. Raises `NativeParseError` when required detail fields are missing. |
 | `har_start()` | Starts HAR capture. | Returns native HAR data. |
 | `har_stop(path=None)` | Stops HAR capture and writes the HAR file. | Returns `Path`. Raises `BrowserError` when native response omits a path. |
 | `credentials(username, password)` | Sets HTTP authentication credentials. | Returns native credential data. |
 
-### `browser.scripts`, `browser.frames`, and `browser.cdp`
+### `browser.scripts`, `browser.active_frame`, and `browser.cdp`
 
 | Method | Behavior | Returns and raises |
 | --- | --- | --- |
@@ -262,10 +300,10 @@ listed.
 | `scripts.remove_init(identifier)` | Removes a registered init script. | Returns native remove data. |
 | `scripts.add(script=None, *, url=None)` | Injects JavaScript into the current page from inline source or URL. URL targets are checked against `allowed_domains`. | Returns native add data. Raises `ValueError` unless exactly one source is provided. |
 | `scripts.add_style(content=None, *, url=None)` | Injects CSS into the current page from inline content or URL. URL targets are checked against `allowed_domains`. | Returns native add data. Raises `ValueError` unless exactly one source is provided. |
-| `frames.list()` | Lists frames for the active CDP page target. | Returns a sequence of `Frame` objects. Requires the `cdp` extra. |
-| `frames.get(selector=None, *, name=None, url=None)` | Resolves one frame by selector, name, or URL. | Returns `Frame`. Raises CDP frame resolution errors. |
-| `frames.switch(selector=None, *, name=None, url=None)` | Switches the active native frame. With `allowed_domains`, `url` patterns are checked before native execution. Protocol-relative and wildcard-prefixed protocol-relative patterns are host-qualified. | Returns native frame data. Raises `BrowserError` with `code="allowed_domains"` for allowlist violations. |
-| `frames.main()` | Switches back to the main frame. | Returns native main-frame data. |
+| `active_frame.select(selector=None, *, name=None, url=None)` | Selects the active native frame for subsequent native commands. With `allowed_domains`, `url` patterns are checked before native execution. Protocol-relative and wildcard-prefixed protocol-relative patterns are host-qualified. | Returns native frame data. Raises `BrowserError` with `code="allowed_domains"` for allowlist violations. |
+| `active_frame.main()` | Selects the main native frame. | Returns native main-frame data. |
+| `cdp.frames.list()` | Lists frames for the active CDP page target. | Returns a sequence of `Frame` objects. Requires the `cdp` extra. |
+| `cdp.frames.get(selector=None, *, name=None, url=None)` | Resolves one CDP frame by selector, name, or URL. | Returns `Frame`. Raises CDP frame resolution errors. |
 | `cdp.evaluate(script, *, frame=None, extension_id=None, context=None, await_promise=True, return_by_value=True)` | Evaluates JavaScript through CDP in a frame or execution context. | Returns the evaluated value or remote object data. Requires the `cdp` extra. |
 | `cdp.target(*, label=None, url=None, target_id=None)` | Resolves a CDP target selected by SDK tab label, URL, or CDP target id. Label lookup uses labels assigned by `browser.tabs.new(...)` or `browser.tabs.open(...)`. | Returns a CDP target handle. Raises target resolution errors. |
 
@@ -286,19 +324,24 @@ listed.
 
 ```python
 import pyagentbrowser as ab
+from pyagentbrowser import BrowserSessionOptions, LaunchOptions
 
-ab.configure(headless=True, allowed_domains="*.example.com")
-ab.page.open("example.com")
-print(ab.page.title())
-ab.close()
+ab.notebook.configure(
+    launch_options=LaunchOptions(headless=True),
+    session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
+)
+ab.notebook.page.open("example.com")
+print(ab.notebook.page.title())
+ab.notebook.close()
 ```
 
-### `pyagentbrowser.configure(force=False, **options)`
+### `pyagentbrowser.notebook.configure(force=False, **options)`
 
 Replaces the process-local default browser configuration and returns the new
-default `Browser`. Options are the `Browser(...)` constructor options.
-`cdp_port`, `cdp_url`, and `auto_connect=True` connect immediately so tab,
-state, and diagnostic helpers can run before navigation.
+default `Browser`. Options are named lifecycle objects: `launch_options`,
+`attach`, `session_options`, and `native_session`. Browser launch and CDP
+attachment remain lazy. Call `browser.connect()` when a CDP attach should happen
+before navigation.
 
 `force=True` discards the previous default browser reference even if native
 close fails.
@@ -309,10 +352,13 @@ close fails.
 `close()` closes and clears the current handle while keeping configured
 defaults. `reset()` closes the handle and clears configured defaults.
 
-The package root exposes proxies for every synchronous namespace: `page`,
-`agent`, `capture`, `cdp`, `clipboard`, `cookies`, `dialogs`, `diagnostics`,
-`diff`, `downloads`, `find`, `frames`, `keyboard`, `mouse`, `network`,
-`scripts`, `state`, `storage`, and `tabs`.
+`pyagentbrowser.notebook` exposes default-browser accessors for every
+synchronous namespace: `page`, `agent`, `capture`, `cdp`, `clipboard`,
+`cookies`, `dialogs`, `diagnostics`, `diff`, `downloads`, `find`,
+`active_frame`, `keyboard`, `mouse`, `network`, `restore`, `runtime`, `scripts`,
+`state`, `storage`, and `tabs`.
+`pyagentbrowser.session_id(...)` generates stable session ids without creating
+or touching a browser.
 
 ## Models And Errors
 
@@ -326,14 +372,15 @@ fields outside the typed SDK model.
 | --- | --- |
 | `AgentBrowserError` | Base class for SDK-owned exceptions. Catch this when native browser failures, CDP failures, confirmation failures, and stale ref failures should share one handler. |
 | `BrowserError(action, message, response, *, code=None)` | Raised when native execution returns an unsuccessful response or when a Python preflight check rejects the command. Exposes `action: str`, `response: dict[str, Any]`, and `code: str | None`. |
-| `ActionConfirmationRequired(action, data, response)` | Raised when a native policy requires approval before execution. Exposes `confirmation_id: str | None` and `data: dict[str, Any]`. Pass the exception, its id, or nothing to `browser.confirm(...)` or `browser.deny(...)`. |
+| `ActionConfirmationRequired(action, data, response)` | Raised when a native policy requires approval before execution. Exposes `confirmation_id: str | None`, `data: dict[str, Any]`, and `pending_action`. Pass the exception, the pending action, or the id to `browser.confirm(...)` or `browser.deny(...)`. |
 | `StaleAgentRefError(ref, error)` | Raised when an `AgentRef` action targets a ref that no longer exists in the current page. Exposes `ref: AgentRef` and `refresh(**criteria) -> AgentRef`. |
 | `AsyncStaleAgentRefError(ref, error)` | Async equivalent of `StaleAgentRefError`. Exposes `ref: AsyncAgentRef` and `await refresh(**criteria)`. |
 | `CDPError` | Base class for Python-owned CDP errors. CDP helpers require the `cdp` extra and raise these errors before wrapping them in `BrowserError`. |
 | `CDPProtocolError(method, error)` | Raised when CDP returns an error response. Exposes `method: str` and `error: object`. |
+| `CDPClosedError` | Raised when an old CDP client, controller, target, frame, or execution context is used after close. Create a fresh browser/CDP handle before issuing more CDP calls. |
 | `CDPTimeoutError(method, timeout)` | Raised when a CDP request does not receive a response before its timeout. Exposes `method: str` and `timeout: float | None`. |
 | `CDPEvaluationError(details)` | Raised when JavaScript evaluation throws in the target context. Exposes `details: dict[str, Any]`. |
-| `CDPStaleObjectError` | Raised when a cached `Frame` or `ExecutionContext` is used after navigation or target replacement. Take a fresh handle through `browser.frames` or `browser.cdp.target(...)`. |
+| `CDPStaleObjectError` | Raised when a cached `Frame` or `ExecutionContext` is used after navigation, target replacement, or CDP close. Take a fresh handle through `browser.cdp.frames` or `browser.cdp.target(...)`. |
 | `CDPFrameNotFoundError`, `CDPFrameAmbiguityError` | Raised when frame lookup finds zero or multiple matches for selector, name, or URL criteria. |
 | `CDPContextNotFoundError`, `CDPContextAmbiguityError` | Raised when execution-context lookup finds zero or multiple matches for frame, extension id, or predicate criteria. |
 | `CDPTargetNotFoundError`, `CDPTargetAmbiguityError` | Raised when target lookup finds zero or multiple browser targets for label, URL, or target id criteria. |
@@ -342,15 +389,23 @@ fields outside the typed SDK model.
 
 | Type | Fields and behavior |
 | --- | --- |
-| `DashboardOptions(port=None, cli_version=None)` | Enables the upstream dashboard when passed as `dashboard=...`. `port` accepts `0` through `65535` and `0` requests an ephemeral port. `cli_version` must be non-empty when provided. |
-| `ProxyConfig(server, bypass=None, username=None, password=None)` | Browser proxy configuration accepted by `Browser(proxy=...)` and `browser.launch(proxy=...)`. `as_command_value()` serializes only populated fields. |
+| `DashboardOptions(port=None, cli_version=None)` | Dashboard startup options accepted by `browser.dashboard.start(...)`. `port` accepts `0` through `65535` and `0` requests an ephemeral port. `cli_version` must be non-empty when provided. |
+| `LaunchOptions(...)` | Browser process settings accepted by `Browser.launch(...)`, `AsyncBrowser.launch(...)`, `Browser.from_session(..., launch_options=...)`, notebook configuration, and `browser.launch_process(options=...)`. |
+| `CDPAttach(url=None, port=None, auto_connect=True)` | CDP attachment target accepted by `Browser.attach(...)`, `AsyncBrowser.attach(...)`, and notebook configuration. Exactly one of `url` or `port` is required. |
+| `BrowserSessionOptions(...)` | Native session settings accepted by `Browser(...)`, `Browser.launch(...)`, `Browser.attach(...)`, `Browser.from_session(...)`, and notebook configuration. `default_timeout_ms` defaults to `15_000`. |
+| `ProxyConfig(server, bypass=None, username=None, password=None)` | Browser proxy configuration accepted by `LaunchOptions(proxy=...)`. `as_command_value()` serializes only populated fields. |
+| `RestoreOptions(key, save=None, check_url=None, check_text=None, check_fn=None)` | Browser restore configuration accepted by `BrowserSessionOptions(restore=...)` and `Browser.from_session(..., restore=...)`. `key` is the persistence key. `save` controls auto-save. The check fields validate the restored page before auto-save. |
 | `RouteResponse(status=None, body=None, content_type=None, headers=None)` | Static route response accepted by `browser.network.route(response=...)`. `headers` is a mapping of response header names to strings. `as_command_value()` serializes `content_type` as `contentType` for native execution. |
 
 ### Response And Snapshot Models
 
 | Type | Fields and methods |
 | --- | --- |
-| `BrowserResponse(id, action, success, data, raw, warning=None)` | Native response envelope returned by `try_command()`. `data` is the unwrapped native payload and `raw` is the full response mapping. |
+| `BrowserResponse(id, action, success, data, raw, warning=None)` | Native response envelope returned by `browser.native.execute(...)`. `data` is the unwrapped native payload and `raw` is the full response mapping. |
+| `PendingAction` | SDK-created confirmation handle exposed as `ActionConfirmationRequired.pending_action` or `browser.pending_action(...)`. `confirm()` replays the action and `deny()` denies it. |
+| `AsyncPendingAction` | Async confirmation handle with awaitable `confirm()` and `deny()`. |
+| `NativeParseError(message)` | Raised when a native payload is missing fields required by a typed SDK model. |
+| `SessionId(session, scope, path, hash)` | Stable session id returned by `pyagentbrowser.session_id(...)`. `str(session_id)` returns the session string. |
 | `Snapshot(text, origin, refs, raw)` | Accessibility snapshot returned by lower-level snapshot helpers. `refs` maps ref ids to role/name metadata. `ref(ref_id)` accepts `r1` and `@r1`. `find_refs(role=None, name=None, contains=None, exact=False)` returns matching `SnapshotRef` values. |
 | `SnapshotRef(id, role, name, raw)` | One accessibility ref. `.selector` returns the native selector form such as `@r1`. |
 | `AgentSnapshot(browser, snapshot)` | Browser-bound snapshot returned by `browser.agent.observe(...)`. Exposes `text`, `origin`, `raw`, and `refs`. `ref(ref_id)` returns `AgentRef`. `find(...)` returns one ref and raises `LookupError` on zero matches or strict multiple matches. `find_all(...)` returns all matches. |
@@ -368,6 +423,7 @@ fields outside the typed SDK model.
 | `ScreenshotBox(x, y, width, height, raw)` | Annotation rectangle in screenshot pixels. |
 | `BoundingBox(x, y, width, height, raw)` | Element rectangle in CSS pixels, returned by locator bounding-box helpers. |
 | `ReadResult(url, final_url, status, content_type, source, truncated, content, raw)` | Agent-readable content returned by `browser.page.read(...)`. `source` identifies the native read path, such as active-tab HTML, Markdown fallback, llms.txt, or outline extraction. |
+| `ReadMode(raw=False, require_markdown=False, llms=None, outline=False)` | Read mode passed to `browser.page.read(mode=...)`. Constructors such as `ReadMode.markdown(require=True)`, `ReadMode.html()`, `ReadMode.llms_index()`, `ReadMode.llms_full()`, and `ReadMode.outline_only()` name supported modes. Direct construction validates conflicting mode fields. |
 | `TabInfo(id, url, title="", label=None, active=False, raw={})` | Browser tab metadata returned by `browser.tabs.list()`, `new()`, and `open()`. `label` is the SDK tab label when one was assigned. `raw` preserves native fields such as `targetId` from tab-list records. |
 | `Cookie(name, value, domain=None, path=None, expires=None, http_only=None, secure=None, same_site=None, raw={})` | Cookie metadata returned by `browser.cookies.get(...)`. `expires` is the native expiry timestamp when available. |
 | `ConsoleMessage(type, text, level=None, url=None, line=None, column=None, raw={})` | Browser console entry returned by `browser.diagnostics.console(...)`. |
@@ -378,7 +434,7 @@ fields outside the typed SDK model.
 
 | Type | Fields and methods |
 | --- | --- |
-| `Frame(id, name, url, session_id, ...)` | Synchronous CDP frame handle returned by `browser.frames.list()`, `browser.frames.get(...)`, and target helpers. `contexts(extension_id=None, predicate=None)` returns execution contexts. `context(...)` returns one context. `evaluate(script, *, extension_id=None, await_promise=True, return_by_value=True)` evaluates JavaScript in the frame. Cached frame handles become stale after navigation or target replacement. |
+| `Frame(id, name, url, session_id, ...)` | Synchronous CDP frame handle returned by `browser.cdp.frames.list()`, `browser.cdp.frames.get(...)`, and target helpers. `contexts(extension_id=None, predicate=None)` returns execution contexts. `context(...)` returns one context. `evaluate(script, *, extension_id=None, await_promise=True, return_by_value=True)` evaluates JavaScript in the frame. Cached frame handles become stale after navigation or target replacement. |
 | `ExecutionContext(id, unique_id, frame_id, origin, name, type, is_default, ...)` | Synchronous JavaScript execution context. `evaluate(script, *, await_promise=True, return_by_value=True)` evaluates JavaScript in this context. Cached context handles become stale after navigation or target replacement. |
 | `AsyncFrame`, `AsyncExecutionContext` | Async equivalents of `Frame` and `ExecutionContext`. Browser-touching methods are awaitable and keep the same arguments. |
 

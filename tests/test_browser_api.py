@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import importlib
 import inspect
 import json
@@ -12,6 +13,7 @@ from typing import Any, cast
 
 import pytest
 from fakes import (
+    LIFECYCLE_CLOSE_ACTIONS,
     AgentNative,
     BlockingNative,
     CloseErrorNative,
@@ -31,18 +33,29 @@ from pyagentbrowser import (
     ActionConfirmationRequired,
     AgentBrowserError,
     AsyncBrowser,
+    AsyncPendingAction,
     BoundingBox,
     Browser,
     BrowserError,
     BrowserResponse,
+    BrowserSessionOptions,
+    CDPAttach,
+    CDPClosedError,
+    ConfirmationTarget,
     ConsoleMessage,
     Cookie,
+    LaunchOptions,
+    NativeParseError,
     NetworkRequest,
+    PendingAction,
     ProxyConfig,
+    ReadMode,
     ReadResult,
     RequestDetail,
+    RestoreOptions,
     RouteResponse,
     Screenshot,
+    SessionId,
     StaleAgentRefError,
     TabInfo,
 )
@@ -52,48 +65,67 @@ from pyagentbrowser.session_async import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
-_PUBLIC_NAMESPACE_NAMES = {
+_BROWSER_NAMESPACE_NAMES = {
+    "active_frame",
     "agent",
     "capture",
     "cdp",
     "clipboard",
     "cookies",
+    "dashboard",
     "dialogs",
     "diagnostics",
     "diff",
     "downloads",
     "find",
-    "frames",
     "keyboard",
     "mouse",
+    "native",
     "network",
     "page",
+    "restore",
+    "runtime",
     "scripts",
     "state",
     "storage",
     "tabs",
 }
+_NOTEBOOK_NAMESPACE_NAMES = _BROWSER_NAMESPACE_NAMES - {"native"}
 
 _ROOT_EXPORT_CONTRACT = {
     "ActionConfirmationRequired",
     "AgentBrowserError",
     "AgentSnapshot",
     "AsyncBrowser",
+    "AsyncPendingAction",
     "Browser",
     "BrowserError",
     "BrowserResponse",
+    "BrowserSessionOptions",
+    "CDPAttach",
+    "CDPClosedError",
     "CDPError",
+    "ConfirmationTarget",
     "Cookie",
     "DashboardOptions",
     "Frame",
+    "LaunchOptions",
+    "NativeParseError",
     "NetworkRequest",
+    "PendingAction",
     "ProxyConfig",
+    "ReadMode",
     "ReadResult",
     "RouteResponse",
+    "RestoreOptions",
+    "RestoreSave",
     "Screenshot",
     "Skill",
     "Snapshot",
     "SnapshotRef",
+    "SessionId",
+    "SessionIdScope",
+    "session_id",
     "StaleAgentRefError",
     "TabInfo",
     "__agent_browser_commit__",
@@ -101,12 +133,9 @@ _ROOT_EXPORT_CONTRACT = {
     "__upstream_commit__",
     "__upstream_version__",
     "__version__",
-    "close",
-    "configure",
-    "default_browser",
-    "reset",
+    "notebook",
     "skills",
-} | _PUBLIC_NAMESPACE_NAMES
+}
 
 
 class ResponseNative:
@@ -258,7 +287,7 @@ class TabReuseNative:
 
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
-        active = self.switched_label == "docs" and self.navigated_url == "https://example.com/docs"
+        active = self.switched_label == "t1" and self.navigated_url == "https://example.com/docs"
         if command["action"] == "tab_list":
             data = {
                 "tabs": [
@@ -276,7 +305,7 @@ class TabReuseNative:
         elif command["action"] == "navigate":
             self.navigated_url = str(command["url"])
             data = {}
-        elif command["action"] == "close":
+        elif command["action"] in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         else:
             raise AssertionError(f"unexpected action {command['action']}")
@@ -293,7 +322,7 @@ class CdpConnectNative:
             }
         elif action == "tab_list":
             data = {"tabs": [{"id": "t1", "url": "about:blank"}]}
-        elif action == "close":
+        elif action in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         elif action == "navigate":
             raise AssertionError("connect must not navigate")
@@ -318,7 +347,7 @@ class CdpPortConnectNative:
             if not self.connected:
                 raise AssertionError("tab_list requires configured CDP attachment")
             data = {"tabs": [{"id": "t1", "url": "about:blank"}]}
-        elif action == "close":
+        elif action in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         elif action == "navigate":
             raise AssertionError("configure connect must not navigate")
@@ -341,7 +370,7 @@ class SemanticLocatorNative:
             data = {"text": "Logo"}
         elif action == "getbytitle":
             data = {"text": "Help"}
-        elif action == "close":
+        elif action in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         else:
             raise AssertionError(f"unexpected semantic locator command: {command}")
@@ -358,7 +387,7 @@ class LocatorStateNative:
         command = json.loads(command_json)
         action = command["action"]
         selector = command.get("selector")
-        if selector != "#email" and action not in {"close"}:
+        if selector != "#email" and action not in LIFECYCLE_CLOSE_ACTIONS:
             raise AssertionError(f"unexpected locator target: {command}")
         if action == "check":
             self.checked = True
@@ -373,7 +402,7 @@ class LocatorStateNative:
             data = {}
         elif action == "inputvalue":
             data = {"value": self.typed_text or ""}
-        elif action == "close":
+        elif action in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         else:
             raise AssertionError(f"unexpected locator action: {command}")
@@ -485,18 +514,18 @@ class ReadmeWorkflowNative:
             data = {"title": "Example"}
         elif action == "url" and self.clicked_more:
             data = {"url": "https://example.com"}
-        elif action == "close":
+        elif action in LIFECYCLE_CLOSE_ACTIONS:
             data = {}
         else:
             raise AssertionError(f"unexpected workflow action {command}")
         return json.dumps({"id": command["id"], "success": True, "data": data})
 
 
-def test_browser_command_preserves_raw_escape_hatch_payload() -> None:
+def test_browser_native_data_preserves_raw_escape_hatch_payload() -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native))
 
-    browser.command("raw_null", value=None, nested={"keep": None})
+    browser.native.data("raw_null", value=None, nested={"keep": None})
 
     assert native.commands[0]["action"] == "raw_null"
     assert native.commands[0]["value"] is None
@@ -515,7 +544,9 @@ def test_browser_page_open_normalizes_host_like_url() -> None:
 
 
 def test_browser_tabs_new_uses_public_namespace() -> None:
-    native = ResponseNative({"tab_new": {"tab": {"id": "t1", "label": "docs"}}})
+    native = ResponseNative(
+        {"tab_new": {"tab": {"id": "t1", "url": "https://example.com/docs", "label": "docs"}}}
+    )
     browser = Browser(native_session=NativeSession(native=native))
 
     tab = browser.tabs.new("https://example.com/docs", label="docs")
@@ -541,72 +572,75 @@ def test_browser_semantic_locator_click_returns_chainable_handle() -> None:
 
 
 def test_browser_default_timeout_is_15_seconds() -> None:
-    assert inspect.signature(Browser).parameters["default_timeout_ms"].default == 15_000
-    assert inspect.signature(AsyncBrowser).parameters["default_timeout_ms"].default == 15_000
+    assert BrowserSessionOptions().default_timeout_ms == 15_000
 
 
-def test_try_command_returns_browser_response() -> None:
+def test_native_execute_returns_browser_response() -> None:
     browser = Browser(native_session=NativeSession(native=EchoNative()))
 
-    response = browser.try_command("launch")
+    response = browser.native.execute("launch")
 
     assert isinstance(response, BrowserResponse)
     assert response.success is True
 
 
-def test_try_command_pending_confirmation_can_be_confirmed() -> None:
+def test_native_execute_pending_confirmation_can_be_confirmed() -> None:
     browser = Browser(native_session=NativeSession(native=ConfirmationNative()))
 
-    response = browser.try_command("click")
+    response = browser.native.execute("click")
     response_data = cast(dict[str, Any], response.data)
+    pending = browser.pending_action(response)
 
     assert response_data["confirmation_required"] is True
-    assert browser.confirm() == {"clicked": "#danger"}
+    assert isinstance(pending, PendingAction)
+    assert pending.confirm() == {"clicked": "#danger"}
 
 
-def test_try_command_launch_marks_browser_launched() -> None:
+def test_native_execute_launch_marks_browser_launched() -> None:
     browser = Browser(native_session=NativeSession(native=EchoNative()))
 
-    browser.try_command("launch")
+    browser.native.execute("launch")
 
     assert browser.is_launched is True
 
 
-def test_try_command_close_marks_browser_not_launched() -> None:
+def test_native_execute_close_marks_browser_not_launched() -> None:
     browser = Browser(native_session=NativeSession(native=EchoNative()))
-    browser.try_command("launch")
+    browser.native.execute("launch")
 
-    browser.try_command("close")
+    browser.native.execute("close")
 
     assert browser.is_launched is False
 
 
-def test_try_command_confirm_unwraps_nested_failure_and_clears_pending() -> None:
+def test_native_execute_confirm_unwraps_nested_failure_and_clears_pending() -> None:
     browser = Browser(native_session=NativeSession(native=FailingConfirmationNative()))
 
-    response = browser.try_command("click")
+    response = browser.native.execute("click")
     response_data = cast(dict[str, Any], response.data)
     assert response_data["confirmation_required"] is True
 
-    confirmed = browser.try_command("confirm", confirmation_id=response_data["confirmation_id"])
+    confirmed = browser.native.execute("confirm", confirmation_id=response_data["confirmation_id"])
 
     assert confirmed.success is False
     assert confirmed.action == "click"
-    with pytest.raises(ValueError, match="confirmation"):
-        browser.confirm()
+    with pytest.raises(TypeError):
+        cast(Any, browser.confirm)()
 
 
-def test_confirm_helper_clears_pending_after_consumed_nested_failure() -> None:
+def test_pending_action_reports_confirmed_action_failure() -> None:
     browser = Browser(native_session=NativeSession(native=FailingConfirmationNative()))
 
-    with pytest.raises(ActionConfirmationRequired):
-        browser.command("click")
+    with pytest.raises(ActionConfirmationRequired) as confirmation:
+        browser.native.data("click")
+    pending = confirmation.value.pending_action
     with pytest.raises(BrowserError) as failed:
-        browser.confirm()
+        pending.confirm()
 
     assert failed.value.action == "click"
-    with pytest.raises(ValueError, match="confirmation"):
-        browser.confirm()
+    with pytest.raises(BrowserError) as retry_failed:
+        pending.confirm()
+    assert retry_failed.value.action == "click"
 
 
 def test_failed_confirm_validation_keeps_pending_confirmation_for_retry() -> None:
@@ -616,10 +650,11 @@ def test_failed_confirm_validation_keeps_pending_confirmation_for_retry() -> Non
         )
     )
 
-    browser.try_command("click")
+    response = browser.native.execute("click")
+    pending = browser.pending_action(response)
     with pytest.raises(BrowserError) as first_confirm:
-        browser.confirm()
-    retry = browser.confirm()
+        pending.confirm()
+    retry = pending.confirm()
 
     assert first_confirm.value.action == "confirm"
     assert retry == {"clicked": "#danger"}
@@ -628,12 +663,11 @@ def test_failed_confirm_validation_keeps_pending_confirmation_for_retry() -> Non
 def test_confirmed_close_marks_browser_not_launched() -> None:
     native = ConfirmingActionNative("close")
     browser = Browser(native_session=NativeSession(native=native))
-    browser.launch()
+    browser.launch_process()
 
-    with pytest.raises(ActionConfirmationRequired) as confirmation:
-        browser.close()
+    browser.close()
 
-    assert browser.confirm(confirmation.value) == {}
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
     assert browser.is_launched is False
 
 
@@ -644,54 +678,159 @@ def test_confirmed_navigation_marks_browser_launched() -> None:
     with pytest.raises(ActionConfirmationRequired) as confirmation:
         browser.page.open("example.com")
 
-    browser.confirm(confirmation.value)
+    confirmation.value.pending_action.confirm()
 
     assert browser.is_launched is True
 
 
-def test_try_command_confirmed_tab_switch_returns_native_tab_data() -> None:
+def test_native_execute_confirmed_tab_switch_returns_native_tab_data() -> None:
     native = ConfirmingActionNative("tab_switch", {"id": "docs"})
     browser = Browser(native_session=NativeSession(native=native))
 
     with pytest.raises(ActionConfirmationRequired) as confirmation:
-        browser.tabs.switch("docs")
+        browser.tabs.switch(id="docs")
 
-    response = browser.try_command("confirm", confirmation_id=confirmation.value.confirmation_id)
+    response = browser.native.execute("confirm", confirmation_id=confirmation.value.confirmation_id)
 
     assert response.success is True
     assert response.data == {"id": "docs"}
 
 
-def test_execute_raw_returns_non_object_protocol_data() -> None:
+def test_native_data_can_return_non_object_protocol_data() -> None:
     browser = Browser(native_session=NativeSession(native=RawValueNative(["ok", 1, None])))
 
-    assert browser.execute_raw("raw_array") == ["ok", 1, None]
+    assert browser.native.data("raw_array", expect="any") == ["ok", 1, None]
 
 
-def test_try_command_preserves_non_object_protocol_data() -> None:
+def test_native_execute_preserves_non_object_protocol_data() -> None:
     browser = Browser(native_session=NativeSession(native=RawValueNative(["ok", 1, None])))
 
-    response = browser.try_command("raw_array")
+    response = browser.native.execute("raw_array")
 
     assert response.data == ["ok", 1, None]
 
 
-def test_command_rejects_non_object_protocol_data() -> None:
+def test_native_data_rejects_non_object_protocol_data_by_default() -> None:
     browser = Browser(native_session=NativeSession(native=RawValueNative(["ok", 1, None])))
 
-    with pytest.raises(BrowserError, match="execute_raw"):
-        browser.command("raw_array")
+    with pytest.raises(BrowserError, match='expect="any"'):
+        browser.native.data("raw_array")
 
 
 def test_launch_without_url_marks_browser_launched() -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native))
 
-    browser.launch()
+    browser.launch_process()
 
     launch = next(command for command in native.commands if command["action"] == "launch")
     assert "url" not in launch
     assert browser.is_launched is True
+
+
+def test_restore_options_are_attached_to_native_commands() -> None:
+    native = EchoNative()
+    browser = Browser(
+        native_session=NativeSession(
+            native=native,
+            session="next-loop",
+            restore=RestoreOptions(
+                key="next-loop",
+                save="never",
+                check_url="**/dashboard",
+                check_text="Dashboard",
+                check_fn="window.ready === true",
+            ),
+        ),
+    )
+
+    browser.page.open("https://example.com/dashboard")
+
+    command = native.commands[0]
+    assert command["action"] == "launch"
+    assert command["restoreKey"] == "next-loop"
+    assert command["restoreSave"] == "never"
+    assert command["restoreCheckUrl"] == "**/dashboard"
+    assert command["restoreCheckText"] == "Dashboard"
+    assert command["restoreCheckFn"] == "window.ready === true"
+
+
+def test_restore_accepts_explicit_key() -> None:
+    native = EchoNative()
+    browser = Browser(
+        native_session=NativeSession(
+            native=native,
+            restore=RestoreOptions(key="login-state"),
+        )
+    )
+
+    browser.launch_process()
+
+    command = native.commands[0]
+    assert command["action"] == "launch"
+    assert command["restoreKey"] == "login-state"
+
+
+def test_restore_options_reject_invalid_key() -> None:
+    with pytest.raises(ValueError, match="Invalid restore key"):
+        RestoreOptions(key="")
+
+
+def test_browser_rejects_ignored_native_session_restore_options() -> None:
+    with pytest.raises(ValueError, match="restore must be set on NativeSession"):
+        Browser(
+            session_options=BrowserSessionOptions(restore=RestoreOptions(key="login-state")),
+            native_session=NativeSession(native=EchoNative()),
+        )
+
+
+def test_async_restore_options_are_attached_to_native_commands() -> None:
+    async def run() -> None:
+        native = EchoNative()
+        browser = AsyncBrowser(
+            native_session=AsyncNativeSession(
+                native=native,
+                session="async-loop",
+                restore=RestoreOptions(key="async-loop", check_text="Dashboard"),
+            ),
+        )
+
+        await browser.launch_process()
+        await browser.aclose()
+
+        command = native.commands[0]
+        assert command["action"] == "launch"
+        assert command["restoreKey"] == "async-loop"
+        assert command["restoreCheckText"] == "Dashboard"
+
+    asyncio.run(run())
+
+
+def test_session_id_uses_canonical_cwd_and_sanitized_prefix() -> None:
+    current = str(Path.cwd().resolve())
+    expected_hash = hashlib.sha256(current.encode()).hexdigest()[:12]
+
+    session_id = ab.session_id(
+        scope="cwd",
+        prefix="Next Dev Loop: /tmp!",
+        path=Path.cwd(),
+    )
+
+    assert session_id == SessionId(
+        session=f"next-dev-loop-tmp-{expected_hash}",
+        scope="cwd",
+        path=current,
+        hash=expected_hash,
+    )
+    assert str(session_id) == session_id.session
+
+
+def test_session_info_uses_native_session_command() -> None:
+    native = ResponseNative({"session_info": {"session": "next-loop", "browserLaunched": False}})
+    browser = Browser(native_session=NativeSession(native=native))
+
+    assert browser.runtime.info()["session"] == "next-loop"
+    assert native.commands[0]["action"] == "session_info"
 
 
 def test_page_open_requires_url() -> None:
@@ -702,19 +841,67 @@ def test_page_open_requires_url() -> None:
 
 
 def test_browser_connect_uses_constructor_cdp_options_without_navigation() -> None:
-    browser = Browser(
-        cdp_url="ws://127.0.0.1:9222/devtools/browser/test",
+    browser = ab.notebook.configure(
+        force=True,
+        attach=CDPAttach(url="ws://127.0.0.1:9222/devtools/browser/test"),
         native_session=NativeSession(native=CdpConnectNative()),
     )
+    try:
+        assert browser.connect() == {"launched": True}
+        assert browser.tabs.list()[0].id == "t1"
+    finally:
+        ab.notebook.reset(force=True)
 
-    assert browser.connect() == {"launched": True}
+
+def test_browser_launch_classmethod_starts_with_named_options() -> None:
+    native = EchoNative()
+
+    browser = Browser.launch(
+        LaunchOptions(headless=False, hide_scrollbars=False),
+        session_options=BrowserSessionOptions(allowed_domains="example.com"),
+        native_session=NativeSession(native=native),
+    )
+
+    assert browser.is_launched is True
+    assert native.commands[0]["action"] == "launch"
+    assert native.commands[0]["headless"] is False
+    assert native.commands[0]["hideScrollbars"] is False
+    assert native.commands[0]["allowedDomains"] == "example.com"
+
+
+def test_browser_attach_classmethod_starts_cdp_target() -> None:
+    browser = Browser.attach(
+        CDPAttach(port=52980),
+        launch_options=LaunchOptions(hide_scrollbars=False),
+        native_session=NativeSession(native=CdpPortConnectNative()),
+    )
+
+    assert browser.is_launched is True
     assert browser.tabs.list()[0].id == "t1"
 
 
-def test_try_command_returns_failed_response_for_native_errors() -> None:
+def test_browser_from_session_names_lazy_session_controller() -> None:
+    browser = Browser.from_session(
+        "next-loop",
+        restore=RestoreOptions(key="next-loop"),
+        session_options=BrowserSessionOptions(allowed_domains="example.com"),
+    )
+
+    assert isinstance(browser, Browser)
+    assert browser.is_launched is False
+
+
+def test_cdp_attach_requires_one_target() -> None:
+    with pytest.raises(ValueError, match="exactly one"):
+        CDPAttach()
+    with pytest.raises(ValueError, match="exactly one"):
+        CDPAttach(url="ws://127.0.0.1:9222/devtools/browser/test", port=9222)
+
+
+def test_native_execute_returns_failed_response_for_native_errors() -> None:
     browser = Browser(native_session=NativeSession(native=ErrorNative()))
 
-    response = browser.try_command("explode")
+    response = browser.native.execute("explode")
 
     assert response.success is False
     assert response.action == "explode"
@@ -722,7 +909,7 @@ def test_try_command_returns_failed_response_for_native_errors() -> None:
 
 def test_close_error_preserves_launched_state() -> None:
     browser = Browser(native_session=NativeSession(native=CloseErrorNative()))
-    browser.launch()
+    browser.launch_process()
 
     with pytest.raises(BrowserError) as error:
         browser.close()
@@ -740,7 +927,7 @@ def test_browser_context_manager_preserves_body_exception_when_close_fails() -> 
     ):
         raise RuntimeError("body failed")
 
-    assert native.commands[-1]["action"] == "close"
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
 def test_browser_context_manager_surfaces_close_error_without_body_exception() -> None:
@@ -753,85 +940,90 @@ def test_browser_context_manager_surfaces_close_error_without_body_exception() -
         pass
 
     assert exc_info.value.action == "close"
-    assert native.commands[-1]["action"] == "close"
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
 def test_default_session_keeps_handle_when_close_fails() -> None:
     native = CloseErrorNative()
-    browser = ab.configure(native_session=NativeSession(native=native))
-    browser.launch()
+    browser = ab.notebook.configure(native_session=NativeSession(native=native))
+    browser.launch_process()
 
     with pytest.raises(BrowserError) as exc_info:
-        ab.close()
+        ab.notebook.close()
 
     assert exc_info.value.action == "close"
-    assert ab.default_browser() is browser
+    assert ab.notebook.default_browser() is browser
     assert browser.is_launched is True
 
 
 def test_default_session_force_close_discards_stale_handle_when_close_fails() -> None:
     native = CloseErrorNative()
-    browser = ab.configure(native_session=NativeSession(native=native))
-    browser.launch()
+    browser = ab.notebook.configure(native_session=NativeSession(native=native))
+    browser.launch_process()
 
-    ab.close(force=True)
+    ab.notebook.close(force=True)
 
-    assert ab.default_browser() is not browser
-    assert native.commands[-1]["action"] == "close"
+    assert ab.notebook.default_browser() is not browser
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
 def test_default_session_configure_rolls_back_when_old_browser_close_fails() -> None:
     native = CloseErrorNative()
-    original = ab.configure(native_session=NativeSession(native=native))
-    original.launch()
+    original = ab.notebook.configure(native_session=NativeSession(native=native))
+    original.launch_process()
 
     with pytest.raises(BrowserError):
-        ab.configure(native_session=NativeSession(native=EchoNative()))
+        ab.notebook.configure(native_session=NativeSession(native=EchoNative()))
 
-    assert ab.default_browser() is original
+    assert ab.notebook.default_browser() is original
     assert original.is_launched is True
 
 
 def test_default_session_force_configure_recovers_from_stale_default_browser() -> None:
     native = CloseErrorNative()
-    original = ab.configure(native_session=NativeSession(native=native))
-    original.launch()
+    original = ab.notebook.configure(native_session=NativeSession(native=native))
+    original.launch_process()
 
-    replacement = ab.configure(force=True, native_session=NativeSession(native=EchoNative()))
+    replacement = ab.notebook.configure(
+        force=True, native_session=NativeSession(native=EchoNative())
+    )
 
-    assert replacement is ab.default_browser()
+    assert replacement is ab.notebook.default_browser()
     assert replacement is not original
-    assert native.commands[-1]["action"] == "close"
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
 def test_default_session_force_reset_discards_stale_handle_after_close_failure() -> None:
     native = CloseErrorNative()
-    browser = ab.configure(
-        headless=False,
+    browser = ab.notebook.configure(
+        launch_options=LaunchOptions(headless=False),
         native_session=NativeSession(native=native),
     )
-    browser.launch()
+    browser.launch_process()
 
-    ab.reset(force=True)
+    ab.notebook.reset(force=True)
 
-    assert ab.default_browser() is not browser
-    assert native.commands[-1]["action"] == "close"
+    assert ab.notebook.default_browser() is not browser
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
 
-def test_default_session_configure_connects_immediately_for_cdp_options() -> None:
+def test_default_session_configure_keeps_cdp_attachment_explicit() -> None:
     native = CdpPortConnectNative()
 
     try:
-        browser = ab.configure(
-            cdp_port=52980,
-            hide_scrollbars=False,
+        browser = ab.notebook.configure(
+            attach=CDPAttach(port=52980),
+            launch_options=LaunchOptions(hide_scrollbars=False),
             native_session=NativeSession(native=native),
         )
 
+        assert browser.is_launched is False
+        assert native.connected is False
+        browser.connect()
         assert browser.is_launched is True
-        assert ab.tabs.list()[0].id == "t1"
+        assert ab.notebook.tabs.list()[0].id == "t1"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_confirm_helper_replays_pending_action() -> None:
@@ -841,7 +1033,7 @@ def test_confirm_helper_replays_pending_action() -> None:
     try:
         browser.find.role("button", name="Delete", exact=True).click()
     except ActionConfirmationRequired as confirmation:
-        result = browser.confirm(confirmation)
+        result = confirmation.pending_action.confirm()
     else:  # pragma: no cover
         raise AssertionError("confirmation was not required")
 
@@ -854,43 +1046,49 @@ def test_deny_helper_returns_native_denial() -> None:
 
     try:
         browser.find.role("button", name="Delete", exact=True).click()
-    except ActionConfirmationRequired:
-        denied = browser.deny()
+    except ActionConfirmationRequired as confirmation:
+        denied = confirmation.pending_action.deny()
 
     assert denied == {"denied": True, "action": "click"}
 
 
-def _first_launch_command(browser: Browser, native: EchoNative, **options: Any) -> dict[str, Any]:
-    browser.launch(**options)
+def _first_launch_command(
+    browser: Browser, native: EchoNative, options: LaunchOptions | None = None
+) -> dict[str, Any]:
+    browser.launch_process(options=options)
     return native.commands[0]
 
 
-def test_launch_serializes_constructor_path_options() -> None:
+def test_start_serializes_configured_path_options() -> None:
     native = EchoNative()
-    browser = Browser(
+    Browser.launch(
+        LaunchOptions(
+            profile=Path("profile"),
+            storage_state=Path("state.json"),
+            extensions=[Path("extension")],
+        ),
         native_session=NativeSession(native=native),
-        profile=Path("profile"),
-        storage_state=Path("state.json"),
-        extensions=[Path("extension")],
     )
 
-    command = _first_launch_command(browser, native)
+    command = native.commands[0]
 
     assert command["profile"] == "profile"
     assert command["storageState"] == "state.json"
     assert command["extensions"] == ["extension"]
 
 
-def test_launch_serializes_constructor_connection_options() -> None:
+def test_start_serializes_named_connection_options() -> None:
     native = EchoNative()
-    browser = Browser(
+    Browser.attach(
+        CDPAttach(url="ws://127.0.0.1:9222/devtools/browser/test"),
+        launch_options=LaunchOptions(
+            proxy=ProxyConfig("http://proxy:8080", bypass="localhost", username="u", password="p"),
+            provider="browserbase",
+        ),
         native_session=NativeSession(native=native),
-        proxy=ProxyConfig("http://proxy:8080", bypass="localhost", username="u", password="p"),
-        provider="browserbase",
-        cdp_url="ws://127.0.0.1:9222/devtools/browser/test",
     )
 
-    command = _first_launch_command(browser, native)
+    command = native.commands[0]
 
     assert command["proxy"] == {
         "server": "http://proxy:8080",
@@ -902,49 +1100,61 @@ def test_launch_serializes_constructor_connection_options() -> None:
     assert command["cdpUrl"] == "ws://127.0.0.1:9222/devtools/browser/test"
 
 
-def test_launch_serializes_constructor_display_options() -> None:
+def test_start_serializes_configured_display_options() -> None:
     native = EchoNative()
-    browser = Browser(
+    Browser.launch(
+        LaunchOptions(color_scheme="dark", hide_scrollbars=False),
         native_session=NativeSession(native=native),
-        color_scheme="dark",
-        hide_scrollbars=False,
     )
 
-    command = _first_launch_command(browser, native)
+    command = native.commands[0]
 
     assert command["colorScheme"] == "dark"
     assert command["hideScrollbars"] is False
 
 
-def test_launch_serializes_constructor_browser_args() -> None:
+def test_start_serializes_configured_browser_args() -> None:
     native = EchoNative()
-    browser = Browser(
+    Browser.launch(
+        LaunchOptions(args=["--disable-gpu"]),
         native_session=NativeSession(native=native),
-        args=["--disable-gpu"],
     )
 
-    command = _first_launch_command(browser, native)
+    command = native.commands[0]
 
     assert command["args"] == ["--disable-gpu"]
 
 
-def test_launch_serializes_call_options() -> None:
+def test_start_serializes_explicit_launch_options() -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native))
 
-    command = _first_launch_command(browser, native, download_path=Path("downloads"))
+    command = _first_launch_command(
+        browser,
+        native,
+        LaunchOptions(download_path=Path("downloads")),
+    )
 
     assert command["downloadPath"] == "downloads"
 
 
+def test_dashboard_start_after_native_start_raises() -> None:
+    browser = Browser(native_session=NativeSession(native=EchoNative()))
+
+    browser.page.title()
+
+    with pytest.raises(RuntimeError, match="dashboard must be started before"):
+        browser.dashboard.start()
+
+
 def test_launch_uses_configured_default_execution_options() -> None:
     native = EchoNative()
-    browser = Browser(
+    Browser.launch(
+        LaunchOptions(headless=False),
         native_session=NativeSession(native=native),
-        headless=False,
     )
 
-    command = _first_launch_command(browser, native)
+    command = native.commands[0]
 
     assert command["headless"] is False
 
@@ -953,7 +1163,7 @@ def test_launch_uses_configured_default_allowlist() -> None:
     native = EchoNative()
     browser = Browser(
         native_session=NativeSession(native=native),
-        allowed_domains="*.example.com",
+        session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
     )
 
     command = _first_launch_command(browser, native)
@@ -963,13 +1173,12 @@ def test_launch_uses_configured_default_allowlist() -> None:
 
 def test_launch_uses_configured_default_display_options() -> None:
     native = EchoNative()
-    browser = Browser(
+    Browser.launch(
+        LaunchOptions(color_scheme="dark", hide_scrollbars=False),
         native_session=NativeSession(native=native),
-        color_scheme="dark",
-        hide_scrollbars=False,
     )
 
-    command = _first_launch_command(browser, native)
+    command = native.commands[0]
 
     assert command["colorScheme"] == "dark"
     assert command["hideScrollbars"] is False
@@ -977,13 +1186,20 @@ def test_launch_uses_configured_default_display_options() -> None:
 
 def test_launch_call_options_override_configured_defaults() -> None:
     native = EchoNative()
-    browser = Browser(
+    browser = ab.notebook.configure(
+        force=True,
+        launch_options=LaunchOptions(headless=False, hide_scrollbars=False),
         native_session=NativeSession(native=native),
-        headless=False,
-        hide_scrollbars=False,
     )
 
-    command = _first_launch_command(browser, native, headless=True, hide_scrollbars=True)
+    try:
+        command = _first_launch_command(
+            browser,
+            native,
+            LaunchOptions(headless=True, hide_scrollbars=True),
+        )
+    finally:
+        ab.notebook.reset(force=True)
 
     assert command["headless"] is True
     assert command["hideScrollbars"] is True
@@ -993,7 +1209,7 @@ def test_allowed_domains_allow_raw_navigation_inside_allowlist() -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="*.example.com"))
 
-    browser.command("tab_new", url="https://docs.example.com")
+    browser.native.data("tab_new", url="https://docs.example.com")
 
     assert native.commands[0]["action"] == "tab_new"
 
@@ -1003,7 +1219,7 @@ def test_allowed_domains_block_raw_navigation_outside_allowlist() -> None:
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="*.example.com"))
 
     with pytest.raises(BrowserError, match="allowed domains") as tab_error:
-        browser.command("tab_new", url="https://evil.example")
+        browser.native.data("tab_new", url="https://evil.example")
 
     assert tab_error.value.code == "allowed_domains"
     assert native.commands == []
@@ -1088,7 +1304,7 @@ def test_allowed_domains_filter_confirmed_cookie_reads() -> None:
 
     with pytest.raises(ActionConfirmationRequired) as confirmation:
         browser.cookies.get()
-    data = browser.confirm(confirmation.value)
+    data = confirmation.value.pending_action.confirm()
 
     assert [cookie["name"] for cookie in data["cookies"]] == ["kept"]
 
@@ -1099,7 +1315,7 @@ def test_allowed_domains_preserve_confirmed_unsafe_cookie_export() -> None:
 
     with pytest.raises(ActionConfirmationRequired) as confirmation:
         browser.cookies.get(unsafe_export_all=True)
-    data = browser.confirm(confirmation.value)
+    data = confirmation.value.pending_action.confirm()
 
     assert {cookie["name"] for cookie in data["cookies"]} == {"kept", "dropped"}
     assert native.commands[0]["unsafeExportAll"] is True
@@ -1108,13 +1324,13 @@ def test_allowed_domains_preserve_confirmed_unsafe_cookie_export() -> None:
 def test_allowed_domains_applies_to_supplied_native_session() -> None:
     native = EchoNative()
     browser = Browser(
-        allowed_domains="example.com",
+        session_options=BrowserSessionOptions(allowed_domains="example.com"),
         native_session=NativeSession(native=native),
     )
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command("tab_new", url="https://evil.example")
-    browser.command("tab_new", url="https://example.com")
+        browser.native.data("tab_new", url="https://evil.example")
+    browser.native.data("tab_new", url="https://example.com")
 
     assert denied.value.code == "allowed_domains"
     assert [command["url"] for command in native.commands] == ["https://example.com"]
@@ -1124,9 +1340,9 @@ def test_allowed_domains_raw_command_cannot_weaken_session_policy() -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
-    browser.command("device_list", allowedDomains="evil.example")
+    browser.native.data("device_list", allowedDomains="evil.example")
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command("tab_new", url="https://evil.example")
+        browser.native.data("tab_new", url="https://evil.example")
 
     assert denied.value.code == "allowed_domains"
     assert [command["action"] for command in native.commands] == ["device_list"]
@@ -1162,7 +1378,7 @@ def test_allowed_domains_guard_raw_url_target_actions(
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command(action, **params)
+        browser.native.data(action, **params)
 
     assert denied.value.code == "allowed_domains"
     assert native.commands == []
@@ -1196,7 +1412,7 @@ def test_allowed_domains_guard_host_qualified_patterns(
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command(action, url=pattern)
+        browser.native.data(action, url=pattern)
 
     assert denied.value.code == "allowed_domains"
     assert native.commands == []
@@ -1214,7 +1430,7 @@ def test_allowed_domains_allow_relative_wildcard_patterns(pattern: str) -> None:
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
-    browser.command("route", url=pattern)
+    browser.native.data("route", url=pattern)
 
     assert native.commands[0]["url"] == pattern
 
@@ -1236,7 +1452,7 @@ def test_allowed_domains_guard_single_label_and_ipv6_pattern_hosts(pattern: str)
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command("route", url=pattern)
+        browser.native.data("route", url=pattern)
 
     assert denied.value.code == "allowed_domains"
     assert native.commands == []
@@ -1263,7 +1479,7 @@ def test_allowed_domains_guard_wildcard_slash_host_patterns(
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command(action, url=pattern)
+        browser.native.data(action, url=pattern)
 
     assert denied.value.code == "allowed_domains"
     assert native.commands == []
@@ -1286,7 +1502,7 @@ def test_allowed_domains_allow_single_label_and_ipv6_pattern_hosts(
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native, allowed_domains=allowed_domains))
 
-    browser.command("route", url=pattern)
+    browser.native.data("route", url=pattern)
 
     assert native.commands[0]["url"] == pattern
 
@@ -1307,7 +1523,7 @@ def test_allowed_domains_reject_unanchored_wildcard_localhost_pattern_hosts(
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="localhost"))
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command("route", url=pattern)
+        browser.native.data("route", url=pattern)
 
     assert denied.value.code == "allowed_domains"
     assert native.commands == []
@@ -1325,7 +1541,7 @@ def test_allowed_domains_allow_exact_host_patterns_inside_allowlist(pattern: str
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
-    browser.command("route", url=pattern)
+    browser.native.data("route", url=pattern)
 
     assert native.commands[0]["url"] == pattern
 
@@ -1342,7 +1558,7 @@ def test_allowed_domains_exact_host_denies_wildcard_host_patterns(pattern: str) 
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="example.com"))
 
     with pytest.raises(BrowserError, match="allowed domains") as denied:
-        browser.command("route", url=pattern)
+        browser.native.data("route", url=pattern)
 
     assert denied.value.code == "allowed_domains"
     assert native.commands == []
@@ -1363,7 +1579,7 @@ def test_allowed_domains_allow_wildcard_host_patterns_inside_wildcard_allowlist(
     native = EchoNative()
     browser = Browser(native_session=NativeSession(native=native, allowed_domains="*.example.com"))
 
-    browser.command("route", url=pattern)
+    browser.native.data("route", url=pattern)
 
     assert native.commands[0]["url"] == pattern
 
@@ -1402,13 +1618,13 @@ def test_async_allowed_domains_applies_to_supplied_native_session() -> None:
 
     async def run() -> None:
         browser = AsyncBrowser(
-            allowed_domains="example.com",
+            session_options=BrowserSessionOptions(allowed_domains="example.com"),
             native_session=AsyncNativeSession(native=native),
         )
 
         with pytest.raises(BrowserError, match="allowed domains") as denied:
-            await browser.command("tab_new", url="https://evil.example")
-        await browser.command("tab_new", url="https://example.com")
+            await browser.native.data("tab_new", url="https://evil.example")
+        await browser.native.data("tab_new", url="https://example.com")
         await browser.aclose()
 
         assert denied.value.code == "allowed_domains"
@@ -1429,7 +1645,7 @@ def test_async_allowed_domains_filter_confirmed_cookie_reads() -> None:
         try:
             with pytest.raises(ActionConfirmationRequired) as confirmation:
                 await browser.cookies.get()
-            return await browser.confirm(confirmation.value)
+            return await confirmation.value.pending_action.confirm()
         finally:
             await browser.aclose()
 
@@ -1441,7 +1657,7 @@ def test_async_allowed_domains_filter_confirmed_cookie_reads() -> None:
 def test_cookie_get_returns_typed_cookie() -> None:
     native = ResponseNative(
         {
-            "cookies_get": {"cookies": [{"name": "session"}]},
+            "cookies_get": {"cookies": [{"name": "session", "value": "abc"}]},
         }
     )
     browser = Browser(native_session=NativeSession(native=native))
@@ -1450,6 +1666,7 @@ def test_cookie_get_returns_typed_cookie() -> None:
 
     assert isinstance(cookie, Cookie)
     assert cookie.name == "session"
+    assert cookie.value == "abc"
 
 
 def test_cookie_set_serializes_http_only_option() -> None:
@@ -1489,7 +1706,7 @@ def test_state_show_returns_native_state_path() -> None:
 def test_network_requests_return_typed_models() -> None:
     native = ResponseNative(
         {
-            "requests": {"requests": [{"requestId": "r1"}]},
+            "requests": {"requests": [{"requestId": "r1", "url": "https://example.com/api"}]},
         }
     )
     browser = Browser(native_session=NativeSession(native=native))
@@ -1498,6 +1715,17 @@ def test_network_requests_return_typed_models() -> None:
 
     assert isinstance(request, NetworkRequest)
     assert request.id == "r1"
+
+
+def test_network_requests_raise_parse_error_for_missing_required_fields() -> None:
+    browser = Browser(
+        native_session=NativeSession(
+            native=ResponseNative({"requests": {"requests": [{"url": "/"}]}})
+        )
+    )
+
+    with pytest.raises(NativeParseError, match="NetworkRequest"):
+        browser.network.requests()
 
 
 def test_network_request_detail_returns_typed_model() -> None:
@@ -1517,6 +1745,24 @@ def test_network_request_detail_returns_typed_model() -> None:
 
     assert isinstance(detail, RequestDetail)
     assert detail.status == 200
+
+
+def test_tabs_list_raises_parse_error_for_missing_required_fields() -> None:
+    browser = Browser(
+        native_session=NativeSession(native=ResponseNative({"tab_list": {"tabs": [{"id": "t1"}]}}))
+    )
+
+    with pytest.raises(NativeParseError, match="TabInfo"):
+        browser.tabs.list()
+
+
+def test_bounding_box_raises_parse_error_for_partial_native_box() -> None:
+    browser = Browser(
+        native_session=NativeSession(native=ResponseNative({"boundingbox": {"x": 1}}))
+    )
+
+    with pytest.raises(NativeParseError, match="BoundingBox"):
+        browser.find.css("#box").bounding_box()
 
 
 def test_network_route_serializes_route_response() -> None:
@@ -1598,6 +1844,35 @@ def test_tabs_new_returns_typed_model_through_browser_namespace() -> None:
 
     assert isinstance(new_tab, TabInfo)
     assert new_tab.id == "t2"
+
+
+def test_tabs_switch_requires_one_named_selector() -> None:
+    browser = Browser(native_session=NativeSession(native=EchoNative()))
+
+    with pytest.raises(ValueError, match="one of id, label, or index"):
+        browser.tabs.switch()
+    with pytest.raises(ValueError, match="exactly one"):
+        browser.tabs.switch(id="t1", label="main")
+    with pytest.raises(ValueError, match="non-negative"):
+        browser.tabs.switch(index=-1)
+
+
+def test_tabs_close_accepts_named_selector_or_active_tab() -> None:
+    native = ResponseNative(
+        {
+            "tab_list": {
+                "tabs": [{"id": "t-docs", "url": "https://example.com/docs", "label": "docs"}]
+            },
+            "tab_close": {},
+        }
+    )
+    browser = Browser(native_session=NativeSession(native=native))
+
+    browser.tabs.close(label="docs")
+    browser.tabs.close()
+
+    assert native.commands[1]["tabId"] == "t-docs"
+    assert "tabId" not in native.commands[2]
 
 
 def test_diagnostics_console_returns_typed_models_through_browser_namespace() -> None:
@@ -1724,8 +1999,7 @@ def test_page_read_returns_typed_result_and_command_payload() -> None:
 
     result = browser.page.read(
         "example.com/docs",
-        require_md=True,
-        llms="index",
+        mode=ReadMode.llms_index(require_markdown=True),
         filter="auth",
         timeout_ms=2500,
         headers={"X-Agent": "pyagentbrowser"},
@@ -1769,7 +2043,7 @@ def test_page_read_without_url_launches_before_reading_active_page() -> None:
     )
     browser = Browser(native_session=NativeSession(native=native))
 
-    result = browser.page.read(outline=True)
+    result = browser.page.read(mode=ReadMode.outline_only())
 
     assert result.source == "active-tab-html-outline"
     assert [command["action"] for command in native.commands] == ["launch", "read"]
@@ -1782,9 +2056,15 @@ def test_page_read_rejects_conflicting_or_invalid_options() -> None:
     invalid_llms = cast(Any, "toc")
 
     with pytest.raises(ValueError, match="llms"):
-        browser.page.read("example.com", llms=invalid_llms)
+        browser.page.read("example.com", mode=ReadMode(llms=invalid_llms))
     with pytest.raises(ValueError, match="llms"):
-        browser.page.read("example.com", llms="full", outline=True)
+        browser.page.read("example.com", mode=ReadMode(llms="full", outline=True))
+    with pytest.raises(ValueError, match=r"ReadMode\.html"):
+        browser.page.read("example.com", mode=ReadMode(raw=True, require_markdown=True))
+    with pytest.raises(ValueError, match=r"ReadMode\.html"):
+        browser.page.read("example.com", mode=ReadMode(raw=True, llms="index"))
+    with pytest.raises(ValueError, match=r"ReadMode\.outline_only"):
+        browser.page.read("example.com", mode=ReadMode(require_markdown=True, outline=True))
     with pytest.raises(ValueError, match="timeout_ms"):
         browser.page.read("example.com", timeout_ms=0)
 
@@ -1919,112 +2199,116 @@ def test_screenshot_wait_ms_rejects_negative_values(tmp_path: Path) -> None:
 
 def test_package_root_default_browser_session_uses_configured_browser() -> None:
     native = EchoNative()
-    browser = ab.configure(
+    browser = ab.notebook.configure(
         native_session=NativeSession(native=native),
-        headless=False,
-        allowed_domains="*.example.com",
+        launch_options=LaunchOptions(headless=False),
+        session_options=BrowserSessionOptions(allowed_domains="*.example.com"),
     )
 
     try:
-        assert browser is ab.default_browser()
-        assert ab.page.title() == ""
+        assert browser is ab.notebook.default_browser()
+        assert ab.notebook.page.title() == ""
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_package_root_capture_namespace_returns_screenshot_view(tmp_path: Path) -> None:
     path = tmp_path / "page.png"
     path.write_bytes(b"fake png bytes")
-    ab.configure(native_session=NativeSession(native=ScreenshotNative(path)))
+    ab.notebook.configure(native_session=NativeSession(native=ScreenshotNative(path)))
 
     try:
-        shot = ab.capture.screenshot()
+        shot = ab.notebook.capture.screenshot()
         assert isinstance(shot, Screenshot)
         assert shot.path == path
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def _configure_package_root_cdp(monkeypatch: pytest.MonkeyPatch) -> None:
     cdp_controller = importlib.import_module("pyagentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", _PublicCDPClient)
-    ab.configure(native_session=NativeSession(native=_CDPNative()))
+    ab.notebook.configure(native_session=NativeSession(native=_CDPNative()))
 
 
-def test_package_root_frames_list_returns_frame_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_notebook_cdp_frames_list_returns_frame_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        frames = {frame.id: frame for frame in ab.frames.list()}
+        frames = {frame.id: frame for frame in ab.notebook.cdp.frames.list()}
         assert frames["main"].url == "https://example.com"
         assert frames["child"].name == "target"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
-def test_package_root_frames_get_by_url_returns_matching_frame(
+def test_notebook_cdp_frames_get_by_url_returns_matching_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.frames.get(url="https://example.com/one/frame").id == "child"
+        assert ab.notebook.cdp.frames.get(url="https://example.com/one/frame").id == "child"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_package_root_cdp_evaluate_uses_frame_selector(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.cdp.evaluate("document.title", frame="#target-frame").endswith("-child")
+        assert ab.notebook.cdp.evaluate("document.title", frame="#target-frame").endswith("-child")
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
-def test_package_root_frames_lookup_by_selector(
+def test_notebook_cdp_frames_lookup_by_selector(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.frames.get(selector="#target-frame").id == "child"
+        assert ab.notebook.cdp.frames.get(selector="#target-frame").id == "child"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
-def test_package_root_frames_lookup_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_notebook_cdp_frames_lookup_by_name(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.frames.get(name="target").id == "child"
+        assert ab.notebook.cdp.frames.get(name="target").id == "child"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
-def test_package_root_frames_switch_returns_selected_frame(
+def test_notebook_active_frame_select_returns_selected_frame(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.frames.switch(selector="#target-frame")["frame"] == "#target-frame"
+        assert ab.notebook.active_frame.select(selector="#target-frame")["frame"] == (
+            "#target-frame"
+        )
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
-def test_package_root_frames_main_restores_main_frame(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_notebook_active_frame_main_restores_main_frame(monkeypatch: pytest.MonkeyPatch) -> None:
     _configure_package_root_cdp(monkeypatch)
 
     try:
-        assert ab.frames.main()["frame"] == "main"
+        assert ab.notebook.active_frame.main()["frame"] == "main"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_package_root_exports_supported_public_names() -> None:
     exported = set(ab.__all__)
     assert exported >= _ROOT_EXPORT_CONTRACT
+    assert CDPClosedError is ab.CDPClosedError
+    assert ConfirmationTarget is ab.ConfirmationTarget
     for name in ab.__all__:
         assert hasattr(ab, name), name
         assert not name.startswith("_") or name in {
@@ -2042,18 +2326,33 @@ def test_package_versions_expose_upstream_alias() -> None:
     assert ab.__agent_browser_commit__ == ab.__upstream_commit__
 
 
-@pytest.mark.parametrize("namespace", sorted(_PUBLIC_NAMESPACE_NAMES))
-def test_package_root_namespace_proxy_is_non_callable(namespace: str) -> None:
-    assert namespace in ab.__all__
-    assert not callable(getattr(ab, namespace))
+def test_package_root_does_not_export_default_browser_proxies() -> None:
+    removed = _NOTEBOOK_NAMESPACE_NAMES | {"close", "configure", "default_browser", "reset"}
+
+    assert removed.isdisjoint(ab.__all__)
+    for name in removed:
+        value = getattr(ab, name, None)
+        if value is None:
+            continue
+        assert getattr(value, "__name__", "").startswith(f"pyagentbrowser.{name}"), name
 
 
-@pytest.mark.parametrize("namespace", sorted(_PUBLIC_NAMESPACE_NAMES))
-def test_package_root_namespace_proxy_matches_browser_methods(namespace: str) -> None:
+@pytest.mark.parametrize("namespace", sorted(_NOTEBOOK_NAMESPACE_NAMES))
+def test_notebook_namespace_proxy_is_non_callable(namespace: str) -> None:
+    assert namespace in ab.notebook.__all__
+    assert not callable(getattr(ab.notebook, namespace))
+
+
+@pytest.mark.parametrize("namespace", sorted(_NOTEBOOK_NAMESPACE_NAMES))
+def test_notebook_namespace_proxy_matches_browser_methods(namespace: str) -> None:
     browser = Browser(native_session=NativeSession(native=EchoNative()))
-    proxy_methods = _public_method_names(getattr(ab, namespace))
+    proxy_methods = _public_method_names(getattr(ab.notebook, namespace))
     browser_methods = _public_method_names(getattr(browser, namespace))
     assert proxy_methods == browser_methods
+
+
+def test_package_root_exposes_pure_session_id_helper() -> None:
+    assert ab.session_id(prefix="docs").session.startswith("docs-")
 
 
 def _browser_with_public_cdp(monkeypatch: pytest.MonkeyPatch) -> Browser:
@@ -2068,7 +2367,7 @@ def test_cdp_navigation_invalidates_frame_and_context_handles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     browser = _browser_with_public_cdp(monkeypatch)
-    frame = browser.frames.get(name="target")
+    frame = browser.cdp.frames.get(name="target")
     context = frame.context()
     assert frame.evaluate("location.href").startswith("context:s-one")
 
@@ -2085,7 +2384,7 @@ def test_cdp_refreshed_frame_works_after_navigation(monkeypatch: pytest.MonkeyPa
 
     browser.page.set_content("<h1>Next</h1>")
 
-    refreshed = browser.frames.get(name="target")
+    refreshed = browser.cdp.frames.get(name="target")
     assert refreshed.evaluate("location.href").startswith("context:s-one")
 
 
@@ -2093,9 +2392,9 @@ def test_cdp_tab_switch_invalidates_old_target_handles(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     browser = _browser_with_public_cdp(monkeypatch)
-    frame = browser.frames.get(name="target")
+    frame = browser.cdp.frames.get(name="target")
 
-    browser.tabs.switch("docs")
+    browser.tabs.switch(id="docs")
 
     with pytest.raises(CDPStaleObjectError):
         frame.evaluate("location.href")
@@ -2104,15 +2403,15 @@ def test_cdp_tab_switch_invalidates_old_target_handles(
 
 def test_package_root_default_session_matches_readme_agent_workflow() -> None:
     try:
-        ab.configure(native_session=NativeSession(native=ReadmeWorkflowNative()))
-        ab.page.open("example.com")
-        page = ab.agent.observe()
+        ab.notebook.configure(native_session=NativeSession(native=ReadmeWorkflowNative()))
+        ab.notebook.page.open("example.com")
+        page = ab.notebook.agent.observe()
         assert "More information" in page.text
-        ab.find.text("More information").click()
-        assert ab.page.title() == "Example"
-        assert ab.page.url() == "https://example.com"
+        ab.notebook.find.text("More information").click()
+        assert ab.notebook.page.title() == "Example"
+        assert ab.notebook.page.url() == "https://example.com"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_locator_check_returns_chainable_handle() -> None:
@@ -2164,10 +2463,11 @@ def test_async_context_manager_preserves_body_exception_when_close_fails() -> No
     async def run() -> None:
         native = CloseErrorNative()
         with pytest.raises(RuntimeError, match="body failed"):
-            async with AsyncBrowser(native_session=AsyncNativeSession(native=native)):
+            async with AsyncBrowser(native_session=AsyncNativeSession(native=native)) as browser:
+                await browser.launch_process()
                 raise RuntimeError("body failed")
 
-        assert native.commands[-1]["action"] == "close"
+        assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
     asyncio.run(run())
 
@@ -2176,11 +2476,11 @@ def test_async_context_manager_surfaces_close_error_without_body_exception() -> 
     async def run() -> None:
         native = CloseErrorNative()
         with pytest.raises(BrowserError) as exc_info:
-            async with AsyncBrowser(native_session=AsyncNativeSession(native=native)):
-                pass
+            async with AsyncBrowser(native_session=AsyncNativeSession(native=native)) as browser:
+                await browser.launch_process()
 
         assert exc_info.value.action == "close"
-        assert native.commands[-1]["action"] == "close"
+        assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
 
     asyncio.run(run())
 
@@ -2221,12 +2521,12 @@ def test_browser_error_code_extraction_is_table_driven(
     assert BrowserError("click", "failed", response).code == expected
 
 
-def test_browser_async_command_preserves_raw_escape_hatch_payload() -> None:
+def test_browser_async_native_data_preserves_raw_escape_hatch_payload() -> None:
     async def run() -> None:
         native = EchoNative()
         browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
 
-        await browser.command(
+        await browser.native.data(
             "dispatch",
             selector="#target",
             event="click",
@@ -2271,7 +2571,11 @@ def test_browser_async_page_read_returns_typed_result() -> None:
         )
         browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
 
-        result = await browser.page.read("example.com/docs", outline=True, timeout_ms=1000)
+        result = await browser.page.read(
+            "example.com/docs",
+            mode=ReadMode.outline_only(),
+            timeout_ms=1000,
+        )
         await browser.aclose()
 
         assert isinstance(result, ReadResult)
@@ -2285,7 +2589,9 @@ def test_browser_async_page_read_returns_typed_result() -> None:
 
 def test_browser_async_tabs_new_uses_public_namespace() -> None:
     async def run() -> None:
-        native = ResponseNative({"tab_new": {"tab": {"id": "t1", "label": "docs"}}})
+        native = ResponseNative(
+            {"tab_new": {"tab": {"id": "t1", "url": "https://example.com/docs", "label": "docs"}}}
+        )
         browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
 
         tab = await browser.tabs.new("https://example.com/docs", label="docs")
@@ -2375,12 +2681,11 @@ def test_browser_async_locator_input_value_returns_typed_text() -> None:
 
 def test_browser_async_connect_uses_constructor_cdp_options_without_navigation() -> None:
     async def run() -> None:
-        browser = AsyncBrowser(
-            cdp_url="ws://127.0.0.1:9222/devtools/browser/test",
+        browser = await AsyncBrowser.attach(
+            CDPAttach(url="ws://127.0.0.1:9222/devtools/browser/test"),
             native_session=AsyncNativeSession(native=CdpConnectNative()),
         )
 
-        assert await browser.connect() == {"launched": True}
         assert (await browser.tabs.list())[0].id == "t1"
         await browser.aclose()
 
@@ -2478,7 +2783,7 @@ def _sync_async_namespace_pairs() -> list[tuple[object, object, str]]:
     return [
         *[
             (getattr(browser, namespace), getattr(async_browser, namespace), namespace)
-            for namespace in sorted(_PUBLIC_NAMESPACE_NAMES)
+            for namespace in sorted(_BROWSER_NAMESPACE_NAMES)
         ],
         (browser.find.css("#target"), async_browser.find.css("#target"), "locator"),
         (browser.find.text("Continue"), async_browser.find.text("Continue"), "semantic locator"),
@@ -2555,7 +2860,7 @@ def test_browser_async_public_surface_does_not_block_event_loop() -> None:
     async def run() -> None:
         native = BlockingNative()
         browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
-        blocked = asyncio.create_task(browser.command("block"))
+        blocked = asyncio.create_task(browser.native.data("block"))
         assert await asyncio.to_thread(native.started.wait, 1.0)
 
         ticks = 0
@@ -2575,6 +2880,55 @@ def test_browser_async_public_surface_does_not_block_event_loop() -> None:
     asyncio.run(run())
 
 
+def test_async_close_reports_queued_work_without_cancelling_active_native_work() -> None:
+    async def run() -> None:
+        native = BlockingNative()
+        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
+        active = asyncio.create_task(browser.native.data("block"))
+        assert await asyncio.to_thread(native.started.wait, 1.0)
+        queued = asyncio.create_task(browser.native.data("queued"))
+
+        with pytest.raises(RuntimeError, match="worker did not stop"):
+            await browser.aclose(timeout=0.1)
+
+        assert not active.done()
+        with pytest.raises(RuntimeError, match="AsyncNativeSession is closed"):
+            await queued
+        native.release.set()
+        assert await active == {"ok": True}
+        await browser.aclose()
+        assert [command["action"] for command in native.commands] == [
+            "block",
+            "__agent_browser_internal_shutdown",
+        ]
+
+    asyncio.run(run())
+
+
+def test_async_close_skips_queued_work_after_active_command_finishes() -> None:
+    async def run() -> None:
+        native = BlockingNative()
+        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
+        active = asyncio.create_task(browser.native.data("block"))
+        assert await asyncio.to_thread(native.started.wait, 1.0)
+        queued = asyncio.create_task(browser.native.data("queued"))
+
+        close_task = asyncio.create_task(browser.close(timeout=1.0))
+        await asyncio.sleep(0)
+        native.release.set()
+
+        assert await active == {"ok": True}
+        with pytest.raises(RuntimeError, match="AsyncNativeSession is closed"):
+            await queued
+        await close_task
+        assert [command["action"] for command in native.commands] == [
+            "block",
+            "__agent_browser_internal_shutdown",
+        ]
+
+    asyncio.run(run())
+
+
 def test_async_confirm_rejects_wrong_id() -> None:
     async def run() -> None:
         browser = AsyncBrowser(
@@ -2582,7 +2936,7 @@ def test_async_confirm_rejects_wrong_id() -> None:
         )
         try:
             with pytest.raises(ActionConfirmationRequired) as exc_info:
-                await browser.command("click")
+                await browser.native.data("click")
             with pytest.raises(BrowserError) as wrong_id:
                 await browser.confirm("wrong")
             assert wrong_id.value.action == "confirm"
@@ -2600,27 +2954,30 @@ def test_async_confirm_replays_pending_action() -> None:
         )
         try:
             with pytest.raises(ActionConfirmationRequired) as exc_info:
-                await browser.command("click")
-            assert await browser.confirm(exc_info.value) == {"clicked": "#danger"}
+                await browser.native.data("click")
+            assert isinstance(exc_info.value.pending_action, AsyncPendingAction)
+            assert await exc_info.value.pending_action.confirm() == {"clicked": "#danger"}
         finally:
             await browser.aclose()
 
     asyncio.run(run())
 
 
-def test_async_failed_confirm_clears_pending_confirmation() -> None:
+def test_async_pending_action_reports_confirmed_action_failure() -> None:
     async def run() -> None:
         browser = AsyncBrowser(
             native_session=AsyncNativeSession(native=FailingConfirmationNative())
         )
         try:
-            with pytest.raises(ActionConfirmationRequired):
-                await browser.command("click")
+            with pytest.raises(ActionConfirmationRequired) as confirmation:
+                await browser.native.data("click")
+            pending = confirmation.value.pending_action
             with pytest.raises(BrowserError) as failed:
-                await browser.confirm()
+                await pending.confirm()
             assert failed.value.action == "click"
-            with pytest.raises(ValueError, match="confirmation"):
-                await browser.confirm()
+            with pytest.raises(BrowserError) as retry_failed:
+                await pending.confirm()
+            assert retry_failed.value.action == "click"
         finally:
             await browser.aclose()
 
@@ -2637,7 +2994,7 @@ def test_async_confirmed_navigation_marks_browser_launched() -> None:
         try:
             with pytest.raises(ActionConfirmationRequired) as confirmation:
                 await browser.page.open("example.com")
-            await browser.confirm(confirmation.value)
+            await confirmation.value.pending_action.confirm()
             assert browser.is_launched is True
         finally:
             await browser.aclose()
@@ -2650,23 +3007,18 @@ def test_async_confirmed_close_marks_browser_not_launched() -> None:
         browser = AsyncBrowser(
             native_session=AsyncNativeSession(native=ConfirmingActionNative("close"))
         )
-        try:
-            await browser.launch()
-            with pytest.raises(ActionConfirmationRequired) as confirmation:
-                await browser.close()
-            await browser.confirm(confirmation.value)
-            assert browser.is_launched is False
-        finally:
-            await browser.aclose()
+        await browser.launch_process()
+        await browser.close()
+        assert browser.is_launched is False
 
     asyncio.run(run())
 
 
-def test_async_execute_raw_returns_non_object_native_data() -> None:
+def test_async_native_data_returns_non_object_native_data() -> None:
     async def run() -> None:
         browser = AsyncBrowser(native_session=AsyncNativeSession(native=RawValueNative(["items"])))
         try:
-            assert await browser.execute_raw("raw_array") == ["items"]
+            assert await browser.native.data("raw_array", expect="any") == ["items"]
         finally:
             await browser.aclose()
 
@@ -2719,18 +3071,18 @@ class _FrameNative:
         return json.dumps({"id": command["id"], "success": True, "data": data})
 
 
-def test_frame_helpers_switch_selector() -> None:
+def test_active_frame_selects_selector() -> None:
     native = _FrameNative()
     browser = Browser(native_session=NativeSession(native=native))
 
-    assert browser.frames.switch("@e1") == {"frame": "@e1"}
+    assert browser.active_frame.select(selector="@e1") == {"frame": "@e1"}
 
 
-def test_frame_helpers_restore_main_frame() -> None:
+def test_active_frame_restores_main_frame() -> None:
     native = _FrameNative()
     browser = Browser(native_session=NativeSession(native=native))
 
-    assert browser.frames.main() == {"frame": "main"}
+    assert browser.active_frame.main() == {"frame": "main"}
 
 
 def test_download_wait_returns_requested_path() -> None:

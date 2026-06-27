@@ -7,11 +7,15 @@ from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
 from queue import Queue
-from threading import Event, Thread
+from threading import Event, Lock, Thread
 from typing import Any
 
-from pyagentbrowser._browser_common import response_data_mapping
-from pyagentbrowser.models import BrowserResponse, DashboardOptions, JSONValue
+from pyagentbrowser._browser_common import (
+    INTERNAL_SHUTDOWN_ACTION,
+    action_closes_browser,
+    response_data_mapping,
+)
+from pyagentbrowser.models import BrowserResponse, DashboardOptions, JSONValue, RestoreOptions
 from pyagentbrowser.session import (
     DEFAULT_TIMEOUT_MS,
     NativeEngine,
@@ -28,12 +32,14 @@ class _AsyncCommand:
     loop: asyncio.AbstractEventLoop
     future: asyncio.Future[BrowserResponse]
     cancelled: Event
+    started: Event
 
 
 @dataclass(frozen=True, slots=True)
 class _AsyncNativeConfig:
     session: str | None
-    session_name: str | None
+    restore: RestoreOptions | None
+    namespace: str | None
     default_timeout_ms: int | None
     allowed_domains: str | None
     engine: str | None
@@ -54,7 +60,8 @@ class AsyncNativeSession:
         self,
         *,
         session: str | None = None,
-        session_name: str | None = None,
+        restore: RestoreOptions | None = None,
+        namespace: str | None = None,
         default_timeout_ms: int | None = DEFAULT_TIMEOUT_MS,
         allowed_domains: str | None = None,
         engine: str | None = None,
@@ -69,7 +76,8 @@ class AsyncNativeSession:
         self._thread: Thread | None = None
         self._config = _AsyncNativeConfig(
             session=session,
-            session_name=session_name,
+            restore=restore,
+            namespace=namespace,
             default_timeout_ms=default_timeout_ms,
             allowed_domains=allowed_domains,
             engine=engine,
@@ -81,13 +89,26 @@ class AsyncNativeSession:
         )
         self._startup_error: list[BaseException] = []
         self._closed = False
+        self._pending_lock = Lock()
+        self._pending_commands: list[_AsyncCommand] = []
         self._finalizer = weakref.finalize(self, _stop_async_worker, self._queue)
+
+    @property
+    def closed(self) -> bool:
+        """Whether close has been requested for this async native session."""
+        return self._closed
 
     def set_allowed_domains(self, allowed_domains: str | None) -> None:
         """Replace the Python-side domain allowlist before the worker starts."""
         if self._thread is not None:
             raise RuntimeError("cannot change allowed_domains after AsyncNativeSession starts")
         self._config = replace(self._config, allowed_domains=allowed_domains)
+
+    def set_dashboard(self, dashboard: bool | DashboardOptions | None) -> None:
+        """Configure dashboard startup before the async worker starts."""
+        if self._thread is not None:
+            raise RuntimeError("dashboard must be started before AsyncNativeSession starts")
+        self._config = replace(self._config, dashboard=dashboard)
 
     async def command(self, action: str, **params: Any) -> JSONValue:
         """Run a native command and return checked response data."""
@@ -100,13 +121,37 @@ class AsyncNativeSession:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[BrowserResponse] = loop.create_future()
         cancelled = Event()
-        future.add_done_callback(lambda done: cancelled.set() if done.cancelled() else None)
-        self._queue.put(_AsyncCommand(action, params, loop, future, cancelled))
+        command = _AsyncCommand(action, params, loop, future, cancelled, Event())
+        future.add_done_callback(lambda done: self._finish_command(command, done))
+        with self._pending_lock:
+            if self._closed:
+                raise RuntimeError("AsyncNativeSession is closed")
+            self._pending_commands.append(command)
+        self._queue.put(command)
+        return await future
+
+    async def shutdown_native(self) -> BrowserResponse | None:
+        """Close native browser state without allowing queued user work to run."""
+        self._begin_close()
+        thread = self._thread
+        if thread is None:
+            return None
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future[BrowserResponse] = loop.create_future()
+        command = _AsyncCommand(
+            INTERNAL_SHUTDOWN_ACTION,
+            {},
+            loop,
+            future,
+            Event(),
+            Event(),
+        )
+        self._queue.put(command)
         return await future
 
     async def aclose(self, *, timeout: float = 5.0) -> None:
         """Stop the owner thread and close native browser state."""
-        self._closed = True
+        self._begin_close()
         thread = self._thread
         if thread is None:
             self._finalizer.detach()
@@ -135,6 +180,34 @@ class AsyncNativeSession:
         if self._startup_error:
             raise RuntimeError("failed to start async native session") from self._startup_error[0]
 
+    def _begin_close(self) -> None:
+        self._closed = True
+        self._cancel_pending_commands()
+
+    def _finish_command(
+        self,
+        command: _AsyncCommand,
+        future: asyncio.Future[BrowserResponse],
+    ) -> None:
+        if future.cancelled():
+            command.cancelled.set()
+        with self._pending_lock, suppress(ValueError):
+            self._pending_commands.remove(command)
+
+    def _cancel_pending_commands(self) -> None:
+        with self._pending_lock:
+            pending = list(self._pending_commands)
+        for command in pending:
+            if command.started.is_set():
+                continue
+            command.cancelled.set()
+            _call_soon(
+                command.loop,
+                _set_future_exception,
+                command.future,
+                RuntimeError("AsyncNativeSession is closed"),
+            )
+
 
 def _run_async_native_session(
     config: _AsyncNativeConfig,
@@ -145,7 +218,8 @@ def _run_async_native_session(
     try:
         session = NativeSession(
             session=config.session,
-            session_name=config.session_name,
+            restore=config.restore,
+            namespace=config.namespace,
             default_timeout_ms=config.default_timeout_ms,
             allowed_domains=config.allowed_domains,
             engine=config.engine,
@@ -168,7 +242,7 @@ def _run_async_native_session(
         if item is _STOP:
             if not native_closed:
                 with suppress(BaseException):
-                    session.execute("close")
+                    session.execute(INTERNAL_SHUTDOWN_ACTION)
             return
         command = item
         if not isinstance(command, _AsyncCommand):
@@ -177,18 +251,23 @@ def _run_async_native_session(
             continue
 
         try:
+            command.started.set()
             response = session.execute(command.action, **command.params)
         except BaseException as err:
             _call_soon(command.loop, _set_future_exception, command.future, err)
+            if command.action == INTERNAL_SHUTDOWN_ACTION:
+                return
         else:
             action = command.action
             data = response_data_mapping(response)
             is_confirmation = data is not None and bool(data.get("confirmation_required"))
             if command.action == "confirm" and response.success:
                 action = _try_unwrap_confirmed_response(response).action
-            if action == "close" and response.success and not is_confirmation:
+            if action_closes_browser(action) and response.success and not is_confirmation:
                 native_closed = True
             _call_soon(command.loop, _set_future_result, command.future, response)
+            if command.action == INTERNAL_SHUTDOWN_ACTION:
+                return
 
 
 def _call_soon(
@@ -215,6 +294,13 @@ def _set_future_exception(
 ) -> None:
     if not future.cancelled():
         future.set_exception(err)
+
+
+def _cancel_future(
+    future: asyncio.Future[BrowserResponse],
+    _value: object,
+) -> None:
+    future.cancel()
 
 
 def _stop_async_worker(queue: Queue[_AsyncCommand | object]) -> None:

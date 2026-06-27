@@ -1,9 +1,23 @@
-from pyagentbrowser import Browser
+"""Requires `pyagentbrowser[cdp]`."""
 
-with Browser(headless=True) as browser:
-    browser.page.open("https://example.com")
+from pyagentbrowser import Browser, LaunchOptions
 
-    for frame in browser.frames.list():
+HTML = """
+<main>
+  <h1>Host page</h1>
+  <iframe
+    id="details"
+    name="details"
+    srcdoc="<title>Details</title><h1>Frame details</h1>"
+  ></iframe>
+</main>
+"""
+
+with Browser.launch(LaunchOptions(headless=True)) as browser:
+    browser.page.set_content(HTML)
+
+    for frame in browser.cdp.frames.list():
         print(frame.name, frame.url)
 
-    print(browser.cdp.evaluate("document.title"))
+    details = browser.cdp.frames.get(selector="#details")
+    print(details.evaluate("document.title"))

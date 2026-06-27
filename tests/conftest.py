@@ -18,12 +18,16 @@ _skipped_integration: list[str] = []
 
 
 @pytest.fixture(autouse=True)
-def clean_default_browser() -> Iterator[None]:
+def clean_default_browser(request: pytest.FixtureRequest) -> Iterator[None]:
+    if request.node.get_closest_marker("packaging") is not None:
+        yield
+        return
+
     import pyagentbrowser as ab
 
-    ab.reset(force=True)
+    ab.notebook.reset(force=True)
     yield
-    ab.reset(force=True)
+    ab.notebook.reset(force=True)
 
 
 @pytest.fixture

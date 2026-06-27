@@ -1,10 +1,11 @@
 import asyncio
 
-from pyagentbrowser import AsyncBrowser
+from pyagentbrowser import AsyncBrowser, LaunchOptions
 
 
 async def main() -> None:
-    async with AsyncBrowser(headless=True) as browser:
+    browser = await AsyncBrowser.launch(LaunchOptions(headless=True))
+    async with browser:
         await browser.page.open("https://example.com")
         page = await browser.agent.observe()
         print(page.text)

@@ -22,6 +22,9 @@ from pyagentbrowser import (
     AsyncBrowser,
     Browser,
     BrowserError,
+    BrowserSessionOptions,
+    CDPAttach,
+    LaunchOptions,
     Screenshot,
     Snapshot,
 )
@@ -33,6 +36,29 @@ pytestmark = pytest.mark.integration
 class LocalSite:
     base_url: str
     root: Path
+
+
+def _browser(chrome_path: Path) -> Browser:
+    return Browser.from_session(
+        f"pytest-{time.monotonic_ns()}",
+        launch_options=LaunchOptions(executable_path=chrome_path),
+        session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+    )
+
+
+def _async_browser(chrome_path: Path) -> AsyncBrowser:
+    return AsyncBrowser.from_session(
+        f"pytest-async-{time.monotonic_ns()}",
+        launch_options=LaunchOptions(executable_path=chrome_path),
+        session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+    )
+
+
+def _configure_notebook(chrome_path: Path) -> Browser:
+    return ab.notebook.configure(
+        launch_options=LaunchOptions(executable_path=chrome_path),
+        session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+    )
 
 
 def _data_url(html: str) -> str:
@@ -153,7 +179,7 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
 
 
 def test_browser_actions_drive_real_page_through_native_rust_engine(chrome_path: Path) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(_sync_form_html()))
 
         browser.find.css("#name").fill("Ada")
@@ -164,21 +190,21 @@ def test_browser_actions_drive_real_page_through_native_rust_engine(chrome_path:
 
 
 def test_browser_page_title_reads_real_browser_title(chrome_path: Path) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(_sync_form_html()))
 
         assert browser.page.title() == "Agent Browser Python"
 
 
 def test_browser_page_evaluate_runs_javascript_in_real_browser(chrome_path: Path) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(_sync_form_html()))
 
         assert browser.page.evaluate("document.title") == "Agent Browser Python"
 
 
 def test_browser_snapshot_discovers_real_page_refs(chrome_path: Path) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(_sync_form_html()))
 
         snapshot = browser.snapshot(interactive=True)
@@ -211,16 +237,16 @@ def _write_nested_frame_site(local_site: LocalSite, *, title: str = "Nested fram
     )
 
 
-def test_frames_get_evaluates_selected_iframe(
+def test_cdp_frames_get_evaluates_selected_iframe(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     _write_nested_frame_site(local_site)
     expected_url = f"{local_site.base_url}/frame.html"
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
 
-        frame = browser.frames.get(selector="#target-frame")
+        frame = browser.cdp.frames.get(selector="#target-frame")
 
         assert frame.url == expected_url
         assert frame.evaluate("location.href") == expected_url
@@ -231,7 +257,7 @@ def test_cdp_frame_evaluate_uses_selected_iframe(
     local_site: LocalSite,
 ) -> None:
     _write_nested_frame_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
 
         assert browser.cdp.evaluate("document.title", frame="#target-frame") == "Nested frame"
@@ -262,14 +288,14 @@ def test_default_session_page_namespace_drives_real_browser(
     local_site: LocalSite,
 ) -> None:
     _write_default_session_page(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
 
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
 
-        assert ab.page.title() == "Default session host"
+        assert ab.notebook.page.title() == "Default session host"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_default_session_find_namespace_drives_real_browser(
@@ -277,16 +303,16 @@ def test_default_session_find_namespace_drives_real_browser(
     local_site: LocalSite,
 ) -> None:
     _write_default_session_page(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
 
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
-        ab.find.css("#go").click()
-        ab.page.wait_for_text("default clicked")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        ab.notebook.find.css("#go").click()
+        ab.notebook.page.wait_for_text("default clicked")
 
-        assert ab.find.css("#out").text() == "default clicked"
+        assert ab.notebook.find.css("#out").text() == "default clicked"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_default_session_capture_namespace_writes_screenshot(
@@ -295,26 +321,26 @@ def test_default_session_capture_namespace_writes_screenshot(
     tmp_path: Path,
 ) -> None:
     _write_default_session_page(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
 
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
-        shot = ab.capture.screenshot(tmp_path / "default-session.png")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        shot = ab.notebook.capture.screenshot(tmp_path / "default-session.png")
 
         assert shot.path.exists()
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_default_session_reset_creates_new_configured_browser(chrome_path: Path) -> None:
-    first_browser = ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    first_browser = _configure_notebook(chrome_path)
 
     try:
-        ab.reset()
-        second_browser = ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+        ab.notebook.reset()
+        second_browser = _configure_notebook(chrome_path)
         assert second_browser is not first_browser
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def _write_default_frame_site(local_site: LocalSite) -> None:
@@ -332,33 +358,33 @@ def _write_default_frame_site(local_site: LocalSite) -> None:
     )
 
 
-def test_default_session_frames_list_discovers_real_frame(
+def test_default_session_cdp_frames_list_discovers_real_frame(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
 
-        assert any(item.url.endswith("/frame.html") for item in ab.frames.list())
+        assert any(item.url.endswith("/frame.html") for item in ab.notebook.cdp.frames.list())
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
-def test_default_session_frames_selector_returns_real_frame(
+def test_default_session_cdp_frames_selector_returns_real_frame(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
-        frame = ab.frames.get(selector="#child")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        frame = ab.notebook.cdp.frames.get(selector="#child")
 
         assert frame.url.endswith("/frame.html")
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_default_session_frame_handle_evaluates_selected_frame(
@@ -366,14 +392,14 @@ def test_default_session_frame_handle_evaluates_selected_frame(
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
-        frame = ab.frames.get(selector="#child")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
+        frame = ab.notebook.cdp.frames.get(selector="#child")
 
         assert frame.evaluate("document.title") == "Default child"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def test_default_session_cdp_namespace_evaluates_selected_frame(
@@ -381,13 +407,13 @@ def test_default_session_cdp_namespace_evaluates_selected_frame(
     local_site: LocalSite,
 ) -> None:
     _write_default_frame_site(local_site)
-    ab.configure(executable_path=chrome_path, default_timeout_ms=5_000)
+    _configure_notebook(chrome_path)
     try:
-        ab.page.open(f"{local_site.base_url}/index.html")
+        ab.notebook.page.open(f"{local_site.base_url}/index.html")
 
-        assert ab.cdp.evaluate("document.title", frame="#child") == "Default child"
+        assert ab.notebook.cdp.evaluate("document.title", frame="#child") == "Default child"
     finally:
-        ab.reset()
+        ab.notebook.reset()
 
 
 def _write_named_frame_site(local_site: LocalSite) -> None:
@@ -408,28 +434,28 @@ def _write_named_frame_site(local_site: LocalSite) -> None:
     )
 
 
-def test_frames_list_discovers_child_frame(
+def test_cdp_frames_list_discovers_child_frame(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     _write_named_frame_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
 
-        frames = browser.frames.list()
+        frames = browser.cdp.frames.list()
 
         assert any(frame.url.endswith("/frame.html") for frame in frames)
 
 
-def test_frames_selector_lookup_returns_selected_frame(
+def test_cdp_frames_selector_lookup_returns_selected_frame(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     _write_named_frame_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
 
-        child = browser.frames.get(selector="#target-frame")
+        child = browser.cdp.frames.get(selector="#target-frame")
 
         assert child.url.endswith("/frame.html")
 
@@ -439,25 +465,25 @@ def test_selected_frame_evaluates_in_real_browser(
     local_site: LocalSite,
 ) -> None:
     _write_named_frame_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
 
-        child = browser.frames.get(selector="#target-frame")
+        child = browser.cdp.frames.get(selector="#target-frame")
 
         assert child.evaluate("document.title") == "Frame child"
 
 
-def test_frames_switch_and_main_restore_snapshot_scope(
+def test_active_frame_select_and_main_restore_snapshot_scope(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     _write_named_frame_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
 
-        browser.frames.switch(name="target")
+        browser.active_frame.select(name="target")
         child_snapshot = browser.snapshot(interactive=True).text
-        browser.frames.main()
+        browser.active_frame.main()
         host_snapshot = browser.snapshot(interactive=True).text
 
         assert "Frame child" in child_snapshot
@@ -475,7 +501,7 @@ def test_cdp_active_target_reresolves_after_navigation(
     local_site: LocalSite,
 ) -> None:
     first_url, second_url = _write_two_tab_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(first_url)
         assert browser.cdp.evaluate("document.title") == "First tab"
 
@@ -488,7 +514,7 @@ def test_cdp_target_label_selects_requested_tab(
     local_site: LocalSite,
 ) -> None:
     first_url, second_url = _write_two_tab_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(second_url)
         browser.tabs.new(first_url, label="first")
 
@@ -500,7 +526,7 @@ def test_cdp_target_url_selects_requested_tab(
     local_site: LocalSite,
 ) -> None:
     first_url, second_url = _write_two_tab_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(second_url)
         browser.tabs.new(first_url, label="first")
 
@@ -512,18 +538,18 @@ def test_cdp_root_namespace_follows_tab_switch(
     local_site: LocalSite,
 ) -> None:
     first_url, second_url = _write_two_tab_site(local_site)
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(second_url)
         browser.tabs.new(first_url, label="first")
 
-        browser.tabs.switch("first")
+        browser.tabs.switch(label="first")
 
         assert browser.page.title() == "First tab"
         assert browser.cdp.evaluate("document.title") == "First tab"
 
 
 def test_screenshot_writes_file(chrome_path: Path, tmp_path: Path) -> None:
-    with Browser(executable_path=chrome_path) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url("<title>Shot</title><h1>Screenshot</h1>"))
         shot = browser.capture.screenshot(tmp_path / "page.png")
 
@@ -551,7 +577,7 @@ def test_screenshot_wait_ms_allows_delayed_paint(chrome_path: Path, tmp_path: Pa
     </html>
     """
 
-    with Browser(executable_path=chrome_path) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(html))
         browser.set_viewport(200, 200)
         shot = browser.capture.screenshot(tmp_path / "delayed-paint.png", wait_ms=200)
@@ -581,7 +607,7 @@ def _semantic_helpers_html() -> str:
 
 
 def test_label_locator_fill_drives_real_browser_output(chrome_path: Path) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(_semantic_helpers_html()))
         browser.page.ready(min_text_length=len("Name Greet"))
 
@@ -593,7 +619,7 @@ def test_label_locator_fill_drives_real_browser_output(chrome_path: Path) -> Non
 
 
 def test_role_locator_click_drives_real_browser_output(chrome_path: Path) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(_semantic_helpers_html()))
         browser.page.ready(min_text_length=len("Name Greet"))
 
@@ -643,7 +669,7 @@ def test_covered_click_surfaces_native_interception_error(chrome_path: Path) -> 
     </html>
     """
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(html))
 
         with pytest.raises(BrowserError) as failed:
@@ -673,10 +699,10 @@ def test_upload_sets_real_file_input(chrome_path: Path, tmp_path: Path) -> None:
     </html>
     """
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(html))
 
-        browser.command("upload", selector="#file-input", files=[str(upload_path)])
+        browser.native.data("upload", selector="#file-input", files=[str(upload_path)])
         browser.page.wait_for_text("note.txt")
 
         assert browser.find.css("#file-out").text() == "note.txt"
@@ -699,7 +725,7 @@ def test_diff_snapshot_reports_real_page_change(chrome_path: Path) -> None:
     </html>
     """
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(html))
         baseline = browser.snapshot(interactive=True)
         browser.find.role("button", name="Greet", exact=True).click()
@@ -732,7 +758,7 @@ def test_action_evidence_uses_real_snapshot_refs(chrome_path: Path) -> None:
     </html>
     """
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(_data_url(html))
         page = browser.observe()
 
@@ -761,10 +787,13 @@ def test_confirmation_replay_uses_upstream_real_browser(chrome_path: Path) -> No
     </html>
     """
 
-    with Browser(
-        executable_path=chrome_path,
-        confirm_actions=["click"],
-        default_timeout_ms=5_000,
+    with Browser.from_session(
+        f"pytest-confirm-{time.monotonic_ns()}",
+        launch_options=LaunchOptions(executable_path=chrome_path),
+        session_options=BrowserSessionOptions(
+            confirm_actions=["click"],
+            default_timeout_ms=5_000,
+        ),
     ) as browser:
         browser.page.open(_data_url(html))
 
@@ -797,10 +826,10 @@ def test_response_body_is_upstream_owned(
     (local_site.root / "api").mkdir()
     (local_site.root / "api" / "body").write_text("body from server")
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
         browser.page.evaluate("setTimeout(() => fetch('/api/body'), 50); 'scheduled'")
-        body = browser.command("responsebody", url="/api/body")
+        body = browser.native.data("responsebody", url="/api/body")
 
     assert body["body"] == "body from server"
 
@@ -828,7 +857,7 @@ def test_network_route_drives_real_browser(
         """
     )
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
         browser.network.route("*api/message", body="from route", content_type="text/plain")
         browser.find.css("#fetch").click()
@@ -854,8 +883,10 @@ def test_download_helper_writes_real_file(
     (local_site.root / "download.txt").write_text("downloaded by agent-browser")
     download_path = tmp_path / "downloaded.txt"
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
-        browser.launch(download_path=tmp_path)
+    with _browser(chrome_path) as browser:
+        browser.launch_process(
+            options=LaunchOptions(executable_path=chrome_path, download_path=tmp_path)
+        )
         browser.page.open(f"{local_site.base_url}/index.html")
         downloaded = browser.downloads.download("#download", download_path)
 
@@ -873,7 +904,7 @@ def test_storage_state_round_trip_real_browser(
     )
     state_path = tmp_path / "state.json"
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
         browser.storage.set("theme", "dark")
         saved = browser.state.save(state_path)
@@ -893,7 +924,7 @@ def test_cookie_state_round_trip_real_browser(
     )
     state_path = tmp_path / "state.json"
 
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
         browser.cookies.set("pyagentbrowser", "yes", url=local_site.base_url)
         saved = browser.state.save(state_path)
@@ -926,8 +957,10 @@ def test_browser_can_attach_to_existing_chrome_cdp(chrome_path: Path, tmp_path: 
         if not _wait_for_cdp(port):
             pytest.skip("Chrome CDP endpoint did not become ready")
 
-        with Browser(cdp_port=port, default_timeout_ms=5_000) as browser:
-            browser.connect()
+        with Browser.attach(
+            CDPAttach(port=port),
+            session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+        ) as browser:
             assert browser.tabs.list()
             browser.page.open(_data_url("<title>Attached</title><h1>CDP attach</h1>"))
 
@@ -959,12 +992,17 @@ def test_default_configure_attaches_to_existing_chrome_cdp_before_navigation(
         if not _wait_for_cdp(port):
             pytest.skip("Chrome CDP endpoint did not become ready")
 
-        browser = ab.configure(cdp_port=port, default_timeout_ms=5_000)
+        browser = ab.notebook.configure(
+            attach=CDPAttach(port=port),
+            session_options=BrowserSessionOptions(default_timeout_ms=5_000),
+        )
 
+        assert browser.is_launched is False
+        browser.connect()
         assert browser.is_launched is True
         assert browser.tabs.list()
     finally:
-        ab.reset()
+        ab.notebook.reset()
         _stop_process(process)
 
 
@@ -972,7 +1010,7 @@ def test_tabs_new_creates_labelled_tab_in_real_browser(
     chrome_path: Path,
     local_page: str,
 ) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(local_page)
 
         assert browser.tabs.list()
@@ -987,11 +1025,11 @@ def test_tabs_switch_updates_active_real_browser_page(
     chrome_path: Path,
     local_page: str,
 ) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(local_page)
         browser.tabs.new(local_page, label="docs")
 
-        browser.tabs.switch("docs")
+        browser.tabs.switch(label="docs")
 
         assert browser.page.title() == "Agent Browser Python"
 
@@ -1000,11 +1038,11 @@ def test_tabs_close_removes_labelled_tab_in_real_browser(
     chrome_path: Path,
     local_page: str,
 ) -> None:
-    with Browser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+    with _browser(chrome_path) as browser:
         browser.page.open(local_page)
         browser.tabs.new(local_page, label="docs")
 
-        browser.tabs.close("docs")
+        browser.tabs.close(label="docs")
 
         assert all(tab.label != "docs" for tab in browser.tabs.list())
 
@@ -1040,10 +1078,13 @@ def test_state_load_filters_storage_state_by_allowlist(
     state_path = tmp_path / "mixed-state.json"
     _write_mixed_storage_state(local_site, state_path)
 
-    with Browser(
-        executable_path=chrome_path,
-        allowed_domains="127.0.0.1",
-        default_timeout_ms=5_000,
+    with Browser.from_session(
+        f"pytest-state-load-{time.monotonic_ns()}",
+        launch_options=LaunchOptions(executable_path=chrome_path),
+        session_options=BrowserSessionOptions(
+            allowed_domains="127.0.0.1",
+            default_timeout_ms=5_000,
+        ),
     ) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
         browser.state.load(state_path)
@@ -1067,10 +1108,13 @@ def test_state_save_filters_storage_state_by_allowlist(
     saved_path = tmp_path / "filtered-state.json"
     _write_mixed_storage_state(local_site, state_path)
 
-    with Browser(
-        executable_path=chrome_path,
-        allowed_domains="127.0.0.1",
-        default_timeout_ms=5_000,
+    with Browser.from_session(
+        f"pytest-state-save-{time.monotonic_ns()}",
+        launch_options=LaunchOptions(executable_path=chrome_path),
+        session_options=BrowserSessionOptions(
+            allowed_domains="127.0.0.1",
+            default_timeout_ms=5_000,
+        ),
     ) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
         browser.state.load(state_path, unsafe_import_all=True)
@@ -1085,7 +1129,7 @@ def test_state_save_filters_storage_state_by_allowlist(
 
 def test_browser_async_drives_real_page(chrome_path: Path) -> None:
     async def run() -> None:
-        async with AsyncBrowser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+        async with _async_browser(chrome_path) as browser:
             await browser.page.open(_data_url(_async_form_html()))
 
             await browser.find.css("#name").fill("Ada")
@@ -1098,7 +1142,7 @@ def test_browser_async_drives_real_page(chrome_path: Path) -> None:
 
 def test_browser_async_wait_timeout_does_not_block_event_loop(chrome_path: Path) -> None:
     async def run() -> None:
-        async with AsyncBrowser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+        async with _async_browser(chrome_path) as browser:
             await browser.page.open(_data_url(_async_form_html()))
             wait_task = asyncio.create_task(
                 browser.page.wait_for_function(
@@ -1147,7 +1191,7 @@ def test_async_capture_writes_screenshot_file(
             """
         )
 
-        async with AsyncBrowser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+        async with _async_browser(chrome_path) as browser:
             await browser.page.open(f"{local_site.base_url}/index.html")
             shot = await browser.capture.screenshot(tmp_path / "async-capture.png")
 
@@ -1158,16 +1202,16 @@ def test_async_capture_writes_screenshot_file(
     asyncio.run(run())
 
 
-def test_async_frames_get_evaluates_selected_frame(
+def test_async_cdp_frames_get_evaluates_selected_frame(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
     async def run() -> None:
         _write_nested_frame_site(local_site, title="Async child")
 
-        async with AsyncBrowser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+        async with _async_browser(chrome_path) as browser:
             await browser.page.open(f"{local_site.base_url}/index.html")
-            frame = await browser.frames.get(selector="#target-frame")
+            frame = await browser.cdp.frames.get(selector="#target-frame")
 
             assert await frame.evaluate("document.title") == "Async child"
 
@@ -1181,7 +1225,7 @@ def test_async_cdp_evaluate_uses_frame_selector(
     async def run() -> None:
         _write_nested_frame_site(local_site, title="Async child")
 
-        async with AsyncBrowser(executable_path=chrome_path, default_timeout_ms=5_000) as browser:
+        async with _async_browser(chrome_path) as browser:
             await browser.page.open(f"{local_site.base_url}/index.html")
 
             assert await browser.cdp.evaluate("document.title", frame="#target-frame") == (

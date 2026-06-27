@@ -6,9 +6,9 @@ from typing import Any
 
 from pyagentbrowser.models import (
     OMIT,
-    LlmsMode,
     MouseButton,
     MouseEventType,
+    ReadMode,
     RouteResponse,
     SameSite,
     StorageArea,
@@ -123,27 +123,21 @@ def wait_params(
 def read_params(
     url: str | None = None,
     *,
-    raw: bool = False,
-    require_md: bool = False,
-    llms: LlmsMode | None = None,
-    outline: bool = False,
+    mode: ReadMode | None = None,
     filter: str | None = None,
     timeout_ms: int | None = None,
     headers: Mapping[str, str] | None = None,
     allowed_domains: Sequence[str] | None = None,
 ) -> dict[str, Any]:
-    if llms not in {None, "index", "full"}:
-        raise ValueError("llms must be 'index', 'full', or None")
-    if llms is not None and outline:
-        raise ValueError("read accepts llms=... or outline=True, not both")
+    mode = mode or ReadMode()
     if timeout_ms is not None and timeout_ms <= 0:
         raise ValueError("timeout_ms must be greater than 0")
     return {
         "url": optional(url),
-        "raw": raw,
-        "requireMd": require_md,
-        "llms": optional(llms),
-        "outline": outline,
+        "raw": mode.raw,
+        "requireMd": mode.require_markdown,
+        "llms": optional(mode.llms),
+        "outline": mode.outline,
         "filter": optional(filter),
         "timeout": optional(timeout_ms),
         "headers": dict(headers) if headers is not None else OMIT,
