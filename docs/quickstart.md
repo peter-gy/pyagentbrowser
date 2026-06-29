@@ -11,6 +11,10 @@ with Browser.launch({"headless": True}) as browser:
     print(page.text)
 ```
 
+`Browser.launch()` prepares Chrome for Testing on first use when the native
+engine cannot find a local Chrome executable. Call `agentbrowser.ensure_installed()`
+when a script should perform that check before constructing a browser.
+
 ## Read page content
 
 ```python

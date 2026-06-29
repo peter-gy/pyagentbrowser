@@ -19,6 +19,7 @@ from agentbrowser._browser_common import (
     response_data_mapping,
 )
 from agentbrowser.agent_async import AsyncAgent, AsyncAgentSnapshot
+from agentbrowser.browser import _SKIP_AUTO_INSTALL_ACTIONS, _uses_local_chrome
 from agentbrowser.command_params import (
     geolocation_params,
     media_params,
@@ -49,6 +50,7 @@ from agentbrowser.domains_async import (
     AsyncStorage,
     AsyncTabs,
 )
+from agentbrowser.install import ensure_installed
 from agentbrowser.launch import (
     BrowserSessionOptions,
     BrowserSessionOptionsInput,
@@ -273,6 +275,8 @@ class AsyncBrowser:
                 "no_auto_dialog must be set on AsyncNativeSession when native_session is supplied"
             )
         self._launch_configuration = launch_configuration
+        self._auto_install = native_session is None
+        self._install_prepared = False
         self._launched = False
         self._cdp_controller: AsyncCDPController | None = None
 
@@ -454,6 +458,7 @@ class AsyncBrowser:
     ) -> JSONMapping | JSONValue:
         if expect not in {"object", "any"}:
             raise ValueError('expect must be "object" or "any"')
+        await self._prepare_install_for_action(action, params)
         try:
             response = _checked_response(action, await self._session.execute(action, **params))
         except ActionConfirmationRequired as err:
@@ -466,6 +471,7 @@ class AsyncBrowser:
         return _require_response_data_mapping(response)
 
     async def _native_execute(self, action: str, **params: Any) -> BrowserResponse:
+        await self._prepare_install_for_action(action, params)
         response = await self._session.execute(action, **params)
         confirmation_consumed = action == "confirm" and response.success
         if confirmation_consumed:
@@ -574,9 +580,32 @@ class AsyncBrowser:
         options: LaunchOptionsInput | None = None,
     ) -> Mapping[str, Any]:
         launch_params = self._launch_configuration.command_params(options=options)
+        await self._prepare_install_for_launch(launch_params)
         data = await self._command("launch", **launch_params)
         self._launched = True
         return data
+
+    async def _prepare_install_for_action(self, action: str, params: dict[str, Any]) -> None:
+        if not self._auto_install or self._install_prepared or self._launched:
+            return
+        if action == "launch":
+            await self._prepare_install_for_launch(params)
+            return
+        if action in _SKIP_AUTO_INSTALL_ACTIONS:
+            return
+        if not _uses_local_chrome(self._launch_configuration.command_params()):
+            return
+        await asyncio.to_thread(ensure_installed)
+        self._install_prepared = True
+
+    async def _prepare_install_for_launch(self, launch_params: dict[str, Any]) -> None:
+        if not self._auto_install or self._install_prepared:
+            return
+        if not _uses_local_chrome(launch_params):
+            return
+        result = await asyncio.to_thread(ensure_installed)
+        launch_params["executablePath"] = str(result.executable_path)
+        self._install_prepared = True
 
     async def _close_browser(self) -> None:
         if self._cdp_controller is not None:

@@ -16,6 +16,31 @@ with Browser.launch(
     print(page.text)
 ```
 
+## Installation
+
+```python
+agentbrowser.ensure_installed(*, progress: bool = True) -> InstallResult
+```
+
+Returns the Chrome executable that pyagentbrowser will use for local Chrome
+launches. The function checks the native browser cache, system browser
+locations, and browser caches from Puppeteer or Playwright. When those checks do
+miss, it runs the bundled native Chrome for Testing installer.
+
+```python
+import agentbrowser
+
+result = agentbrowser.ensure_installed()
+print(result.executable_path)
+```
+
+`InstallResult` has `executable_path`, `version`, `source`, and `installed`
+fields. `source` is one of `environment`, `cache`, `system`, or `download`.
+`installed` is `True` when the call installed Chrome for Testing in this
+process.
+
+Raises `BrowserInstallError` when Chrome for Testing installation fails.
+
 ## Browser Construction
 
 ```python
@@ -57,10 +82,11 @@ Browser.from_session(
 ) -> Browser
 ```
 
-`Browser.launch(...)` starts a browser process before returning. `Browser.attach(...)`
-connects to the configured CDP target before returning. `Browser.from_session(...)`
-returns a lazy controller for a named native session and starts on the first
-browser command.
+`Browser.launch(...)` starts a browser process before returning. Local Chrome
+launches call `ensure_installed()` before the native launch command when no
+executable path is configured. `Browser.attach(...)` connects to the configured
+CDP target before returning. `Browser.from_session(...)` returns a lazy
+controller for a named native session and starts on the first browser command.
 
 Browser process options may be a `LaunchOptions` object or a mapping with keys
 such as `headless`, `executable_path`, `profile`, `storage_state`,

@@ -37,6 +37,7 @@ from agentbrowser import (
     BoundingBox,
     Browser,
     BrowserError,
+    BrowserInstallError,
     BrowserResponse,
     BrowserSessionOptions,
     CDPAttach,
@@ -44,6 +45,7 @@ from agentbrowser import (
     ConfirmationTarget,
     ConsoleMessage,
     Cookie,
+    InstallResult,
     LaunchOptions,
     NativeParseError,
     NetworkRequest,
@@ -100,6 +102,7 @@ _ROOT_EXPORT_CONTRACT = {
     "AsyncPendingAction",
     "Browser",
     "BrowserError",
+    "BrowserInstallError",
     "BrowserResponse",
     "BrowserSessionOptions",
     "BrowserSessionOptionsDict",
@@ -111,6 +114,7 @@ _ROOT_EXPORT_CONTRACT = {
     "Cookie",
     "DashboardOptions",
     "Frame",
+    "InstallResult",
     "LaunchOptions",
     "LaunchOptionsDict",
     "NativeParseError",
@@ -139,6 +143,7 @@ _ROOT_EXPORT_CONTRACT = {
     "close",
     "configure",
     "default_browser",
+    "ensure_installed",
     "reset",
     "skills",
     *_DEFAULT_NAMESPACE_NAMES,
@@ -1175,6 +1180,86 @@ def test_launch_uses_configured_default_execution_options() -> None:
     assert command["headless"] is False
 
 
+def test_launch_installs_browser_and_passes_resolved_executable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = EchoNative()
+    browser = Browser(native_session=NativeSession(native=native))
+    browser._auto_install = True
+    result = InstallResult(
+        executable_path=Path("/tmp/chrome-for-testing"),
+        version="123",
+        source="download",
+        installed=True,
+    )
+    monkeypatch.setattr("agentbrowser.browser.ensure_installed", lambda: result)
+
+    browser.launch_process()
+
+    assert native.commands[0]["executablePath"] == "/tmp/chrome-for-testing"
+
+
+def test_launch_skips_install_for_explicit_executable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = EchoNative()
+    browser = Browser(native_session=NativeSession(native=native))
+    browser._auto_install = True
+
+    def fail_install() -> InstallResult:
+        raise AssertionError("install should not run")
+
+    monkeypatch.setattr("agentbrowser.browser.ensure_installed", fail_install)
+
+    browser.launch_process(options={"executable_path": "/custom/chrome"})
+
+    assert native.commands[0]["executablePath"] == "/custom/chrome"
+
+
+def test_implicit_native_launch_prepares_install_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = EchoNative()
+    browser = Browser(native_session=NativeSession(native=native))
+    browser._auto_install = True
+    calls = []
+
+    def install() -> InstallResult:
+        calls.append("install")
+        return InstallResult(
+            executable_path=Path("/tmp/chrome-for-testing"),
+            version="123",
+            source="cache",
+            installed=False,
+        )
+
+    monkeypatch.setattr("agentbrowser.browser.ensure_installed", install)
+
+    browser._command("screenshot")
+    browser._command("title")
+
+    assert calls == ["install"]
+    assert [command["action"] for command in native.commands] == ["screenshot", "title"]
+
+
+def test_launch_skips_install_for_provider(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    native = EchoNative()
+    browser = Browser(native_session=NativeSession(native=native))
+    browser._auto_install = True
+
+    def fail_install() -> InstallResult:
+        raise AssertionError("install should not run")
+
+    monkeypatch.setattr("agentbrowser.browser.ensure_installed", fail_install)
+
+    browser.launch_process(options={"provider": "browserbase"})
+
+    assert native.commands[0]["provider"] == "browserbase"
+    assert "executablePath" not in native.commands[0]
+
+
 def test_launch_uses_configured_default_allowlist() -> None:
     native = EchoNative()
     browser = Browser(
@@ -1985,6 +2070,7 @@ def test_har_stop_requires_native_path() -> None:
 
 def test_sdk_errors_share_common_base() -> None:
     assert issubclass(BrowserError, AgentBrowserError)
+    assert issubclass(BrowserInstallError, AgentBrowserError)
     assert issubclass(ActionConfirmationRequired, AgentBrowserError)
     assert issubclass(StaleAgentRefError, AgentBrowserError)
 
@@ -2502,6 +2588,29 @@ def test_async_context_manager_surfaces_close_error_without_body_exception() -> 
 
         assert exc_info.value.action == "close"
         assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
+
+    asyncio.run(run())
+
+
+def test_async_launch_installs_browser_and_passes_resolved_executable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    async def run() -> None:
+        native = EchoNative()
+        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
+        browser._auto_install = True
+        result = InstallResult(
+            executable_path=Path("/tmp/async-chrome"),
+            version="123",
+            source="download",
+            installed=True,
+        )
+        monkeypatch.setattr("agentbrowser.browser_async.ensure_installed", lambda: result)
+
+        await browser.launch_process()
+        await browser.aclose()
+
+        assert native.commands[0]["executablePath"] == "/tmp/async-chrome"
 
     asyncio.run(run())
 

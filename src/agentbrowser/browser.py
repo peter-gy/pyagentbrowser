@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
@@ -49,6 +50,7 @@ from agentbrowser.domains import (
     Storage,
     Tabs,
 )
+from agentbrowser.install import ensure_installed
 from agentbrowser.launch import (
     BrowserSessionOptions,
     BrowserSessionOptionsInput,
@@ -58,6 +60,7 @@ from agentbrowser.launch import (
     normalize_session,
 )
 from agentbrowser.models import (
+    OMIT,
     ActionConfirmationRequired,
     BrowserResponse,
     DashboardOptions,
@@ -77,6 +80,34 @@ from agentbrowser.session import (
 
 if TYPE_CHECKING:
     from agentbrowser.cdp import CDPController
+
+_SKIP_AUTO_INSTALL_ACTIONS = {
+    "",
+    INTERNAL_SHUTDOWN_ACTION,
+    "close",
+    "read",
+    "har_stop",
+    "credentials_set",
+    "credentials_get",
+    "credentials_delete",
+    "credentials_list",
+    "auth_save",
+    "auth_show",
+    "auth_delete",
+    "auth_list",
+    "confirm",
+    "deny",
+    "state_list",
+    "state_show",
+    "state_clear",
+    "state_clean",
+    "state_rename",
+    "device_list",
+    "stream_enable",
+    "stream_disable",
+    "stream_status",
+    "session_info",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -268,6 +299,8 @@ class Browser:
                 "no_auto_dialog must be set on NativeSession when native_session is supplied"
             )
         self._launch_configuration = launch_configuration
+        self._auto_install = native_session is None
+        self._install_prepared = False
         self._launched = False
         self._cdp_controller: CDPController | None = None
 
@@ -456,6 +489,7 @@ class Browser:
     ) -> JSONMapping | JSONValue:
         if expect not in {"object", "any"}:
             raise ValueError('expect must be "object" or "any"')
+        self._prepare_install_for_action(action, params)
         try:
             response = _checked_response(action, self._session.execute(action, **params))
         except ActionConfirmationRequired as err:
@@ -468,6 +502,7 @@ class Browser:
         return _require_response_data_mapping(response)
 
     def _native_execute(self, action: str, **params: Any) -> BrowserResponse:
+        self._prepare_install_for_action(action, params)
         response = self._session.execute(action, **params)
         confirmation_consumed = action == "confirm" and response.success
         if confirmation_consumed:
@@ -576,9 +611,32 @@ class Browser:
         options: LaunchOptionsInput | None = None,
     ) -> Mapping[str, Any]:
         launch_params = self._launch_configuration.command_params(options=options)
+        self._prepare_install_for_launch(launch_params)
         data = self._command("launch", **launch_params)
         self._launched = True
         return data
+
+    def _prepare_install_for_action(self, action: str, params: dict[str, Any]) -> None:
+        if not self._auto_install or self._install_prepared or self._launched:
+            return
+        if action == "launch":
+            self._prepare_install_for_launch(params)
+            return
+        if action in _SKIP_AUTO_INSTALL_ACTIONS:
+            return
+        if not _uses_local_chrome(self._launch_configuration.command_params()):
+            return
+        ensure_installed()
+        self._install_prepared = True
+
+    def _prepare_install_for_launch(self, launch_params: dict[str, Any]) -> None:
+        if not self._auto_install or self._install_prepared:
+            return
+        if not _uses_local_chrome(launch_params):
+            return
+        result = ensure_installed()
+        launch_params["executablePath"] = str(result.executable_path)
+        self._install_prepared = True
 
     def close(self, *, timeout: float = 5.0) -> None:
         """Close the native browser session and any active CDP connection."""
@@ -816,3 +874,29 @@ class Browser:
     def bring_to_front(self) -> Mapping[str, Any]:
         """Bring the browser window to the foreground."""
         return self._command("bringtofront")
+
+
+def _uses_local_chrome(params: Mapping[str, Any]) -> bool:
+    if _present(params.get("executablePath")):
+        return False
+    if _present(params.get("provider")):
+        return False
+    if _present(params.get("cdpUrl")) or _present(params.get("cdpPort")):
+        return False
+    if bool(params.get("autoConnect")):
+        return False
+    engine = params.get("engine")
+    if not _present(engine):
+        engine = os.environ.get("AGENT_BROWSER_ENGINE")
+    if _present(engine) and str(engine).lower() != "chrome":
+        return False
+    if os.environ.get("AGENT_BROWSER_EXECUTABLE_PATH"):
+        return False
+    if os.environ.get("AGENT_BROWSER_CDP") or os.environ.get("AGENT_BROWSER_AUTO_CONNECT"):
+        return False
+    provider = os.environ.get("AGENT_BROWSER_PROVIDER")
+    return provider is None or provider.strip().lower() in {"", "ios", "safari"}
+
+
+def _present(value: Any) -> bool:
+    return value is not None and value is not OMIT and value != ""

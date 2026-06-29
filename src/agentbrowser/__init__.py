@@ -71,6 +71,7 @@ from agentbrowser.default_session import (
     storage,
     tabs,
 )
+from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
 from agentbrowser.launch import (
     BrowserSessionOptions,
     BrowserSessionOptionsDict,
@@ -139,6 +140,7 @@ __all__ = [
     "BoundingBox",
     "Browser",
     "BrowserError",
+    "BrowserInstallError",
     "BrowserResponse",
     "BrowserSessionOptions",
     "BrowserSessionOptionsDict",
@@ -162,6 +164,7 @@ __all__ = [
     "DashboardOptions",
     "ExecutionContext",
     "Frame",
+    "InstallResult",
     "LaunchOptions",
     "LaunchOptionsDict",
     "LlmsMode",
@@ -207,6 +210,7 @@ __all__ = [
     "dialogs",
     "diff",
     "downloads",
+    "ensure_installed",
     "find",
     "keyboard",
     "mouse",

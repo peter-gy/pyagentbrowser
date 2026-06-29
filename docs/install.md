@@ -18,10 +18,24 @@ from agentbrowser import Browser
 
 - Python 3.11, 3.12, 3.13, or 3.14.
 - macOS or Linux.
-- Chrome or Chromium available to the native `agent-browser` engine.
 - Rust stable only when building from source.
 
-If Chrome is not on the default path, pass an executable path:
+For local Chrome launches, pyagentbrowser searches the native `agent-browser`
+browser cache, system Chrome and Chromium locations, and browser caches from
+Puppeteer or Playwright. When the search misses, the Python package runs the
+bundled native Chrome for Testing installer before launch.
+
+Prepare Chrome before the first browser command:
+
+```python
+import agentbrowser
+
+result = agentbrowser.ensure_installed()
+print(result.executable_path)
+```
+
+Pass an executable path when a program should use a specific Chromium-based
+browser:
 
 ```python
 from agentbrowser import Browser
