@@ -1,6 +1,6 @@
 [package]
 name = "pyagentbrowser"
-version = "0.31.1-rc.1"
+version = "0.31.1-rc.2"
 edition.workspace = true
 description = "Python bindings for agent-browser's native Rust browser automation engine"
 license = "Apache-2.0"

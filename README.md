@@ -14,16 +14,15 @@ uv add pyagentbrowser
 python -m pip install pyagentbrowser
 ```
 
-Local Chrome launches use an installed Chrome or Chromium executable. When none is found, pyagentbrowser prepares Chrome for Testing through the bundled native installer.
-
 ```python
-import agentbrowser
+import agentbrowser as ab
 
-agentbrowser.ensure_installed()
-browser = agentbrowser.configure()
+browser = ab.configure()
 browser.page.open("https://github.com/peter-gy/pyagentbrowser")
-browser.capture.screenshot()
+browser.capture.screenshot(full_page=True)
 ```
+
+Local Chrome launches use an installed Chrome or Chromium executable. When none is found, pyagentbrowser prepares Chrome for Testing through the bundled native installer.
 
 ## API
 
