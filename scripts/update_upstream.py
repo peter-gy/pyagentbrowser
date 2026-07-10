@@ -21,19 +21,10 @@ def _git(*args: str) -> str:
 
 
 def _metadata() -> dict[str, str]:
+    version = str(tomllib.loads((UPSTREAM / "cli/Cargo.toml").read_text())["package"]["version"])
     return {
         "commit": _git("rev-parse", "HEAD"),
-        "tag": _git(
-            "describe",
-            "--tags",
-            "--match",
-            "v[0-9]*.[0-9]*.[0-9]*",
-            "--abbrev=0",
-            "HEAD",
-        ),
-        "version": str(
-            tomllib.loads((UPSTREAM / "cli/Cargo.toml").read_text())["package"]["version"]
-        ),
+        "version": version,
     }
 
 
@@ -69,7 +60,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         subprocess.run(["cargo", "generate-lockfile"], cwd=ROOT, check=True)
         subprocess.run(["uv", "lock"], cwd=ROOT, check=True)
 
-    print(f"agent-browser pinned at {metadata['commit']} ({metadata['tag']})")
+    print(f"agent-browser {metadata['version']} pinned at {metadata['commit']}")
     return 0
 
 

@@ -69,23 +69,16 @@ def test_sdk_version_and_upstream_provenance_are_independent_and_consistent() ->
         cwd=upstream,
         text=True,
     ).strip()
-    tag = subprocess.check_output(
-        ["git", "describe", "--tags", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--abbrev=0"],
-        cwd=upstream,
-        text=True,
-    ).strip()
     upstream_version = tomllib.loads((upstream / "cli/Cargo.toml").read_text())["package"][
         "version"
     ]
-
     assert project["name"] == "pyagentbrowser"
     assert project["version"] == release["PACKAGE_VERSION"]
     assert py_cargo["package"]["version"] == release_tool["_cargo_version"](project["version"])
     assert release["UPSTREAM_COMMIT"] == commit
-    assert release["UPSTREAM_TAG"] == tag
     assert release["UPSTREAM_VERSION"] == upstream_version
     provenance = json.loads((ROOT / "src/agentbrowser/_upstream.json").read_text())
-    assert provenance == {"commit": commit, "tag": tag, "version": upstream_version}
+    assert provenance == {"commit": commit, "version": upstream_version}
     assert project["urls"]["Upstream agent-browser"].endswith("vercel-labs/agent-browser")
 
 
@@ -133,12 +126,11 @@ def _temporary_upstream(tmp_path: Path) -> tuple[Path, dict[str, str]]:
     )
     subprocess.run(["git", "-C", str(upstream), "add", "cli/Cargo.toml"], check=True)
     subprocess.run(["git", "-C", str(upstream), "commit", "-qm", "fixture"], check=True)
-    subprocess.run(["git", "-C", str(upstream), "tag", "v1.2.3"], check=True)
     commit = subprocess.check_output(
         ["git", "-C", str(upstream), "rev-parse", "HEAD"],
         text=True,
     ).strip()
-    return upstream, {"commit": commit, "tag": "v1.2.3", "version": "1.2.3"}
+    return upstream, {"commit": commit, "version": "1.2.3"}
 
 
 def test_upstream_update_check_verifies_live_git_provenance(

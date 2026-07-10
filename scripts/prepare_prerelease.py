@@ -51,18 +51,9 @@ def check_metadata() -> tuple[str, str, str]:
         raise ReleaseVersionError("src/agentbrowser/_version.py package version is not synced")
 
     commit = _git("rev-parse", "HEAD")
-    tag = _git(
-        "describe",
-        "--tags",
-        "--match",
-        "v[0-9]*.[0-9]*.[0-9]*",
-        "--abbrev=0",
-        "HEAD",
-    )
     upstream_version = str(upstream_manifest["package"]["version"])
     expected_upstream = {
         "commit": commit,
-        "tag": tag,
         "version": upstream_version,
     }
     if upstream_metadata != expected_upstream:
