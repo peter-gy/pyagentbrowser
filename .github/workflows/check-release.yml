@@ -78,7 +78,7 @@ jobs:
       - name: Install test dependencies
         run: uv sync --locked --no-install-project --python ${{ matrix.python }}
       - name: Download Linux wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: check-linux-x86_64-abi3
           path: dist
@@ -111,7 +111,7 @@ jobs:
       - name: Install test dependencies
         run: uv sync --locked --no-install-project --python 3.14
       - name: Download native wheel
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ matrix.artifact }}
           path: dist

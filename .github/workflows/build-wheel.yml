@@ -56,6 +56,10 @@ jobs:
           echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
           echo "RUSTFLAGS=--remap-path-prefix=${GITHUB_WORKSPACE}=/src/pyagentbrowser --remap-path-prefix=/io=/src/pyagentbrowser --remap-path-prefix=${HOME}/.cargo=/cargo --remap-path-prefix=/root/.cargo=/cargo --remap-path-prefix=/usr/local/cargo=/cargo" >> "$GITHUB_ENV"
 
+      - name: Build source distribution
+        if: inputs.sdist
+        run: uvx --from "maturin==1.14.1" maturin sdist --out dist
+
       - name: Build Linux wheel
         if: runner.os == 'Linux'
         uses: PyO3/maturin-action@v1
@@ -99,17 +103,6 @@ jobs:
             --out dist
             --interpreter python
 
-      - name: Build source distribution
-        if: inputs.sdist
-        uses: PyO3/maturin-action@v1
-        with:
-          maturin-version: v1.14.1
-          command: sdist
-          docker-options: >-
-            -e RUSTFLAGS
-            -e SOURCE_DATE_EPOCH
-          args: --out dist
-
       - name: Check built distributions
         env:
           EXPECT_SDIST: ${{ inputs.sdist }}
@@ -139,9 +132,9 @@ jobs:
           (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
         env:
           PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.14"
-        run: python scripts/verify-install-artifacts.py dist
+        run: env -u RUSTC_WRAPPER python scripts/verify-install-artifacts.py dist
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ inputs.artifact }}
           path: dist/*
