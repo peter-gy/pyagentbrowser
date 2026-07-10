@@ -2,86 +2,83 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, cast
+
+if TYPE_CHECKING:
+    from agentbrowser.browser import Browser
 
 from agentbrowser._browser_common import is_stale_ref_error_code
 from agentbrowser.command_params import click_params, wait_params
-from agentbrowser.domains import Locator
 from agentbrowser.models import (
-    ActionEvidence,
+    ActionResult,
+    ActionTransitionError,
     BrowserError,
+    ConfirmationRequired,
     LoadState,
     MouseButton,
-    Snapshot,
+    NativeParseError,
+    SnapshotData,
+    SnapshotDiff,
     SnapshotRef,
-    WaitSelectorState,
-    ref_selector,
+    SnapshotSpec,
+    Wait,
+    diff_snapshot_data,
 )
 
 
-class StaleAgentRefError(BrowserError):
-    """Raised when an action targets a stale snapshot ref.
+class StaleRefError(BrowserError):
+    """Raised when an action targets a ref from an expired snapshot."""
 
-    Parameters
-    ----------
-    ref
-        Bound snapshot ref that failed.
-    error
-        Native browser error raised by the attempted action.
-    """
-
-    def __init__(self, ref: AgentRef, error: BrowserError) -> None:
+    def __init__(self, ref: Ref, error: BrowserError) -> None:
         super().__init__(
-            error.action, f"stale snapshot ref {ref.selector}: {error}", error.response
+            error.action,
+            f"stale snapshot ref {ref.selector}: {error}",
+            error.response,
+            code=error.code,
         )
         self.ref = ref
 
-    def refresh(self, **criteria: Any) -> AgentRef:
-        """Refresh the stale ref using optional match criteria."""
+    def refresh(self, **criteria: Any) -> Ref:
+        """Resolve the ref again from a fresh snapshot."""
         return self.ref.refresh(**criteria)
 
 
 @dataclass(frozen=True, slots=True)
-class AgentRef:
-    """Bound snapshot ref with direct element actions.
+class Ref:
+    """Element identity bound to one accessibility snapshot."""
 
-    `AgentRef` is returned by `AgentSnapshot.ref()`, `find()`, and `find_all()`.
-    It keeps the snapshot selector, role, name, and browser needed to perform
-    direct element actions.
-    """
+    snapshot: Snapshot
+    _ref: SnapshotRef
 
-    browser: Any
-    snapshot_ref: SnapshotRef
-    snapshot: Snapshot | None = None
+    @property
+    def browser(self) -> Browser:
+        """Browser that captured this ref."""
+        return self.snapshot.browser
 
     @property
     def id(self) -> str:
-        """Snapshot ref id without the leading `@`."""
-        return self.snapshot_ref.id
+        """Ref id without the leading ``@``."""
+        return self._ref.id
 
     @property
     def selector(self) -> str:
-        """Native selector form, for example `@r1`."""
-        return self.snapshot_ref.selector
+        """Native selector for this ref."""
+        return self._ref.selector
 
     @property
     def role(self) -> str:
         """Accessible role captured in the snapshot."""
-        return self.snapshot_ref.role
+        return self._ref.role
 
     @property
     def name(self) -> str:
         """Accessible name captured in the snapshot."""
-        return self.snapshot_ref.name
+        return self._ref.name
 
     @property
     def raw(self) -> Mapping[str, Any]:
-        """Raw snapshot ref metadata."""
-        return self.snapshot_ref.raw
-
-    def locator(self) -> Locator:
-        """Return a lower-level locator for this snapshot ref."""
-        return Locator(self.browser, self.selector)
+        """Native ref metadata."""
+        return self._ref.raw
 
     def refresh(
         self,
@@ -90,26 +87,13 @@ class AgentRef:
         name: str | None = None,
         contains: str | None = None,
         exact: bool = True,
-        strict: bool = True,
-    ) -> AgentRef:
-        """Re-find this ref in a fresh snapshot.
-
-        Parameters
-        ----------
-        role, name, contains, exact, strict
-            Match criteria forwarded to `AgentSnapshot.find()`.
-
-        Returns
-        -------
-        AgentRef
-            Freshly resolved bound ref.
-        """
-        return self.browser.agent.observe().find(
+    ) -> Ref:
+        """Resolve this element from a fresh snapshot."""
+        return self.snapshot.refresh().one(
             role=self.role if role is None else role,
             name=self.name if name is None and contains is None else name,
             contains=contains,
             exact=exact,
-            strict=strict,
         )
 
     def click(
@@ -118,315 +102,351 @@ class AgentRef:
         button: MouseButton = "left",
         click_count: int = 1,
         new_tab: bool = False,
-    ) -> Self:
-        """Click this ref and return it."""
-        return self._run(
-            lambda: self.browser._command(
-                "click",
-                **click_params(
-                    self.selector,
-                    button=button,
-                    click_count=click_count,
-                    new_tab=new_tab,
-                ),
-            )
+        wait: Wait | None = None,
+    ) -> ActionResult[Ref, Snapshot]:
+        """Click the ref and return transition evidence."""
+        return self._act(
+            "click",
+            click_params(
+                self.selector,
+                button=button,
+                click_count=click_count,
+                new_tab=new_tab,
+            ),
+            wait=wait,
         )
 
-    def fill(self, value: str) -> Self:
-        """Fill this ref as a form control."""
-        return self._run(lambda: self.browser._command("fill", selector=self.selector, value=value))
-
-    def type(self, text: str) -> Self:
-        """Type text into this ref."""
-        return self._run(lambda: self.browser._command("type", selector=self.selector, text=text))
-
-    def press(self, key: str) -> Self:
-        """Focus this ref and press a key."""
-        return self._run(
-            lambda: (
-                self.browser._command("click", selector=self.selector),
-                self.browser.keyboard.press(key),
-            )
+    def fill(self, value: str, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Fill the ref and return transition evidence."""
+        return self._act(
+            "fill",
+            {"selector": self.selector, "value": value},
+            wait=wait,
         )
 
-    def hover(self) -> Self:
-        """Hover this ref."""
-        return self._run(lambda: self.browser._command("hover", selector=self.selector))
-
-    def tap(self) -> Self:
-        """Tap this ref."""
-        return self._run(lambda: self.browser._command("tap", selector=self.selector))
-
-    def focus(self) -> Self:
-        """Focus this ref."""
-        return self._run(lambda: self.browser._command("focus", selector=self.selector))
-
-    def clear(self) -> Self:
-        """Clear this ref as a form control."""
-        return self._run(lambda: self.browser._command("clear", selector=self.selector))
-
-    def select(self, value: str) -> Self:
-        """Select an option value on this ref."""
-        return self._run(
-            lambda: self.browser._command("select", selector=self.selector, value=value)
+    def type(self, text: str, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Type into the ref and return transition evidence."""
+        return self._act(
+            "type",
+            {"selector": self.selector, "text": text},
+            wait=wait,
         )
 
-    def check(self) -> Self:
-        """Check this ref."""
-        return self._run(lambda: self.browser._command("check", selector=self.selector))
+    def hover(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Hover the ref and return transition evidence."""
+        return self._act("hover", {"selector": self.selector}, wait=wait)
 
-    def uncheck(self) -> Self:
-        """Uncheck this ref."""
-        return self._run(lambda: self.browser._command("uncheck", selector=self.selector))
+    def tap(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Tap the ref and return transition evidence."""
+        return self._act("tap", {"selector": self.selector}, wait=wait)
 
-    def scroll_into_view(self) -> Self:
-        """Scroll this ref into view."""
-        return self._run(lambda: self.browser._command("scrollintoview", selector=self.selector))
+    def focus(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Focus the ref and return transition evidence."""
+        return self._act("focus", {"selector": self.selector}, wait=wait)
 
-    def wait(self, *, state: WaitSelectorState = "visible", timeout_ms: int | None = None) -> Self:
-        """Wait for this ref to reach a state."""
-        return self._run(
-            lambda: self.browser._command(
-                "wait",
-                **wait_params(
-                    None,
-                    selector=self.selector,
-                    state=state,
-                    timeout_ms=timeout_ms,
-                ),
-            )
+    def clear(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Clear the ref and return transition evidence."""
+        return self._act("clear", {"selector": self.selector}, wait=wait)
+
+    def select(self, value: str, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Select an option and return transition evidence."""
+        return self._act(
+            "select",
+            {"selector": self.selector, "value": value},
+            wait=wait,
         )
+
+    def check(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Check the ref and return transition evidence."""
+        return self._act("check", {"selector": self.selector}, wait=wait)
+
+    def uncheck(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Uncheck the ref and return transition evidence."""
+        return self._act("uncheck", {"selector": self.selector}, wait=wait)
+
+    def scroll_into_view(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
+        """Scroll the ref into view and return transition evidence."""
+        return self._act("scrollintoview", {"selector": self.selector}, wait=wait)
 
     def text(self) -> str:
-        """Return text content for this ref."""
-        return str(self.browser._command("gettext", selector=self.selector).get("text", ""))
+        """Return text content for the ref."""
+        return self.browser._command(
+            "gettext",
+            _decode=lambda data: _string_field(data, "text", action="gettext"),
+            selector=self.selector,
+        )
 
     def inner_text(self) -> str:
-        """Return rendered inner text for this ref."""
-        return str(self.browser._command("innertext", selector=self.selector).get("text", ""))
+        """Return rendered text for the ref."""
+        return self.browser._command(
+            "innertext",
+            _decode=lambda data: _string_field(data, "text", action="innertext"),
+            selector=self.selector,
+        )
 
     def input_value(self) -> str:
-        """Return this ref's input value."""
-        return str(self.browser._command("inputvalue", selector=self.selector).get("value", ""))
+        """Return the current form value."""
+        return self.browser._command(
+            "inputvalue",
+            _decode=lambda data: _string_field(data, "value", action="inputvalue"),
+            selector=self.selector,
+        )
 
     def attribute(self, name: str) -> str | None:
-        """Return one attribute on this ref."""
-        value = self.browser._command("getattribute", selector=self.selector, attribute=name).get(
-            "value"
+        """Return one attribute value."""
+        return self.browser._command(
+            "getattribute",
+            _decode=_optional_attribute,
+            selector=self.selector,
+            attribute=name,
         )
-        return str(value) if value is not None else None
 
     def is_visible(self) -> bool:
-        """Return whether this ref is visible."""
-        return bool(self.browser._command("isvisible", selector=self.selector).get("visible"))
+        """Return whether the ref is visible."""
+        return self.browser._command(
+            "isvisible",
+            _decode=lambda data: _bool_field(data, "visible", action="isvisible"),
+            selector=self.selector,
+        )
 
     def is_enabled(self) -> bool:
-        """Return whether this ref is enabled."""
-        return bool(self.browser._command("isenabled", selector=self.selector).get("enabled"))
+        """Return whether the ref is enabled."""
+        return self.browser._command(
+            "isenabled",
+            _decode=lambda data: _bool_field(data, "enabled", action="isenabled"),
+            selector=self.selector,
+        )
 
     def is_checked(self) -> bool:
-        """Return whether this ref is checked."""
-        return bool(self.browser._command("ischecked", selector=self.selector).get("checked"))
-
-    def click_and_observe(
-        self,
-        *,
-        button: MouseButton = "left",
-        click_count: int = 1,
-        new_tab: bool = False,
-        wait_for_text: str | None = None,
-        wait_for_url: str | None = None,
-        wait_for_load_state: LoadState | None = None,
-        compact: bool = True,
-    ) -> ActionEvidence:
-        """Click this ref and return before/after snapshot evidence."""
-        self.click(button=button, click_count=click_count, new_tab=new_tab)
-        self._wait_after_action(
-            text=wait_for_text,
-            url=wait_for_url,
-            load_state=wait_for_load_state,
-        )
-        return self._evidence("click", compact=compact)
-
-    def fill_and_observe(
-        self,
-        value: str,
-        *,
-        wait_for_text: str | None = None,
-        wait_for_url: str | None = None,
-        wait_for_load_state: LoadState | None = None,
-        compact: bool = True,
-    ) -> ActionEvidence:
-        """Fill this ref and return before/after snapshot evidence."""
-        self.fill(value)
-        self._wait_after_action(
-            text=wait_for_text,
-            url=wait_for_url,
-            load_state=wait_for_load_state,
-        )
-        return self._evidence("fill", compact=compact)
-
-    def _wait_after_action(
-        self,
-        *,
-        text: str | None,
-        url: str | None,
-        load_state: LoadState | None,
-    ) -> None:
-        if text is not None:
-            self.browser.page.wait_for_text(text)
-        if url is not None:
-            self.browser.page.wait_for_url(url)
-        if load_state is not None:
-            self.browser.page.wait_for_load_state(load_state)
-
-    def _evidence(self, action: str, *, compact: bool) -> ActionEvidence:
-        before_snapshot = self.snapshot or self.browser.snapshot(interactive=True)
-        before = AgentSnapshot(self.browser, before_snapshot)
-        after = self.browser.observe(compact=compact)
-        diff = self.browser.diff_snapshot(before_snapshot, compact=compact)
-        return ActionEvidence(
-            action=action, target=self.selector, before=before, after=after, diff=diff
+        """Return whether the ref is checked."""
+        return self.browser._command(
+            "ischecked",
+            _decode=lambda data: _bool_field(data, "checked", action="ischecked"),
+            selector=self.selector,
         )
 
-    def _run(self, action: Any) -> Self:
+    def _act(
+        self,
+        action: str,
+        params: Mapping[str, Any],
+        *,
+        wait: Wait | None,
+    ) -> ActionResult[Ref, Snapshot]:
+        return self._transition(
+            action,
+            lambda: self.browser._command(action, **params),
+            wait=wait,
+        )
+
+    def _transition(
+        self,
+        action: str,
+        run: Any,
+        *,
+        wait: Wait | None,
+    ) -> ActionResult[Ref, Snapshot]:
         try:
-            action()
-        except BrowserError as err:
-            if _is_stale_ref_error(err):
-                raise StaleAgentRefError(self, err) from err
+            run()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda _value: self._result(action, wait=wait))
             raise
-        return self
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise StaleRefError(self, error) from error
+            raise
+        return self._result(action, wait=wait)
+
+    def _result(self, action: str, *, wait: Wait | None) -> ActionResult[Ref, Snapshot]:
+        try:
+            _apply_wait(self.browser, wait)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda _value: self._capture_result(action))
+            raise
+        except Exception as cause:
+            raise ActionTransitionError(
+                action=action,
+                target=self,
+                stage="wait",
+                before=self.snapshot,
+                after=None,
+                cause=cause,
+            ) from cause
+        return self._capture_result(action)
+
+    def _capture_result(self, action: str) -> ActionResult[Ref, Snapshot]:
+        try:
+            after = self.snapshot.refresh()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda captured: self._finish_result(action, captured)
+                )
+            raise
+        except Exception as cause:
+            raise ActionTransitionError(
+                action=action,
+                target=self,
+                stage="snapshot",
+                before=self.snapshot,
+                after=None,
+                cause=cause,
+            ) from cause
+        return self._finish_result(action, after)
+
+    def _finish_result(self, action: str, after: Snapshot) -> ActionResult[Ref, Snapshot]:
+        try:
+            diff = diff_snapshot_data(self.snapshot._data, after._data)
+        except Exception as cause:
+            raise ActionTransitionError(
+                action=action,
+                target=self,
+                stage="diff",
+                before=self.snapshot,
+                after=after,
+                cause=cause,
+            ) from cause
+        return ActionResult(
+            action=action,
+            target=self,
+            before=self.snapshot,
+            after=after,
+            diff=diff,
+        )
 
 
 @dataclass(frozen=True, slots=True)
-class AgentSnapshot:
-    """Accessibility snapshot bound to a browser.
+class Snapshot:
+    """Immutable accessibility snapshot bound to its browser."""
 
-    The wrapper exposes raw snapshot text and turns snapshot refs into
-    `AgentRef` objects that can be clicked, filled, queried, or refreshed.
-    """
-
-    browser: Any
-    snapshot: Snapshot
+    browser: Browser
+    _data: SnapshotData
 
     @property
     def text(self) -> str:
-        """Snapshot text."""
-        return self.snapshot.text
+        """Human-readable accessibility tree."""
+        return self._data.text
 
     @property
     def origin(self) -> str:
-        """Snapshot origin URL."""
-        return self.snapshot.origin
+        """Page URL reported by the native engine."""
+        return self._data.origin
+
+    @property
+    def spec(self) -> SnapshotSpec:
+        """Capture specification used for this snapshot."""
+        return self._data.spec
 
     @property
     def raw(self) -> Mapping[str, Any]:
-        """Raw snapshot response."""
-        return self.snapshot.raw
+        """Native snapshot response data."""
+        return self._data.raw
 
     @property
-    def refs(self) -> Mapping[str, Mapping[str, Any]]:
-        """Raw snapshot ref metadata by ref id."""
-        return self.snapshot.refs
+    def refs(self) -> Mapping[str, Ref]:
+        """Bound refs keyed by ref id."""
+        return {ref_id: self.ref(ref_id) for ref_id in self._data.refs}
 
-    def ref(self, ref_id: str) -> AgentRef:
-        """Return one bound ref by id, accepting both `r1` and `@r1`."""
-        return AgentRef(self.browser, self.snapshot.ref(ref_id), snapshot=self.snapshot)
+    def ref(self, ref_id: str) -> Ref:
+        """Bind one snapshot ref to this browser."""
+        return Ref(self, self._data.ref(ref_id))
 
-    def find(
+    def one(
         self,
         *,
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
         exact: bool = False,
-        strict: bool = True,
-    ) -> AgentRef:
-        """Return one ref matching role/name/text criteria.
-
-        Parameters
-        ----------
-        role
-            Accessible role to match.
-        name
-            Accessible name to match.
-        contains
-            Substring that must appear in the accessible name.
-        exact
-            Whether `name` or `contains` matching is exact.
-        strict
-            Raise if multiple refs match.
-        """
-        matches = self.find_all(role=role, name=name, contains=contains, exact=exact)
+    ) -> Ref:
+        """Return one ref matching accessible metadata."""
+        matches = self.all(role=role, name=name, contains=contains, exact=exact)
         if not matches:
-            raise LookupError("snapshot contains no ref matching the requested criteria")
-        if strict and len(matches) > 1:
-            refs = ", ".join(match.selector for match in matches)
-            raise LookupError(f"snapshot criteria matched multiple refs: {refs}")
+            raise LookupError("snapshot contains no matching ref")
+        if len(matches) > 1:
+            selectors = ", ".join(match.selector for match in matches)
+            raise LookupError(f"snapshot criteria matched multiple refs: {selectors}")
         return matches[0]
 
-    def find_all(
+    def all(
         self,
         *,
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
         exact: bool = False,
-    ) -> list[AgentRef]:
-        """Return all refs matching role/name/text criteria."""
-        return [
-            AgentRef(
-                self.browser,
-                snapshot_ref,
-                snapshot=self.snapshot,
-            )
-            for snapshot_ref in self.snapshot.find_refs(
+    ) -> tuple[Ref, ...]:
+        """Return all refs matching accessible metadata."""
+        return tuple(
+            Ref(self, snapshot_ref)
+            for snapshot_ref in self._data.find_refs(
                 role=role,
                 name=name,
                 contains=contains,
                 exact=exact,
             )
-        ]
-
-
-@dataclass(frozen=True, slots=True)
-class Agent:
-    """Agent-oriented browser operations built around snapshots and refs."""
-
-    browser: Any
-
-    def observe(
-        self,
-        *,
-        selector: str | None = None,
-        interactive: bool = True,
-        compact: bool = False,
-        max_depth: int | None = None,
-        urls: bool = False,
-    ) -> AgentSnapshot:
-        """Capture a snapshot and bind it to this browser.
-
-        Returns
-        -------
-        AgentSnapshot
-            Snapshot wrapper whose refs can be acted on directly.
-        """
-        return AgentSnapshot(
-            self.browser,
-            self.browser.snapshot(
-                selector=selector,
-                interactive=interactive,
-                compact=compact,
-                max_depth=max_depth,
-                urls=urls,
-            ),
         )
 
-    def ref(self, ref_id: str) -> Locator:
-        """Return a locator for a snapshot ref id such as `r1` or `@r1`."""
-        return Locator(self.browser, ref_selector(ref_id))
+    def refresh(self) -> Snapshot:
+        """Capture the same snapshot specification again."""
+        return self.browser.observe(self.spec)
+
+    def diff(self) -> SnapshotDiff:
+        """Compare this snapshot with the current page state."""
+        return self.browser._diff_snapshot(self._data)
 
 
-def _is_stale_ref_error(error: BrowserError) -> bool:
-    return is_stale_ref_error_code(error.code)
+def _apply_wait(browser: Any, wait: Wait | None) -> None:
+    if wait is None:
+        return
+    if wait.kind == "all":
+        _apply_waits(browser, wait.conditions)
+        return
+    browser._command(
+        "wait",
+        _decode=lambda _data: None,
+        **wait_params(
+            None,
+            text=wait.value if wait.kind == "text" else None,
+            url=wait.value if wait.kind == "url" else None,
+            load_state=cast(LoadState, wait.value) if wait.kind == "load" else None,
+            timeout_ms=wait.timeout_ms,
+        ),
+    )
+
+
+def _apply_waits(browser: Any, conditions: tuple[Wait, ...]) -> None:
+    for index, condition in enumerate(conditions):
+        try:
+            _apply_wait(browser, condition)
+        except ConfirmationRequired as error:
+            remaining = conditions[index + 1 :]
+            if remaining and error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda _value, remaining=remaining: _apply_waits(browser, remaining)
+                )
+            raise
+
+
+def _string_field(data: Mapping[str, Any], field: str, *, action: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, str):
+        raise NativeParseError(f"{action} field '{field}' must be a string")
+    return value
+
+
+def _bool_field(data: Mapping[str, Any], field: str, *, action: str) -> bool:
+    value = data.get(field)
+    if not isinstance(value, bool):
+        raise NativeParseError(f"{action} field '{field}' must be a boolean")
+    return value
+
+
+def _optional_attribute(data: Mapping[str, Any]) -> str | None:
+    value = data.get("value")
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        raise NativeParseError("getattribute field 'value' must be a string or null")
+    return value

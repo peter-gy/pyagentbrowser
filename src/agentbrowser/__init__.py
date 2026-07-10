@@ -1,96 +1,29 @@
-"""Python bindings for the native Rust `agent-browser` engine.
-
-The public package follows upstream concepts from https://agent-browser.dev/:
-commands (https://agent-browser.dev/commands), selectors
-(https://agent-browser.dev/selectors), snapshots
-(https://agent-browser.dev/snapshots), sessions
-(https://agent-browser.dev/sessions), configuration
-(https://agent-browser.dev/configuration), and CDP mode
-(https://agent-browser.dev/cdp-mode).
-"""
+"""Agent-first Python SDK for the native agent-browser engine."""
 
 from importlib.metadata import PackageNotFoundError, version
 
-from agentbrowser import skills
-from agentbrowser._browser_common import ConfirmationTarget
 from agentbrowser._native import __agent_browser_version__ as __upstream_version__
 from agentbrowser._version import PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM_COMMIT
-from agentbrowser.agent import Agent, AgentRef, AgentSnapshot, StaleAgentRefError
-from agentbrowser.agent_async import (
-    AsyncAgent,
-    AsyncAgentRef,
-    AsyncAgentSnapshot,
-    AsyncStaleAgentRefError,
-)
+from agentbrowser.agent import Ref, Snapshot, StaleRefError
+from agentbrowser.agent_async import AsyncRef, AsyncSnapshot, AsyncStaleRefError
 from agentbrowser.browser import Browser, PendingAction
 from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
-from agentbrowser.cdp import (
-    AsyncExecutionContext,
-    AsyncFrame,
-    CDPClosedError,
-    CDPContextAmbiguityError,
-    CDPContextNotFoundError,
-    CDPError,
-    CDPEvaluationError,
-    CDPFrameAmbiguityError,
-    CDPFrameNotFoundError,
-    CDPProtocolError,
-    CDPStaleObjectError,
-    CDPTargetAmbiguityError,
-    CDPTargetNotFoundError,
-    CDPTimeoutError,
-    ExecutionContext,
-    Frame,
-)
-from agentbrowser.default_session import (
-    active_frame,
-    agent,
-    capture,
-    cdp,
-    clipboard,
-    close,
-    configure,
-    cookies,
-    dashboard,
-    default_browser,
-    diagnostics,
-    dialogs,
-    diff,
-    downloads,
-    find,
-    keyboard,
-    mouse,
-    native,
-    network,
-    page,
-    reset,
-    restore,
-    runtime,
-    scripts,
-    state,
-    storage,
-    tabs,
-)
 from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
 from agentbrowser.launch import (
-    BrowserSessionOptions,
-    BrowserSessionOptionsDict,
-    CDPAttach,
-    CDPAttachDict,
+    CDPTarget,
     LaunchOptions,
-    LaunchOptionsDict,
+    SessionOptions,
 )
 from agentbrowser.models import (
-    ActionConfirmationRequired,
-    ActionEvidence,
+    ActionResult,
+    ActionTransitionError,
     AgentBrowserError,
-    BoundingBox,
     BrowserError,
     BrowserResponse,
+    ConfirmationRequired,
     ConsoleMessage,
     Cookie,
     DashboardOptions,
-    LlmsMode,
     NativeParseError,
     NetworkRequest,
     ProxyConfig,
@@ -98,20 +31,17 @@ from agentbrowser.models import (
     ReadResult,
     RequestDetail,
     RestoreOptions,
-    RestoreSave,
     RouteResponse,
     Screenshot,
-    ScreenshotAnnotation,
-    ScreenshotBox,
     SessionId,
-    SessionIdScope,
-    Snapshot,
     SnapshotDiff,
-    SnapshotRef,
+    SnapshotSpec,
     TabInfo,
+    Wait,
 )
+from agentbrowser.query import Query
+from agentbrowser.query_async import AsyncQuery
 from agentbrowser.session_id import generate_session_id as session_id
-from agentbrowser.skills import Skill, SkillFile, SkillPart
 
 try:
     __version__ = version(PACKAGE_NAME)
@@ -120,110 +50,48 @@ except PackageNotFoundError:
 
 __agent_browser_version__ = __upstream_version__
 __agent_browser_commit__ = UPSTREAM_COMMIT
-__upstream_commit__ = UPSTREAM_COMMIT
 
 __all__ = [
-    "ActionConfirmationRequired",
-    "ActionEvidence",
-    "Agent",
+    "ActionResult",
+    "ActionTransitionError",
     "AgentBrowserError",
-    "AgentRef",
-    "AgentSnapshot",
-    "AsyncAgent",
-    "AsyncAgentRef",
-    "AsyncAgentSnapshot",
     "AsyncBrowser",
-    "AsyncExecutionContext",
-    "AsyncFrame",
     "AsyncPendingAction",
-    "AsyncStaleAgentRefError",
-    "BoundingBox",
+    "AsyncQuery",
+    "AsyncRef",
+    "AsyncSnapshot",
+    "AsyncStaleRefError",
     "Browser",
     "BrowserError",
     "BrowserInstallError",
     "BrowserResponse",
-    "BrowserSessionOptions",
-    "BrowserSessionOptionsDict",
-    "CDPAttach",
-    "CDPAttachDict",
-    "CDPClosedError",
-    "CDPContextAmbiguityError",
-    "CDPContextNotFoundError",
-    "CDPError",
-    "CDPEvaluationError",
-    "CDPFrameAmbiguityError",
-    "CDPFrameNotFoundError",
-    "CDPProtocolError",
-    "CDPStaleObjectError",
-    "CDPTargetAmbiguityError",
-    "CDPTargetNotFoundError",
-    "CDPTimeoutError",
-    "ConfirmationTarget",
+    "CDPTarget",
+    "ConfirmationRequired",
     "ConsoleMessage",
     "Cookie",
     "DashboardOptions",
-    "ExecutionContext",
-    "Frame",
     "InstallResult",
     "LaunchOptions",
-    "LaunchOptionsDict",
-    "LlmsMode",
     "NativeParseError",
     "NetworkRequest",
     "PendingAction",
     "ProxyConfig",
+    "Query",
     "ReadMode",
     "ReadResult",
+    "Ref",
     "RequestDetail",
     "RestoreOptions",
-    "RestoreSave",
     "RouteResponse",
     "Screenshot",
-    "ScreenshotAnnotation",
-    "ScreenshotBox",
     "SessionId",
-    "SessionIdScope",
-    "Skill",
-    "SkillFile",
-    "SkillPart",
+    "SessionOptions",
     "Snapshot",
     "SnapshotDiff",
-    "SnapshotRef",
-    "StaleAgentRefError",
+    "SnapshotSpec",
+    "StaleRefError",
     "TabInfo",
-    "__agent_browser_commit__",
-    "__agent_browser_version__",
-    "__upstream_commit__",
-    "__upstream_version__",
-    "__version__",
-    "active_frame",
-    "agent",
-    "capture",
-    "cdp",
-    "clipboard",
-    "close",
-    "configure",
-    "cookies",
-    "dashboard",
-    "default_browser",
-    "diagnostics",
-    "dialogs",
-    "diff",
-    "downloads",
+    "Wait",
     "ensure_installed",
-    "find",
-    "keyboard",
-    "mouse",
-    "native",
-    "network",
-    "page",
-    "reset",
-    "restore",
-    "runtime",
-    "scripts",
     "session_id",
-    "skills",
-    "state",
-    "storage",
-    "tabs",
 ]

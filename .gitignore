@@ -6,7 +6,6 @@ dist/
 wheels/
 *.egg-info
 target/
-crates/agent-browser-adapter/Cargo.lock
 .pytest_cache/
 .ruff_cache/
 *.so

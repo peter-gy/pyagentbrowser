@@ -3,7 +3,6 @@ from __future__ import annotations
 import importlib
 import os
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
@@ -15,19 +14,6 @@ if str(ROOT) not in sys.path:
 chrome_executable = importlib.import_module("scripts.check_chrome").chrome_executable
 
 _skipped_integration: list[str] = []
-
-
-@pytest.fixture(autouse=True)
-def clean_default_browser(request: pytest.FixtureRequest) -> Iterator[None]:
-    if request.node.get_closest_marker("packaging") is not None:
-        yield
-        return
-
-    import agentbrowser as ab
-
-    ab.reset(force=True)
-    yield
-    ab.reset(force=True)
 
 
 @pytest.fixture
@@ -47,6 +33,10 @@ def pytest_runtest_logreport(report: pytest.TestReport) -> None:
         return
     reason = str(report.longrepr)
     _skipped_integration.append(f"{report.nodeid}: {reason}")
+
+
+def pytest_sessionstart() -> None:
+    _skipped_integration.clear()
 
 
 def pytest_sessionfinish(session: pytest.Session, exitstatus: int) -> None:

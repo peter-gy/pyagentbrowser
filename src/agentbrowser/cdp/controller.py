@@ -100,6 +100,16 @@ class CDPController:
             return_by_value=return_by_value,
         )
 
+    def send(
+        self,
+        method: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Send one raw CDP method through the browser connection."""
+        return self._cdp_client().send(method, params, session_id=session_id)
+
     def invalidate(self) -> None:
         """Forget cached CDP page state after navigation-like native commands."""
         self._check_open()
@@ -133,7 +143,7 @@ class CDPController:
             target_id = self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             client.send("Target.getTargets"),
-            self._browser.page.url(),
+            self._browser.url(),
             label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
@@ -155,7 +165,7 @@ class CDPController:
         if self._client is not None:
             return self._client
         if not self._browser.is_launched:
-            self._browser.launch_process()
+            self._browser._launch_process()
         cdp_url = self._browser._command("cdp_url").get("cdpUrl")
         if not isinstance(cdp_url, str) or not cdp_url:
             raise CDPError('browser.native.data("cdp_url") did not return a cdpUrl string')
@@ -266,6 +276,16 @@ class AsyncCDPController:
             return_by_value=return_by_value,
         )
 
+    async def send(
+        self,
+        method: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        session_id: str | None = None,
+    ) -> Mapping[str, Any]:
+        """Send one raw CDP method through the browser connection."""
+        return await (await self._cdp_client()).send(method, params, session_id=session_id)
+
     def invalidate(self) -> None:
         """Forget cached CDP page state after navigation-like native commands."""
         self._check_open()
@@ -299,7 +319,7 @@ class AsyncCDPController:
             target_id = await self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             await client.send("Target.getTargets"),
-            await self._browser.page.url(),
+            await self._browser.url(),
             label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
@@ -321,7 +341,7 @@ class AsyncCDPController:
         if self._client is not None:
             return self._client
         if not self._browser.is_launched:
-            await self._browser.launch_process()
+            await self._browser._launch_process()
         cdp_url = (await self._browser._command("cdp_url")).get("cdpUrl")
         if not isinstance(cdp_url, str) or not cdp_url:
             raise CDPError('browser.native.data("cdp_url") did not return a cdpUrl string')

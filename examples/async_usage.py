@@ -1,18 +1,17 @@
 import asyncio
 
-from agentbrowser import AsyncBrowser
+from agentbrowser import AsyncBrowser, Wait
 
 
 async def main() -> None:
-    browser = await AsyncBrowser.launch({"headless": True})
+    browser = await AsyncBrowser.launch()
     async with browser:
-        await browser.page.open("https://example.com")
-        page = await browser.agent.observe()
-        print(page.text)
-
-        await browser.find.text("Learn more").click()
-        await browser.page.wait_for_url("*://www.iana.org/*")
-        print(await browser.page.url())
+        await browser.open("https://example.com")
+        page = await browser.observe()
+        result = await page.one(role="link", name="Learn more").click(
+            wait=Wait.url("*://www.iana.org/*")
+        )
+        print(result.after.text)
 
 
 asyncio.run(main())

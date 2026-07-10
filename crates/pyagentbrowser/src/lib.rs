@@ -7,17 +7,20 @@ use std::{
     path::{Path, PathBuf},
     process::{Child, Command, Stdio},
     sync::{
-        Arc, Mutex,
+        Arc, Mutex as StdMutex,
         atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
 };
 
-use agent_browser::native::{
-    actions::{DaemonState, execute_command},
-    network::DomainFilter,
-    policy::{ActionPolicy, ConfirmActions},
+use agent_browser::{
+    maintain_browser_state,
+    native::{
+        actions::{DaemonState, execute_command},
+        network::DomainFilter,
+        policy::{ActionPolicy, ConfirmActions},
+    },
 };
 use pyo3::{
     exceptions::{PyRuntimeError, PyValueError},
@@ -27,7 +30,9 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::{
     runtime::{Builder, Runtime},
-    sync::RwLock,
+    sync::{Mutex, RwLock, oneshot},
+    task::JoinHandle,
+    time::MissedTickBehavior,
 };
 
 mod skill_data {
@@ -35,12 +40,15 @@ mod skill_data {
 }
 
 const INTERNAL_SHUTDOWN_ACTION: &str = "__agent_browser_internal_shutdown";
+const DEFAULT_AUTOSAVE_INTERVAL_MS: u64 = 30_000;
+const MAINTENANCE_TICK_MS: u64 = 100;
 
 #[pyclass(name = "NativeBrowser", module = "agentbrowser._native")]
 struct PyNativeBrowser {
-    state: Mutex<DaemonState>,
+    state: Arc<Mutex<DaemonState>>,
     runtime: Runtime,
-    dashboard: Mutex<Option<DashboardSidecar>>,
+    dashboard: StdMutex<Option<DashboardSidecar>>,
+    maintenance: MaintenanceTask,
 }
 
 #[derive(Default, Deserialize)]
@@ -58,6 +66,7 @@ struct NativeBrowserOptions {
     action_policy: Option<String>,
     confirm_actions: Option<Vec<String>>,
     no_auto_dialog: Option<bool>,
+    autosave_interval_ms: Option<u64>,
     dashboard: Option<DashboardOption>,
 }
 
@@ -90,6 +99,44 @@ impl DashboardOption {
     }
 }
 
+struct MaintenanceTask {
+    shutdown: Option<oneshot::Sender<()>>,
+    handle: Option<JoinHandle<()>>,
+}
+
+impl MaintenanceTask {
+    fn start(runtime: &Runtime, state: Arc<Mutex<DaemonState>>, autosave_interval_ms: u64) -> Self {
+        let (shutdown, mut shutdown_rx) = oneshot::channel();
+        let handle = runtime.spawn(async move {
+            let mut tick = tokio::time::interval(Duration::from_millis(MAINTENANCE_TICK_MS));
+            tick.set_missed_tick_behavior(MissedTickBehavior::Skip);
+
+            loop {
+                tokio::select! {
+                    _ = tick.tick() => {
+                        let mut state = state.lock().await;
+                        maintain_browser_state(&mut state, autosave_interval_ms).await;
+                    }
+                    _ = &mut shutdown_rx => break,
+                }
+            }
+        });
+        Self {
+            shutdown: Some(shutdown),
+            handle: Some(handle),
+        }
+    }
+
+    fn stop(&mut self, runtime: &Runtime) {
+        if let Some(shutdown) = self.shutdown.take() {
+            let _ = shutdown.send(());
+        }
+        if let Some(handle) = self.handle.take() {
+            let _ = runtime.block_on(handle);
+        }
+    }
+}
+
 #[pymethods]
 impl PyNativeBrowser {
     #[new]
@@ -108,6 +155,7 @@ impl PyNativeBrowser {
             .map_err(|err| {
                 PyRuntimeError::new_err(format!("failed to create tokio runtime: {err}"))
             })?;
+        let autosave_interval_ms = autosave_interval_ms(options.autosave_interval_ms);
         let namespace = options.namespace.clone();
         let mut state = native_state(&options)?;
         let dashboard = match options.dashboard.and_then(DashboardOption::into_config) {
@@ -120,11 +168,15 @@ impl PyNativeBrowser {
             )?),
             None => None,
         };
+        let state = Arc::new(Mutex::new(state));
+        let maintenance =
+            MaintenanceTask::start(&runtime, Arc::clone(&state), autosave_interval_ms);
 
         Ok(Self {
             runtime,
-            state: Mutex::new(state),
-            dashboard: Mutex::new(dashboard),
+            state,
+            dashboard: StdMutex::new(dashboard),
+            maintenance,
         })
     }
 
@@ -135,22 +187,17 @@ impl PyNativeBrowser {
         if !command.is_object() {
             return Err(PyValueError::new_err("command JSON must be an object"));
         }
-        let response = py
-            .detach(|| {
-                let mut state = self
-                    .state
-                    .lock()
-                    .map_err(|_| "native browser state lock is poisoned".to_string())?;
-                Ok::<Value, String>(
-                    self.runtime
-                        .block_on(async { execute_command(&command, &mut state).await }),
-                )
+        let response = py.detach(|| {
+            self.runtime.block_on(async {
+                let mut state = self.state.lock().await;
+                execute_command(&command, &mut state).await
             })
-            .map_err(PyRuntimeError::new_err)?;
+        });
         let response = with_python_error_code(response);
         let action = command.get("action").and_then(Value::as_str);
         let should_shutdown_dashboard = (action == Some("close")
-            || action == Some(INTERNAL_SHUTDOWN_ACTION))
+            || action == Some(INTERNAL_SHUTDOWN_ACTION)
+            || action == Some("stream_disable"))
             && response
                 .get("success")
                 .and_then(Value::as_bool)
@@ -193,27 +240,46 @@ impl PyNativeBrowser {
             return Ok(());
         };
 
-        {
-            let mut state = self
-                .state
-                .lock()
-                .map_err(|_| "native browser state lock is poisoned".to_string())?;
+        self.runtime.block_on(async {
+            let mut state = self.state.lock().await;
             if state.stream_server.is_some() {
                 let cmd = json!({"id": "py-dashboard-disable", "action": "stream_disable"});
-                let _ = self
-                    .runtime
-                    .block_on(async { execute_command(&cmd, &mut state).await });
+                let _ = execute_command(&cmd, &mut state).await;
             }
-        }
+        });
         sidecar.cleanup();
         Ok(())
+    }
+
+    fn shutdown_native(&self) {
+        self.runtime.block_on(async {
+            let mut state = self.state.lock().await;
+            let command = json!({
+                "id": "py-drop-shutdown",
+                "action": INTERNAL_SHUTDOWN_ACTION,
+            });
+            let _ = execute_command(&command, &mut state).await;
+        });
     }
 }
 
 impl Drop for PyNativeBrowser {
     fn drop(&mut self) {
+        self.maintenance.stop(&self.runtime);
         let _ = self.shutdown_dashboard();
+        self.shutdown_native();
     }
+}
+
+fn autosave_interval_ms(configured: Option<u64>) -> u64 {
+    let environment = env::var("AGENT_BROWSER_AUTOSAVE_INTERVAL_MS").ok();
+    resolve_autosave_interval_ms(configured, environment.as_deref())
+}
+
+fn resolve_autosave_interval_ms(configured: Option<u64>, environment: Option<&str>) -> u64 {
+    configured
+        .or_else(|| environment.and_then(|value| value.parse().ok()))
+        .unwrap_or(DEFAULT_AUTOSAVE_INTERVAL_MS)
 }
 
 fn native_state(options: &NativeBrowserOptions) -> PyResult<DaemonState> {
@@ -709,11 +775,17 @@ mod tests {
     use std::{
         io::{Cursor, Read, Result as IoResult, Write},
         path::{Path, PathBuf},
+        sync::Arc,
     };
 
+    use agent_browser::native::actions::DaemonState;
     use serde_json::{Value, json};
+    use tokio::{runtime::Builder, sync::Mutex};
 
-    use super::{ControlStream, cleanup_dashboard_sidecar_files, handle_control_stream};
+    use super::{
+        ControlStream, MaintenanceTask, cleanup_dashboard_sidecar_files, handle_control_stream,
+        resolve_autosave_interval_ms,
+    };
 
     struct MemoryControlStream {
         input: Cursor<Vec<u8>>,
@@ -763,6 +835,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).expect("test directory should be created");
         dir
+    }
+
+    #[test]
+    fn configured_autosave_interval_takes_precedence() {
+        assert_eq!(resolve_autosave_interval_ms(Some(0), Some("1500")), 0);
+    }
+
+    #[test]
+    fn autosave_interval_uses_a_valid_environment_value() {
+        assert_eq!(resolve_autosave_interval_ms(None, Some("1500")), 1500);
+    }
+
+    #[test]
+    fn autosave_interval_uses_the_default_for_missing_or_invalid_environment() {
+        assert_eq!(resolve_autosave_interval_ms(None, None), 30_000);
+        assert_eq!(resolve_autosave_interval_ms(None, Some("invalid")), 30_000);
+    }
+
+    #[test]
+    fn maintenance_stop_waits_for_the_task_to_release_browser_state() {
+        let runtime = Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("test runtime should start");
+        let state = Arc::new(Mutex::new(DaemonState::new()));
+        let weak_state = Arc::downgrade(&state);
+        let mut maintenance = MaintenanceTask::start(&runtime, Arc::clone(&state), 0);
+        drop(state);
+
+        assert!(weak_state.upgrade().is_some());
+        maintenance.stop(&runtime);
+        assert!(weak_state.upgrade().is_none());
+
+        maintenance.stop(&runtime);
     }
 
     #[test]

@@ -1,13 +1,10 @@
-from __future__ import annotations
+from agentbrowser import Browser, RestoreOptions, SessionOptions
 
-import agentbrowser as ab
-from agentbrowser import Browser, RestoreOptions
+session = SessionOptions(
+    session_id="research",
+    restore=RestoreOptions("research", save="always"),
+)
 
-session_id = ab.session_id(prefix="docs").session
-
-with Browser.from_session(
-    session_id,
-    restore=RestoreOptions(key=session_id, check_text="Example Domain"),
-) as browser:
-    browser.page.open("https://example.com")
-    print(browser.restore.info()["restoreStatus"])
+with Browser.launch(session=session) as browser:
+    browser.open("https://example.com")
+    print(browser.native.data("session_info")["restoreStatus"])

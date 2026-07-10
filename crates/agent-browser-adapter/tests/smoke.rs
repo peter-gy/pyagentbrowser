@@ -10,11 +10,6 @@ use serde_json::{json, Value};
 use tempfile::{NamedTempFile, TempDir};
 use tokio::{sync::RwLock, time::timeout};
 
-#[test]
-fn adapter_exposes_upstream_version() {
-    assert!(!agent_browser::VERSION.is_empty());
-}
-
 fn confirm_actions(actions: &[&str]) -> ConfirmActions {
     ConfirmActions {
         categories: actions.iter().map(|action| (*action).to_string()).collect(),
@@ -90,7 +85,9 @@ async fn confirm_requires_matching_confirmation_id_without_consuming_pending_act
         json!({"id": "confirm", "action": "confirm", "confirmation_id": "need-confirm"}),
     )
     .await;
-    assert!(assert_success(&confirmed)["result"]["data"]["enabled"].is_boolean());
+    let confirmed_data = assert_success(&confirmed);
+    assert_eq!(confirmed_data["action"], "stream_status");
+    assert_eq!(confirmed_data["result"]["success"], true);
 }
 
 #[tokio::test]

@@ -162,7 +162,13 @@ class DomainAllowlist:
             return self
         allowed_domains = command.get("allowedDomains")
         if isinstance(allowed_domains, str):
-            return DomainAllowlist(allowed_domains)
+            requested = DomainAllowlist(allowed_domains)
+            if not self.is_empty and requested._patterns != self._patterns:
+                self._deny(
+                    "launch",
+                    "launch allowed domains must match the session allowlist",
+                )
+            return requested
         return self
 
     def _validate_command(self, command: Mapping[str, Any]) -> None:

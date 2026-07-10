@@ -3,7 +3,10 @@ name: Release Check
 on:
   pull_request:
   push:
+    branches:
+      - "**"
   workflow_dispatch:
+  workflow_call:
 
 jobs:
   python-matrix:
@@ -20,8 +23,8 @@ jobs:
           submodules: recursive
       - uses: astral-sh/setup-uv@v8.1.0
       - uses: dtolnay/rust-toolchain@stable
-      - run: uv sync --python ${{ matrix.python }}
-      - run: uv run --python ${{ matrix.python }} maturin develop
+      - run: uv sync --locked --python ${{ matrix.python }}
+      - run: uv run --python ${{ matrix.python }} maturin develop --locked
       - run: uv run --python ${{ matrix.python }} pytest -q
 
   package:
@@ -37,8 +40,6 @@ jobs:
           submodules: recursive
       - uses: astral-sh/setup-uv@v8.1.0
       - uses: dtolnay/rust-toolchain@stable
-      - run: make prerelease-version-check
-      - run: make package
-      - run: uv run python scripts/verify-install-artifacts.py target/wheels
+      - run: make check-release
         env:
           PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.12 3.13 3.14"

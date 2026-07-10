@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,153 +16,78 @@ class ReleaseVersionError(RuntimeError):
     pass
 
 
-def git(args: list[str]) -> str:
-    return subprocess.check_output(["git", "-C", str(UPSTREAM), *args], text=True).strip()
+def _git(*args: str) -> str:
+    return subprocess.check_output(
+        ["git", "-C", str(UPSTREAM), *args],
+        text=True,
+    ).strip()
 
 
-def replace_once(path: Path, pattern: str, replacement: str, *, check: bool) -> None:
-    text = path.read_text()
-    updated, count = re.subn(pattern, replacement, text, count=1, flags=re.MULTILINE)
-    if count != 1:
-        raise ReleaseVersionError(f"{path.relative_to(ROOT)} did not match {pattern!r}")
-    if check and updated != text:
-        raise ReleaseVersionError(f"{path.relative_to(ROOT)} is not synced")
-    if not check:
-        path.write_text(updated)
+def _cargo_version(python_version: str) -> str:
+    match = re.fullmatch(r"(\d+\.\d+\.\d+)(?:(a|b|rc)(\d+))?", python_version)
+    if match is None:
+        raise ReleaseVersionError(f"unsupported Python package version: {python_version}")
+    base, phase, number = match.groups()
+    if phase is None:
+        return base
+    cargo_phase = {"a": "alpha", "b": "beta", "rc": "rc"}[phase]
+    return f"{base}-{cargo_phase}.{number}"
 
 
-def upstream_base_tag() -> str:
-    try:
-        tag = git(
-            [
-                "describe",
-                "--tags",
-                "--match",
-                "v[0-9]*.[0-9]*.[0-9]*",
-                "--abbrev=0",
-                "HEAD",
-            ]
-        )
-    except subprocess.CalledProcessError as exc:
+def check_metadata() -> tuple[str, str, str]:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    py_cargo = tomllib.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
+    adapter = tomllib.loads((ROOT / "crates/agent-browser-adapter/Cargo.toml").read_text())
+    upstream_manifest = tomllib.loads((UPSTREAM / "cli/Cargo.toml").read_text())
+    upstream_metadata = json.loads((ROOT / "src/agentbrowser/_upstream.json").read_text())
+    runtime_source = (ROOT / "src/agentbrowser/_version.py").read_text()
+
+    package_version = str(project["version"])
+    expected_cargo = _cargo_version(package_version)
+    if py_cargo["package"]["version"] != expected_cargo:
+        raise ReleaseVersionError(f"crates/pyagentbrowser version must be {expected_cargo}")
+    runtime_match = re.search(r'^PACKAGE_VERSION = "([^"]+)"$', runtime_source, re.MULTILINE)
+    if runtime_match is None or runtime_match.group(1) != package_version:
+        raise ReleaseVersionError("src/agentbrowser/_version.py package version is not synced")
+
+    commit = _git("rev-parse", "HEAD")
+    tag = _git(
+        "describe",
+        "--tags",
+        "--match",
+        "v[0-9]*.[0-9]*.[0-9]*",
+        "--abbrev=0",
+        "HEAD",
+    )
+    upstream_version = str(upstream_manifest["package"]["version"])
+    expected_upstream = {
+        "commit": commit,
+        "tag": tag,
+        "version": upstream_version,
+    }
+    if upstream_metadata != expected_upstream:
+        raise ReleaseVersionError("src/agentbrowser/_upstream.json is not synced")
+    if adapter["package"]["version"] != upstream_version:
         raise ReleaseVersionError(
-            "third_party/agent-browser must be checked out at or after an upstream tag"
-        ) from exc
-    if not re.fullmatch(r"v\d+\.\d+\.\d+", tag):
-        raise ReleaseVersionError(f"unsupported upstream tag format: {tag}")
-    return tag
-
-
-def upstream_manifest_version() -> str:
-    manifest = UPSTREAM / "cli" / "Cargo.toml"
-    match = re.search(r'^version = "([^"]+)"$', manifest.read_text(), re.MULTILINE)
-    if not match:
-        raise ReleaseVersionError("third_party/agent-browser/cli/Cargo.toml has no version")
-    version = match.group(1)
-    if not re.fullmatch(r"\d+\.\d+\.\d+", version):
-        raise ReleaseVersionError(f"unsupported upstream version format: {version}")
-    return version
-
-
-def current_project_version() -> str:
-    match = re.search(r'^version = "([^"]+)"$', (ROOT / "pyproject.toml").read_text(), re.MULTILINE)
-    if not match:
-        raise ReleaseVersionError("pyproject.toml does not declare a project version")
-    return match.group(1)
-
-
-def resolve_rc(upstream_version: str, rc: int | None) -> int:
-    if rc is not None:
-        return rc
-
-    current = current_project_version()
-    match = re.fullmatch(rf"{re.escape(upstream_version)}rc(\d+)", current)
-    if match:
-        return int(match.group(1))
-    return 0
-
-
-def sync_versions(*, rc: int | None, check: bool) -> tuple[str, str, str, str]:
-    tag = upstream_base_tag()
-    upstream_version = upstream_manifest_version()
-    rc = resolve_rc(upstream_version, rc)
-    short_commit = git(["rev-parse", "--short=7", "HEAD"])
-    python_version = f"{upstream_version}rc{rc}"
-    rust_prerelease_version = f"{upstream_version}-rc.{rc}"
-
-    replace_once(
-        ROOT / "pyproject.toml",
-        r'^version = "[^"]+"$',
-        f'version = "{python_version}"',
-        check=check,
-    )
-    replace_once(
-        ROOT / "pyproject.toml",
-        r'^"Upstream agent-browser commit" = "[^"]+"$',
-        (
-            '"Upstream agent-browser commit" = '
-            f'"https://github.com/vercel-labs/agent-browser/commit/{short_commit}"'
-        ),
-        check=check,
-    )
-    replace_once(
-        ROOT / "crates" / "pyagentbrowser" / "Cargo.toml",
-        r'^version = "[^"]+"$',
-        f'version = "{rust_prerelease_version}"',
-        check=check,
-    )
-    replace_once(
-        ROOT / "crates" / "agent-browser-adapter" / "Cargo.toml",
-        r'^version = "[^"]+"$',
-        f'version = "{upstream_version}"',
-        check=check,
-    )
-
-    release_module = ROOT / "src" / "agentbrowser" / "_version.py"
-    release_module_text = "\n".join(
-        [
-            '"""Release metadata for the Python distribution and vendored upstream engine."""',
-            "",
-            'PACKAGE_NAME = "pyagentbrowser"',
-            f'PACKAGE_VERSION = "{python_version}"',
-            f'UPSTREAM_TAG = "{tag}"',
-            f'UPSTREAM_VERSION = "{upstream_version}"',
-            f'UPSTREAM_COMMIT = "{short_commit}"',
-            "",
-        ]
-    )
-    if check:
-        if release_module.read_text() != release_module_text:
-            raise ReleaseVersionError("src/agentbrowser/_version.py is not synced")
-    else:
-        release_module.write_text(release_module_text)
-
-    return python_version, upstream_version, tag, short_commit
+            f"crates/agent-browser-adapter version must be {upstream_version}"
+        )
+    return package_version, upstream_version, commit
 
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Sync pyagentbrowser prerelease metadata with the pinned upstream commit."
+        description="Verify independent SDK versioning and embedded upstream provenance."
     )
-    parser.add_argument(
-        "--rc",
-        type=int,
-        default=None,
-        help="pre-release rc number, defaulting to the current pyproject rc",
-    )
-    parser.add_argument("--check", action="store_true", help="verify files without editing")
-    args = parser.parse_args()
-    if args.rc is not None and args.rc < 0:
-        parser.error("--rc must be non-negative")
-
+    parser.add_argument("--check", action="store_true", help="verify release metadata")
+    parser.parse_args()
     try:
-        version, upstream_version, tag, commit = sync_versions(rc=args.rc, check=args.check)
-    except ReleaseVersionError as exc:
-        print(exc, file=sys.stderr)
+        package_version, upstream_version, commit = check_metadata()
+    except (ReleaseVersionError, subprocess.CalledProcessError) as error:
+        print(error, file=sys.stderr)
         return 1
-
-    action = "verified" if args.check else "synced"
     print(
-        f"{action} pyagentbrowser {version} from agent-browser {upstream_version} ({tag}, {commit})"
+        f"verified pyagentbrowser {package_version} with "
+        f"agent-browser {upstream_version} ({commit})"
     )
     return 0
 

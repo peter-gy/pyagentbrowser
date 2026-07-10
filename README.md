@@ -4,55 +4,46 @@
 [![Release Check](https://github.com/peter-gy/pyagentbrowser/actions/workflows/check-release.yml/badge.svg)](https://github.com/peter-gy/pyagentbrowser/actions/workflows/check-release.yml)
 [![License](https://img.shields.io/github/license/peter-gy/pyagentbrowser)](LICENSE)
 
-Python SDK for the native Rust [`agent-browser`](https://github.com/vercel-labs/agent-browser) engine.
-
-Use it to launch Chrome, inspect pages, act on snapshot refs, capture artifacts, and call Chrome DevTools Protocol from Python.
+pyagentbrowser embeds the native Rust [`agent-browser`](https://github.com/vercel-labs/agent-browser) engine in Python. It gives agents accessibility snapshots, stable element refs, and before-and-after evidence for browser actions.
 
 ```bash
 uv add pyagentbrowser
-# or
-python -m pip install pyagentbrowser
 ```
 
 ```python
-import agentbrowser as ab
+from agentbrowser import Browser, Wait
 
-browser = ab.configure()
-browser.page.open("https://github.com/peter-gy/pyagentbrowser")
-browser.capture.screenshot(full_page=True)
+with Browser.launch() as browser:
+    browser.open("https://example.com")
+    page = browser.observe()
+    result = page.one(role="link", name="Learn more").click(
+        wait=Wait.url("*://www.iana.org/*")
+    )
+
+    print(result.after.text)
 ```
 
-Local Chrome launches use an installed Chrome or Chromium executable. When none is found, pyagentbrowser prepares Chrome for Testing through the bundled native installer.
+`Browser` owns the native session. `Snapshot` binds accessibility refs to the page state that produced them. Ref actions return an `ActionResult` containing the original snapshot, the resulting snapshot, and their diff.
 
-## API
+Use `browser.find` for live CSS, XPath, and semantic queries. Namespaces such as `browser.capture`, `browser.tabs`, `browser.network`, and `browser.cdp` expose focused browser capabilities. Every action in the pinned native engine remains available through `browser.native`.
 
-- `browser.page`: navigation, content, waits, and readable page extraction
-- `browser.agent`: accessibility snapshots with action-ready refs
-- `browser.find`: CSS, XPath, text, role, label, and test-id locators
-- `browser.capture`: screenshots, PDFs, and action evidence
-- `browser.tabs`: tab creation, listing, and switching
-- `browser.network`: request logs, routing, HAR, and proxy credentials
-- `browser.cdp`: frames, targets, execution contexts, and raw CDP calls
+## Documentation
 
-`AsyncBrowser` mirrors the same surface with awaitable methods.
+- [Get started](docs/getting-started.md)
+- [Guides](docs/guides.md)
+- [API reference](docs/api.md)
+- [Runnable examples](examples/)
 
-## Extras
+## Installation options
+
+The distribution is named `pyagentbrowser`. Python imports it as `agentbrowser`. Wheels support Python 3.11 through 3.14 on macOS and Linux.
 
 ```bash
-python -m pip install "pyagentbrowser[images]"
-python -m pip install "pyagentbrowser[cdp]"
+uv add "pyagentbrowser[images]"  # Pillow-backed screenshot helpers
+uv add "pyagentbrowser[cdp]"     # CDP frames, targets, and evaluation
 ```
 
-- `images` adds Pillow helpers for screenshot objects.
-- `cdp` adds WebSocket-backed frame, target, and execution-context evaluation.
-
-## Links
-
-- [Install](docs/install.md)
-- [Quickstart](docs/quickstart.md)
-- [API reference](docs/api-reference.md)
-- [Examples](examples/)
-- [agent-browser docs](https://agent-browser.dev/)
+Local launches find an installed Chromium browser or prepare Chrome for Testing through the native installer.
 
 ## Development
 
@@ -61,7 +52,7 @@ make install
 make check
 ```
 
-Use `make package` for wheel and sdist smoke checks.
+`make test-integration` exercises the Python, PyO3, adapter, and CDP seams against a real browser. `make check-release` builds and installs both distribution artifacts.
 
 ## License
 

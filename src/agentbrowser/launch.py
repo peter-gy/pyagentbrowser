@@ -3,11 +3,12 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, TypeAlias, TypedDict
+from typing import Any
 
 from agentbrowser.command_params import optional
 from agentbrowser.models import (
     ColorScheme,
+    DashboardOptions,
     ProxyConfig,
     RestoreOptions,
     path_value,
@@ -36,32 +37,17 @@ class LaunchOptions:
     user_agent: str | None = None
     download_path: str | Path | None = None
 
-
-class LaunchOptionsDict(TypedDict, total=False):
-    """Mapping form accepted anywhere `LaunchOptions` is accepted."""
-
-    headless: bool
-    executable_path: str | Path | None
-    engine: str | None
-    profile: str | Path | None
-    storage_state: str | Path | None
-    extensions: Sequence[str | Path]
-    proxy: str | ProxyConfig | Mapping[str, Any] | None
-    provider: str | None
-    color_scheme: ColorScheme | None
-    hide_scrollbars: bool | None
-    args: Sequence[str]
-    allow_file_access: bool
-    ignore_https_errors: bool
-    user_agent: str | None
-    download_path: str | Path | None
-
-
-LaunchOptionsInput: TypeAlias = LaunchOptions | LaunchOptionsDict | Mapping[str, Any]
+    def __post_init__(self) -> None:
+        if isinstance(self.extensions, str):
+            raise TypeError("extensions must be a sequence, not a string")
+        if isinstance(self.args, str):
+            raise TypeError("args must be a sequence, not a string")
+        object.__setattr__(self, "extensions", tuple(self.extensions))
+        object.__setattr__(self, "args", tuple(self.args))
 
 
 @dataclass(frozen=True, slots=True)
-class CDPAttach:
+class CDPTarget:
     """CDP attachment target used by `Browser.attach(...)`."""
 
     url: str | None = None
@@ -71,82 +57,76 @@ class CDPAttach:
     def __post_init__(self) -> None:
         if (self.url is None) == (self.port is None):
             raise ValueError("pass exactly one of url or port")
-
-
-class CDPAttachDict(TypedDict, total=False):
-    """Mapping form accepted anywhere `CDPAttach` is accepted."""
-
-    url: str | None
-    port: int | None
-    auto_connect: bool
-
-
-CDPAttachInput: TypeAlias = CDPAttach | CDPAttachDict | Mapping[str, Any]
+        if self.url is not None and not self.url.strip():
+            raise ValueError("url must not be empty")
+        if self.port is not None and not 1 <= self.port <= 65535:
+            raise ValueError("port must be between 1 and 65535")
 
 
 @dataclass(frozen=True, slots=True)
-class BrowserSessionOptions:
+class SessionOptions:
     """Native session, restore, allowlist, and policy options for a browser."""
 
     session_id: str | None = None
     restore: RestoreOptions | None = None
     namespace: str | None = None
-    default_timeout_ms: int | None = 15_000
-    allowed_domains: str | None = None
+    timeout: float | None = 15.0
+    allowed_domains: Sequence[str] = ()
     action_policy: str | Path | None = None
-    confirm_actions: Sequence[str] | None = None
-    no_auto_dialog: bool = False
+    confirm_actions: Sequence[str] = ()
+    auto_dialogs: bool = True
+    dashboard: DashboardOptions | None = None
+
+    def __post_init__(self) -> None:
+        if self.timeout is not None and self.timeout < 0:
+            raise ValueError("timeout must be non-negative")
+        if isinstance(self.allowed_domains, str):
+            raise TypeError("allowed_domains must be a sequence, not a string")
+        if isinstance(self.confirm_actions, str):
+            raise TypeError("confirm_actions must be a sequence, not a string")
+        domains = tuple(self.allowed_domains)
+        actions = tuple(self.confirm_actions)
+        if any(not domain.strip() for domain in domains):
+            raise ValueError("allowed_domains entries must not be empty")
+        if any(not action.strip() for action in actions):
+            raise ValueError("confirm_actions entries must not be empty")
+        if self.dashboard is not None and not isinstance(self.dashboard, DashboardOptions):
+            raise TypeError("dashboard must be DashboardOptions")
+        object.__setattr__(self, "allowed_domains", domains)
+        object.__setattr__(self, "confirm_actions", actions)
+
+    def _timeout_ms(self) -> int | None:
+        return None if self.timeout is None else round(self.timeout * 1000)
+
+    def _allowed_domains(self) -> str | None:
+        return ",".join(self.allowed_domains) or None
 
 
-class BrowserSessionOptionsDict(TypedDict, total=False):
-    """Mapping form accepted anywhere `BrowserSessionOptions` is accepted."""
-
-    session_id: str | None
-    restore: RestoreOptions | None
-    namespace: str | None
-    default_timeout_ms: int | None
-    allowed_domains: str | None
-    action_policy: str | Path | None
-    confirm_actions: Sequence[str] | None
-    no_auto_dialog: bool
-
-
-BrowserSessionOptionsInput: TypeAlias = (
-    BrowserSessionOptions | BrowserSessionOptionsDict | Mapping[str, Any]
-)
-
-
-def normalize_launch(options: LaunchOptionsInput | None = None) -> LaunchOptions:
+def normalize_launch(options: LaunchOptions | None = None) -> LaunchOptions:
     """Return normalized browser process options."""
     if options is None:
         return LaunchOptions()
     if isinstance(options, LaunchOptions):
         return options
-    if isinstance(options, Mapping):
-        return LaunchOptions(**dict(options))
-    raise TypeError("launch options must be LaunchOptions or a mapping")
+    raise TypeError("launch options must be LaunchOptions")
 
 
-def cdp_attach(target: CDPAttachInput) -> CDPAttach:
+def cdp_target(target: CDPTarget) -> CDPTarget:
     """Return a normalized CDP attachment target."""
-    if isinstance(target, CDPAttach):
+    if isinstance(target, CDPTarget):
         return target
-    if isinstance(target, Mapping):
-        return CDPAttach(**dict(target))
-    raise TypeError("attach target must be CDPAttach or a mapping")
+    raise TypeError("attach target must be CDPTarget")
 
 
 def normalize_session(
-    options: BrowserSessionOptionsInput | None = None,
-) -> BrowserSessionOptions:
+    options: SessionOptions | None = None,
+) -> SessionOptions:
     """Return normalized browser session options."""
     if options is None:
-        return BrowserSessionOptions()
-    if isinstance(options, BrowserSessionOptions):
+        return SessionOptions()
+    if isinstance(options, SessionOptions):
         return options
-    if isinstance(options, Mapping):
-        return BrowserSessionOptions(**dict(options))
-    raise TypeError("session options must be BrowserSessionOptions or a mapping")
+    raise TypeError("session options must be SessionOptions")
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,14 +206,14 @@ class LaunchConfiguration:
     @classmethod
     def from_public_options(
         cls,
-        options: LaunchOptionsInput | None = None,
+        options: LaunchOptions | None = None,
         *,
-        attach: CDPAttachInput | None = None,
+        attach: CDPTarget | None = None,
         allowed_domains: str | None = None,
     ) -> LaunchConfiguration:
         """Build a launch configuration from named public option objects."""
         options = normalize_launch(options)
-        target = cdp_attach(attach) if attach is not None else None
+        target = cdp_target(attach) if attach is not None else None
         return cls.from_options(
             headless=options.headless,
             executable_path=options.executable_path,
@@ -256,7 +236,7 @@ class LaunchConfiguration:
             download_path=options.download_path,
         )
 
-    def replace_launch(self, options: LaunchOptionsInput) -> LaunchConfiguration:
+    def replace_launch(self, options: LaunchOptions) -> LaunchConfiguration:
         """Return this configuration with browser process options replaced."""
         options = normalize_launch(options)
         return replace(
@@ -281,7 +261,7 @@ class LaunchConfiguration:
     def command_params(
         self,
         *,
-        options: LaunchOptionsInput | None = None,
+        options: LaunchOptions | None = None,
     ) -> dict[str, Any]:
         """Return native command parameters for `launch`."""
         config = self.replace_launch(options) if options is not None else self

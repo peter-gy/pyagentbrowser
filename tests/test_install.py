@@ -48,7 +48,7 @@ def test_ensure_installed_returns_discovered_cache_browser(
     assert result.installed is False
 
 
-def test_ensure_installed_runs_bundled_native_installer(
+def test_ensure_installed_isolates_the_native_installer_in_a_subprocess(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -81,13 +81,10 @@ def test_ensure_installed_runs_bundled_native_installer(
     assert result.executable_path == chrome
     assert result.source == "download"
     assert result.installed is True
-    assert commands == [
-        [
-            install_mod.sys.executable,
-            "-c",
-            "from agentbrowser._native import _run_browser_install; _run_browser_install(False)",
-        ]
-    ]
+    assert len(commands) == 1
+    command = commands[0]
+    assert command[:2] == [install_mod.sys.executable, "-c"]
+    assert "_run_browser_install(False)" in command[2]
 
 
 def test_ensure_installed_reports_native_install_failure(

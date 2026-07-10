@@ -21,6 +21,7 @@ import importlib.resources as resources
 from pathlib import Path
 
 import agentbrowser as ab
+import agentbrowser.skills as skills
 from agentbrowser import Browser
 from agentbrowser.cdp import CDPClient
 from agentbrowser.models import Screenshot
@@ -32,16 +33,16 @@ assert ab.__agent_browser_version__
 assert importlib.util.find_spec("pyagentbrowser") is None
 assert resources.files("agentbrowser").joinpath("py.typed").is_file()
 
-assert "core" in ab.skills.available()
-assert ab.skills.get("core").parts
-core = ab.skills.get("core", full=True)
+assert "core" in skills.available()
+assert skills.get("core").parts
+core = skills.get("core", full=True)
 assert core.files
-full_markdown = ab.skills.markdown("core", full=True)
-core_content = ab.skills.read("core")
+full_markdown = skills.markdown("core", full=True)
+core_content = skills.read("core")
 assert core_content
 assert core_content in full_markdown
 for supplement in core.files:
-    supplement_content = ab.skills.read("core", supplement.path)
+    supplement_content = skills.read("core", supplement.path)
     assert supplement_content
     assert supplement.path in full_markdown
     assert supplement_content in full_markdown

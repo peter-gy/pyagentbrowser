@@ -14,7 +14,6 @@ from agentbrowser import AgentBrowserError, AsyncBrowser, Browser
 from agentbrowser.cdp import (
     AsyncCDPClient,
     AsyncCDPController,
-    AsyncCDPPageSession,
     CDPClient,
     CDPClosedError,
     CDPContextNotFoundError,
@@ -137,24 +136,6 @@ class FakeCDPTransport:
         events = self.events
         self.events = []
         return events
-
-
-class FakeAsyncCDPTransport:
-    def __init__(self) -> None:
-        self._sync = FakeCDPTransport()
-        self.calls = self._sync.calls
-
-    async def send(
-        self,
-        method: str,
-        params: Mapping[str, Any] | None = None,
-        *,
-        session_id: str | None = None,
-    ) -> Mapping[str, Any]:
-        return self._sync.send(method, params, session_id=session_id)
-
-    async def drain_events(self, *, timeout: float = 0.05) -> list[Mapping[str, Any]]:
-        return self._sync.drain_events(timeout=timeout)
 
 
 class PublicPathCDPClient(FakeCDPTransport):
@@ -606,7 +587,7 @@ def test_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
 
 def test_async_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
     async def run() -> None:
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=PublicPathNative()))
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=PublicPathNative()))
         controller = AsyncCDPController(
             browser,
             client_factory=cast(Any, PublicPathAsyncCDPClient),
@@ -619,21 +600,21 @@ def test_async_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
             await frame.evaluate("location.href")
         with pytest.raises(CDPClosedError, match="CDP controller is closed"):
             await controller.evaluate("location.href")
-        await browser.aclose()
+        await browser.close()
 
     asyncio.run(run())
 
 
 def test_page_evaluate_without_context_uses_native_command() -> None:
-    browser = Browser(native_session=NativeSession(native=PublicPathNative()))
+    browser = Browser(_native_session=NativeSession(native=PublicPathNative()))
 
-    assert browser.page.evaluate("1 + 1") == 2
+    assert browser.evaluate("1 + 1") == 2
 
 
 def _browser_with_public_path_cdp(monkeypatch: pytest.MonkeyPatch) -> Browser:
     cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", PublicPathCDPClient)
-    return Browser(native_session=NativeSession(native=PublicPathNative()))
+    return Browser(_native_session=NativeSession(native=PublicPathNative()))
 
 
 def test_browser_cdp_frames_list_uses_public_namespace(
@@ -668,7 +649,7 @@ def test_browser_cdp_evaluate_uses_frame_selector(
     cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "CDPClient", PublicPathCDPClient)
 
-    browser = Browser(native_session=NativeSession(native=PublicPathNative()))
+    browser = Browser(_native_session=NativeSession(native=PublicPathNative()))
 
     assert browser.cdp.evaluate("document.title", frame="#target") == "context:child-unique"
 
@@ -703,66 +684,12 @@ def test_async_cdp_client_optional_extra_error_is_actionable(
     asyncio.run(run())
 
 
-async def _async_cdp_page() -> AsyncCDPPageSession:
-    page = AsyncCDPPageSession(
-        FakeAsyncCDPTransport(),
-        session_id="s1",
-        target_id="target",
-    )
-    await page.enable()
-    return page
-
-
-def test_async_frame_returns_main_frame() -> None:
-    async def run() -> None:
-        page = await _async_cdp_page()
-        frame = await page.frame()
-
-        assert frame.id == "main"
-
-    asyncio.run(run())
-
-
-def test_async_frames_lists_current_frame_tree() -> None:
-    async def run() -> None:
-        page = await _async_cdp_page()
-        frames = await page.frames()
-        frames_by_id = {frame.id: frame for frame in frames}
-
-        assert frames_by_id["main"].url == "https://example.com"
-        assert frames_by_id["child"].name == "target"
-        assert frames_by_id["child"].url == "https://example.com/frame"
-
-    asyncio.run(run())
-
-
-def test_async_frame_evaluate_uses_selected_frame_context() -> None:
-    async def run() -> None:
-        page = await _async_cdp_page()
-        frame = await page.frame()
-
-        assert await frame.evaluate("location.href") == "context:main-unique"
-
-    asyncio.run(run())
-
-
-def test_async_frame_context_evaluates_explicit_context() -> None:
-    async def run() -> None:
-        page = await _async_cdp_page()
-        frame = await page.frame()
-        context = await frame.context()
-
-        assert await context.evaluate("document.title") == "context:main-unique"
-
-    asyncio.run(run())
-
-
 async def _async_browser_with_public_path_cdp(
     monkeypatch: pytest.MonkeyPatch,
 ) -> AsyncBrowser:
     cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
     monkeypatch.setattr(cdp_controller, "AsyncCDPClient", PublicPathAsyncCDPClient)
-    return AsyncBrowser(native_session=AsyncNativeSession(native=PublicPathNative()))
+    return AsyncBrowser(_native_session=AsyncNativeSession(native=PublicPathNative()))
 
 
 def test_browser_async_cdp_frames_list_uses_public_namespace(
@@ -774,48 +701,7 @@ def test_browser_async_cdp_frames_list_uses_public_namespace(
         frames = {frame.id: frame for frame in await browser.cdp.frames.list()}
         assert frames["main"].url == "https://example.com"
         assert frames["child"].name == "target"
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_browser_async_cdp_frames_lookup_by_name_uses_public_namespace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def run() -> None:
-        browser = await _async_browser_with_public_path_cdp(monkeypatch)
-
-        assert (await browser.cdp.frames.get(name="target")).id == "child"
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_browser_async_cdp_frames_lookup_by_selector_uses_public_namespace(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    async def run() -> None:
-        browser = await _async_browser_with_public_path_cdp(monkeypatch)
-
-        assert (await browser.cdp.frames.get(selector="#target")).id == "child"
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_browser_async_cdp_evaluate_uses_frame_selector(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    cdp_controller = importlib.import_module("agentbrowser.cdp.controller")
-    monkeypatch.setattr(cdp_controller, "AsyncCDPClient", PublicPathAsyncCDPClient)
-
-    async def run() -> None:
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=PublicPathNative()))
-
-        assert await browser.cdp.evaluate("document.title", frame="#target") == (
-            "context:child-unique"
-        )
-        await browser.aclose()
+        await browser.close()
 
     asyncio.run(run())
 

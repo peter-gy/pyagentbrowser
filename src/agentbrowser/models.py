@@ -4,15 +4,14 @@ import builtins
 import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
 from shutil import copyfile
-from typing import TYPE_CHECKING, Any, Literal, TypeAlias, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, TypeVar, cast
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
-    from agentbrowser.agent import AgentSnapshot
-    from agentbrowser.agent_async import AsyncAgentSnapshot
 else:
     PILImage = Any
 
@@ -32,6 +31,9 @@ SessionIdScope = Literal["worktree", "cwd", "git-root"]
 StorageArea = Literal["local", "session"]
 WaitSelectorState = Literal["attached", "detached", "hidden", "visible"]
 ColorScheme = Literal["dark", "light", "no-preference"]
+T = TypeVar("T")
+RefT = TypeVar("RefT")
+SnapshotT = TypeVar("SnapshotT")
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +42,7 @@ class RestoreOptions:
 
     key: str
     save: RestoreSave | None = None
+    autosave_interval_ms: int | None = None
     check_url: str | None = None
     check_text: str | None = None
     check_fn: str | None = None
@@ -52,6 +55,8 @@ class RestoreOptions:
             )
         if self.save is not None and self.save not in {"auto", "always", "never"}:
             raise ValueError("save must be 'auto', 'always', or 'never'")
+        if self.autosave_interval_ms is not None and self.autosave_interval_ms < 0:
+            raise ValueError("autosave_interval_ms must be non-negative")
 
 
 def _is_valid_session_component(value: str) -> bool:
@@ -96,7 +101,7 @@ class BrowserError(AgentBrowserError):
         self.code = code or _error_code_from_response(response)
 
 
-class ActionConfirmationRequired(BrowserError):
+class ConfirmationRequired(BrowserError, Generic[T]):
     """Raised when the native policy requires confirmation before execution."""
 
     def __init__(
@@ -113,7 +118,7 @@ class ActionConfirmationRequired(BrowserError):
         )
         self.confirmation_id = str(confirmation_id) if confirmation_id is not None else None
         self.data = dict(data)
-        self.pending_action: Any = None
+        self.pending = cast(T, None)
 
 
 @dataclass(frozen=True, slots=True)
@@ -182,8 +187,69 @@ class DashboardOptions:
 
 
 @dataclass(frozen=True, slots=True)
-class Snapshot:
-    """Accessibility snapshot result.
+class SnapshotSpec:
+    """Options that define a reproducible accessibility snapshot."""
+
+    selector: str | None = None
+    interactive: bool = True
+    compact: bool = False
+    max_depth: int | None = None
+    urls: bool = False
+
+    def __post_init__(self) -> None:
+        if self.max_depth is not None and self.max_depth < 0:
+            raise ValueError("max_depth must be non-negative")
+
+
+@dataclass(frozen=True, slots=True)
+class Wait:
+    """Condition applied after an agent action."""
+
+    kind: Literal["text", "url", "load", "all"]
+    value: str | None = None
+    timeout_ms: int | None = None
+    conditions: tuple[Wait, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.timeout_ms is not None and self.timeout_ms < 0:
+            raise ValueError("timeout_ms must be non-negative")
+        if self.kind == "all":
+            if not self.conditions:
+                raise ValueError("Wait.all requires at least one condition")
+            if self.value is not None:
+                raise ValueError("Wait.all does not accept a value")
+        elif self.value is None or self.conditions:
+            raise ValueError(f"Wait.{self.kind} requires one value")
+
+    @classmethod
+    def text(cls, text: str, *, timeout_ms: int | None = None) -> Wait:
+        """Wait for page text after an action."""
+        return cls("text", text, timeout_ms)
+
+    @classmethod
+    def url(cls, url: str, *, timeout_ms: int | None = None) -> Wait:
+        """Wait for a URL pattern after an action."""
+        return cls("url", url, timeout_ms)
+
+    @classmethod
+    def loaded(
+        cls,
+        state: LoadState = "load",
+        *,
+        timeout_ms: int | None = None,
+    ) -> Wait:
+        """Wait for a page load state after an action."""
+        return cls("load", state, timeout_ms)
+
+    @classmethod
+    def all(cls, *conditions: Wait) -> Wait:
+        """Apply several wait conditions in order."""
+        return cls("all", conditions=tuple(conditions))
+
+
+@dataclass(frozen=True, slots=True)
+class SnapshotData:
+    """Parsed native accessibility snapshot data.
 
     Attributes
     ----------
@@ -201,6 +267,7 @@ class Snapshot:
     origin: str
     refs: Mapping[str, Mapping[str, Any]]
     raw: Mapping[str, Any]
+    spec: SnapshotSpec = field(default_factory=SnapshotSpec)
 
     def ref(self, ref_id: str) -> SnapshotRef:
         """Return one snapshot ref by id.
@@ -258,20 +325,33 @@ class SnapshotRef:
         return ref_selector(self.id)
 
 
-def snapshot_from_data(data: Mapping[str, Any]) -> Snapshot:
-    refs: dict[str, Mapping[str, Any]] = {}
+def snapshot_from_data(
+    data: Mapping[str, Any],
+    *,
+    spec: SnapshotSpec | None = None,
+) -> SnapshotData:
+    text = data.get("snapshot")
+    origin = data.get("origin")
     raw_refs = data.get("refs")
-    if isinstance(raw_refs, Mapping):
-        refs = {
-            str(key): {str(ref_key): ref_value for ref_key, ref_value in value.items()}
-            for key, value in raw_refs.items()
-            if isinstance(value, Mapping)
-        }
-    return Snapshot(
-        text=str(data.get("snapshot", "")),
-        origin=str(data.get("origin", "")),
+    if not isinstance(text, str):
+        raise NativeParseError("Snapshot field 'snapshot' must be a string")
+    if not isinstance(origin, str):
+        raise NativeParseError("Snapshot field 'origin' must be a string")
+    if not isinstance(raw_refs, Mapping):
+        raise NativeParseError("Snapshot field 'refs' must be an object")
+    refs: dict[str, dict[str, Any]] = {}
+    for key, value in raw_refs.items():
+        if not isinstance(value, Mapping):
+            raise NativeParseError("Snapshot ref metadata must be objects")
+        if not isinstance(value.get("role"), str) or not isinstance(value.get("name"), str):
+            raise NativeParseError("Snapshot refs require string 'role' and 'name' fields")
+        refs[str(key)] = {str(ref_key): ref_value for ref_key, ref_value in value.items()}
+    return SnapshotData(
+        text=text,
+        origin=origin,
         refs=refs,
         raw=data,
+        spec=spec or SnapshotSpec(),
     )
 
 
@@ -288,14 +368,82 @@ class SnapshotDiff:
 
 
 @dataclass(frozen=True, slots=True)
-class ActionEvidence:
-    """Before/after evidence returned by ref action helpers."""
+class ActionResult(Generic[RefT, SnapshotT]):
+    """Before/after evidence for an agent action."""
 
     action: str
-    target: str
-    before: AgentSnapshot | AsyncAgentSnapshot
-    after: AgentSnapshot | AsyncAgentSnapshot
+    target: RefT
+    before: SnapshotT
+    after: SnapshotT
     diff: SnapshotDiff
+
+
+class ActionTransitionError(AgentBrowserError, Generic[RefT, SnapshotT]):
+    """Raised after an action succeeds but transition evidence cannot complete."""
+
+    def __init__(
+        self,
+        *,
+        action: str,
+        target: RefT,
+        stage: Literal["wait", "snapshot", "diff"],
+        before: SnapshotT,
+        after: SnapshotT | None,
+        cause: BaseException,
+    ) -> None:
+        super().__init__(f"{action} completed, then {stage} failed: {cause}")
+        self.action = action
+        self.target = target
+        self.stage = stage
+        self.before = before
+        self.after = after
+        self.cause = cause
+
+
+def diff_snapshot_data(before: SnapshotData, after: SnapshotData) -> SnapshotDiff:
+    """Compare two captured snapshots without reading live browser state again."""
+    before_lines = [f"origin: {before.origin}", *before.text.splitlines()]
+    after_lines = [f"origin: {after.origin}", *after.text.splitlines()]
+    additions = 0
+    removals = 0
+    unchanged = 0
+    for tag, before_start, before_end, after_start, after_end in SequenceMatcher(
+        None,
+        before_lines,
+        after_lines,
+        autojunk=False,
+    ).get_opcodes():
+        if tag == "equal":
+            unchanged += before_end - before_start
+        elif tag == "insert":
+            additions += after_end - after_start
+        elif tag == "delete":
+            removals += before_end - before_start
+        else:
+            removals += before_end - before_start
+            additions += after_end - after_start
+    text = "\n".join(
+        unified_diff(
+            before_lines,
+            after_lines,
+            fromfile="before",
+            tofile="after",
+            lineterm="",
+        )
+    )
+    return SnapshotDiff(
+        text=text,
+        additions=additions,
+        removals=removals,
+        unchanged=unchanged,
+        changed=before_lines != after_lines,
+        raw={
+            "before": before.text,
+            "after": after.text,
+            "beforeOrigin": before.origin,
+            "afterOrigin": after.origin,
+        },
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -364,7 +512,7 @@ class RequestDetail:
 
 @dataclass(frozen=True, slots=True)
 class ReadResult:
-    """Markdown-oriented content returned by `browser.page.read()`."""
+    """Markdown-oriented content returned by `browser.read()`."""
 
     url: str
     final_url: str
@@ -378,7 +526,7 @@ class ReadResult:
 
 @dataclass(frozen=True, slots=True)
 class ReadMode:
-    """Native read mode passed to `browser.page.read(mode=...)`."""
+    """Native read mode passed to `browser.read(mode=...)`."""
 
     raw: bool = False
     require_markdown: bool = False
@@ -594,8 +742,11 @@ def screenshot_from_data(
     *,
     format: str = "png",
 ) -> Screenshot:
+    path = data.get("path")
+    if not isinstance(path, str):
+        raise NativeParseError("Screenshot field 'path' must be a string")
     return Screenshot(
-        path=Path(str(data["path"])),
+        path=Path(path),
         format=_normalize_image_format(format),
         annotations=_parse_screenshot_annotations(data.get("annotations")),
         raw=data,
@@ -619,8 +770,10 @@ def bounding_box_from_data(data: Mapping[str, Any]) -> BoundingBox | None:
 def tabs_from_data(data: Mapping[str, Any]) -> tuple[TabInfo, ...]:
     raw_tabs = data.get("tabs")
     if not isinstance(raw_tabs, list):
-        return ()
-    return tuple(tab for item in raw_tabs if isinstance(item, Mapping) for tab in [_tab_info(item)])
+        raise NativeParseError("TabInfo collection field 'tabs' must be an array")
+    if any(not isinstance(item, Mapping) for item in raw_tabs):
+        raise NativeParseError("TabInfo collection entries must be objects")
+    return tuple(_tab_info(cast(Mapping[str, Any], item)) for item in raw_tabs)
 
 
 def tab_from_data(data: Mapping[str, Any]) -> TabInfo:
@@ -631,22 +784,19 @@ def tab_from_data(data: Mapping[str, Any]) -> TabInfo:
 def cookies_from_data(data: Mapping[str, Any]) -> tuple[Cookie, ...]:
     raw_cookies = data.get("cookies")
     if not isinstance(raw_cookies, list):
-        return ()
-    return tuple(
-        cookie for item in raw_cookies if isinstance(item, Mapping) for cookie in [_cookie(item)]
-    )
+        raise NativeParseError("Cookie collection field 'cookies' must be an array")
+    if any(not isinstance(item, Mapping) for item in raw_cookies):
+        raise NativeParseError("Cookie collection entries must be objects")
+    return tuple(_cookie(cast(Mapping[str, Any], item)) for item in raw_cookies)
 
 
 def network_requests_from_data(data: Mapping[str, Any]) -> tuple[NetworkRequest, ...]:
     raw_requests = data.get("requests")
     if not isinstance(raw_requests, list):
-        return ()
-    return tuple(
-        request
-        for item in raw_requests
-        if isinstance(item, Mapping)
-        for request in [_network_request(item)]
-    )
+        raise NativeParseError("NetworkRequest collection field 'requests' must be an array")
+    if any(not isinstance(item, Mapping) for item in raw_requests):
+        raise NativeParseError("NetworkRequest collection entries must be objects")
+    return tuple(_network_request(cast(Mapping[str, Any], item)) for item in raw_requests)
 
 
 def request_detail_from_data(data: Mapping[str, Any]) -> RequestDetail:
@@ -682,15 +832,15 @@ def read_result_from_data(data: Mapping[str, Any]) -> ReadResult:
 
 
 def console_messages_from_data(data: Mapping[str, Any]) -> tuple[ConsoleMessage, ...]:
-    raw_messages = data.get("messages") or data.get("logs") or data.get("entries")
-    if not isinstance(raw_messages, list):
-        return ()
-    return tuple(
-        message
-        for item in raw_messages
-        if isinstance(item, Mapping)
-        for message in [_console_message(item)]
+    raw_messages = next(
+        (data[field] for field in ("messages", "logs", "entries") if field in data),
+        None,
     )
+    if not isinstance(raw_messages, list):
+        raise NativeParseError("ConsoleMessage collection must be an array")
+    if any(not isinstance(item, Mapping) for item in raw_messages):
+        raise NativeParseError("ConsoleMessage collection entries must be objects")
+    return tuple(_console_message(cast(Mapping[str, Any], item)) for item in raw_messages)
 
 
 @dataclass(frozen=True, slots=True)
@@ -924,4 +1074,6 @@ def _matches_ref(
         matches_name = ref.name == name if exact else name in ref.name
         if not matches_name:
             return False
-    return not (contains is not None and contains not in ref.name)
+    if contains is None:
+        return True
+    return ref.name == contains if exact else contains in ref.name

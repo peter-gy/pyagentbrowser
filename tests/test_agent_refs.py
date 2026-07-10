@@ -2,496 +2,306 @@ from __future__ import annotations
 
 import asyncio
 import json
+from typing import Any
 
 import pytest
-from fakes import AgentNative, StaleRefNative, TransitionSnapshotNative
 
 from agentbrowser import (
-    ActionEvidence,
-    AgentSnapshot,
-    AsyncAgentSnapshot,
+    ActionResult,
+    ActionTransitionError,
     AsyncBrowser,
-    AsyncStaleAgentRefError,
+    AsyncSnapshot,
     Browser,
     BrowserError,
-    StaleAgentRefError,
+    ConfirmationRequired,
+    NativeParseError,
+    Snapshot,
+    SnapshotSpec,
+    StaleRefError,
+    Wait,
 )
-from agentbrowser.models import SnapshotDiff
 from agentbrowser.session import NativeSession
 from agentbrowser.session_async import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
 
-class BoundRefNative:
+def _snapshot(*, submitted: bool = False) -> dict[str, Any]:
+    return {
+        "snapshot": '@e1 [button] "Submit"\n@e2 [textbox] "Email"',
+        "origin": "https://example.com/complete" if submitted else "https://example.com/form",
+        "refs": {
+            "e1": {"role": "button", "name": "Submit"},
+            "e2": {"role": "textbox", "name": "Email"},
+        },
+    }
+
+
+class TransitionNative:
     def __init__(self) -> None:
-        self.email: str | None = None
+        self.commands: list[dict[str, Any]] = []
         self.submitted = False
 
     def execute_json(self, command_json: str) -> str:
         command = json.loads(command_json)
+        self.commands.append(command)
         action = command["action"]
         if action == "snapshot":
-            data = {
-                "snapshot": '@e1 [button] "Submit"\n@e2 [input] "Email"',
-                "origin": "https://example.com",
-                "refs": {
-                    "e1": {"role": "button", "name": "Submit"},
-                    "e2": {"role": "textbox", "name": "Email"},
-                },
-            }
-        elif action == "fill" and command.get("selector") == "@e2":
-            self.email = str(command.get("value"))
-            data = {}
-        elif action == "click" and command.get("selector") == "@e1":
-            if self.email != "ada@example.com":
-                raise AssertionError("submit clicked before email was filled")
+            data = _snapshot(submitted=self.submitted)
+        elif action == "click":
             self.submitted = True
             data = {}
-        elif action == "title":
-            data = {"title": "Submitted" if self.submitted else "Form"}
+        elif action == "wait":
+            data = {}
+        elif action in {"gettext", "isvisible"}:
+            data = {"text": "Submit"} if action == "gettext" else {"visible": True}
+        elif action == "__agent_browser_internal_shutdown":
+            data = {}
         else:
-            raise AssertionError(f"unexpected bound ref command: {command}")
+            raise AssertionError(f"unexpected transition command: {command}")
         return json.dumps({"id": command["id"], "success": True, "data": data})
 
 
-def test_browser_observe_exposes_snapshot_refs() -> None:
-    browser = Browser(native_session=NativeSession(native=BoundRefNative()))
-    page = browser.observe()
+class StaleNative(TransitionNative):
+    def __init__(self, *, structured: bool) -> None:
+        super().__init__()
+        self.structured = structured
+        self.attempts = 0
 
-    assert isinstance(page, AgentSnapshot)
-    assert page.text.startswith("@e1")
-    assert page.ref("e1").selector == "@e1"
-    assert page.find(role="button", name="Submit", exact=True).name == "Submit"
+    def execute_json(self, command_json: str) -> str:
+        command = json.loads(command_json)
+        if command["action"] == "snapshot" and self.attempts > 0:
+            self.commands.append(command)
+            data = {
+                "snapshot": '@e3 [button] "Submit"\n@e4 [textbox] "Email"',
+                "origin": "https://example.com/form",
+                "refs": {
+                    "e3": {"role": "button", "name": "Submit"},
+                    "e4": {"role": "textbox", "name": "Email"},
+                },
+            }
+            return json.dumps({"id": command["id"], "success": True, "data": data})
+        if command["action"] == "click":
+            self.commands.append(command)
+            self.attempts += 1
+            if self.attempts == 1:
+                response: dict[str, Any] = {
+                    "id": command["id"],
+                    "success": False,
+                    "error": "selector was stale"
+                    if self.structured
+                    else "stale ref mentioned in prose",
+                }
+                if self.structured:
+                    response["code"] = "stale_ref"
+                return json.dumps(response)
+        return super().execute_json(command_json)
 
 
-def test_agent_refs_drive_actions_and_page_state() -> None:
-    native = BoundRefNative()
-    browser = Browser(native_session=NativeSession(native=native))
-    page = browser.observe()
-    email = page.find(name="Email")
-    submit = page.ref("@e1")
+class ConfirmedTransitionNative(TransitionNative):
+    def execute_json(self, command_json: str) -> str:
+        command = json.loads(command_json)
+        if command["action"] == "click":
+            self.commands.append(command)
+            data = {
+                "confirmation_required": True,
+                "confirmation_id": "confirm-click",
+                "action": "click",
+            }
+            return json.dumps({"id": command["id"], "success": True, "data": data})
+        if command["action"] == "confirm":
+            self.commands.append(command)
+            self.submitted = True
+            data = {
+                "confirmed": True,
+                "action": "click",
+                "result": {
+                    "id": "confirmed-click",
+                    "success": True,
+                    "data": {},
+                },
+            }
+            return json.dumps({"id": command["id"], "success": True, "data": data})
+        return super().execute_json(command_json)
 
-    assert email.fill("ada@example.com") is email
-    assert submit.click() is submit
-    assert browser.page.title() == "Submitted"
+
+class ConfirmedRefReadNative(TransitionNative):
+    def execute_json(self, command_json: str) -> str:
+        command = json.loads(command_json)
+        if command["action"] == "gettext":
+            self.commands.append(command)
+            data = {
+                "confirmation_required": True,
+                "confirmation_id": "confirm-read",
+                "action": "gettext",
+            }
+            return json.dumps({"id": command["id"], "success": True, "data": data})
+        if command["action"] == "confirm":
+            self.commands.append(command)
+            data = {
+                "confirmed": True,
+                "action": "gettext",
+                "result": {
+                    "id": "confirmed-read",
+                    "success": True,
+                    "data": {"text": "Submit"},
+                },
+            }
+            return json.dumps({"id": command["id"], "success": True, "data": data})
+        return super().execute_json(command_json)
 
 
-def test_browser_snapshot_filters_malformed_native_refs() -> None:
-    class MalformedRefNative:
-        def execute_json(self, command_json: str) -> str:
-            command = json.loads(command_json)
+class WaitFailureNative(TransitionNative):
+    def execute_json(self, command_json: str) -> str:
+        command = json.loads(command_json)
+        if command["action"] == "wait":
+            self.commands.append(command)
             return json.dumps(
                 {
                     "id": command["id"],
-                    "success": True,
-                    "data": {
-                        "snapshot": '@e1 [button] "Submit"',
-                        "origin": "https://example.com",
-                        "refs": {
-                            "e1": {"role": "button", "name": "Submit"},
-                            "broken": "not a ref object",
-                        },
-                    },
+                    "success": False,
+                    "error": "timed out",
                 }
             )
-
-    browser = Browser(native_session=NativeSession(native=MalformedRefNative()))
-    snapshot = browser.snapshot()
-
-    assert snapshot.text == '@e1 [button] "Submit"'
-    assert snapshot.origin == "https://example.com"
-    assert snapshot.ref("@e1").selector == "@e1"
-    assert "broken" not in snapshot.refs
-
-
-class MatchRefsNative:
-    def execute_json(self, command_json: str) -> str:
-        command = json.loads(command_json)
-        if command["action"] != "snapshot":
-            raise AssertionError(f"unexpected match-ref command: {command}")
-        return json.dumps(
-            {
-                "id": command["id"],
-                "success": True,
-                "data": {
-                    "snapshot": (
-                        '@e1 [button] "Submit"\n'
-                        '@e2 [button] "Submit form"\n'
-                        '@e3 [link] "Submit docs"'
-                    ),
-                    "origin": "https://example.com",
-                    "refs": {
-                        "e1": {"role": "button", "name": "Submit"},
-                        "e2": {"role": "button", "name": "Submit form"},
-                        "e3": {"role": "link", "name": "Submit docs"},
-                    },
-                },
-            }
-        )
-
-
-def _match_refs_page() -> AgentSnapshot:
-    browser = Browser(native_session=NativeSession(native=MatchRefsNative()))
-    return browser.observe()
-
-
-def test_agent_snapshot_find_all_matches_role_and_partial_name() -> None:
-    page = _match_refs_page()
-
-    refs = page.find_all(role="button", name="Submit")
-
-    assert {ref.selector for ref in refs} == {"@e1", "@e2"}
-
-
-def test_agent_snapshot_find_matches_exact_name() -> None:
-    page = _match_refs_page()
-
-    assert page.find(role="button", name="Submit", exact=True).selector == "@e1"
-
-
-def test_agent_snapshot_find_matches_contained_text() -> None:
-    page = _match_refs_page()
-
-    assert page.find(role="button", contains="form").selector == "@e2"
-
-
-def test_agent_snapshot_find_can_return_first_non_strict_match() -> None:
-    page = _match_refs_page()
-
-    assert page.find(role="button", name="Submit", strict=False).selector == "@e1"
-
-
-def test_agent_snapshot_find_raises_for_ambiguous_partial_match() -> None:
-    page = _match_refs_page()
-
-    with pytest.raises(LookupError, match="multiple refs"):
-        page.find(role="button", name="Submit")
-
-
-def test_agent_snapshot_find_raises_for_missing_ref() -> None:
-    page = _match_refs_page()
-
-    with pytest.raises(LookupError, match="no ref"):
-        page.find(role="button", name="Missing")
-
-
-def test_agent_ref_stale_ref_errors_are_not_replayed_implicitly() -> None:
-    native = StaleRefNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    ref = browser.observe().find(role="button", name="Submit", exact=True)
-
-    with pytest.raises(StaleAgentRefError) as exc_info:
-        ref.click()
-
-    assert exc_info.value.ref is ref
-
-
-def test_agent_ref_refresh_returns_live_ref_after_stale_error() -> None:
-    native = StaleRefNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    ref = browser.observe().find(role="button", name="Submit", exact=True)
-    with pytest.raises(StaleAgentRefError):
-        ref.click()
-
-    refreshed = ref.refresh()
-
-    assert refreshed.selector == "@e2"
-    assert refreshed.click() is refreshed
-
-
-def test_stale_agent_ref_error_can_refresh_explicitly() -> None:
-    native = StaleRefNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    with pytest.raises(StaleAgentRefError) as exc_info:
-        browser.observe().find(role="button", name="Submit", exact=True).click()
-
-    refreshed = exc_info.value.refresh()
-    assert refreshed.selector == "@e2"
-    assert refreshed.click() is refreshed
-
-
-def test_stale_agent_ref_message_only_error_stays_browser_error() -> None:
-    message_only = StaleRefNative(error="Unknown ref: e1", code=None)
-    message_browser = Browser(native_session=NativeSession(native=message_only))
-    message_ref = message_browser.observe().find(role="button", name="Submit", exact=True)
-
-    with pytest.raises(BrowserError) as false_positive:
-        message_ref.click()
-
-    assert not isinstance(false_positive.value, StaleAgentRefError)
-    assert false_positive.value.code is None
-
-
-def test_stale_agent_ref_mapping_uses_structured_error_code() -> None:
-    coded = StaleRefNative(error="Reference disappeared", code="unknown_ref")
-    coded_browser = Browser(native_session=NativeSession(native=coded))
-    coded_ref = coded_browser.observe().find(role="button", name="Submit", exact=True)
-
-    with pytest.raises(StaleAgentRefError) as false_negative:
-        coded_ref.click()
-
-    assert false_negative.value.ref.selector == "@e1"
-
-
-def test_agent_ref_action_evidence_returns_snapshot_shape() -> None:
-    native = AgentNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    evidence = browser.observe().find(role="button", name="Submit", exact=True).click_and_observe()
-
-    assert isinstance(evidence, ActionEvidence)
-    assert isinstance(evidence.before, AgentSnapshot)
-    assert isinstance(evidence.after, AgentSnapshot)
-    assert isinstance(evidence.diff, SnapshotDiff)
-
-
-def test_agent_ref_action_evidence_records_action_target() -> None:
-    native = AgentNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    evidence = browser.observe().find(role="button", name="Submit", exact=True).click_and_observe()
-
-    assert evidence.action == "click"
-    assert evidence.target == "@e1"
-
-
-def test_agent_ref_action_evidence_captures_before_snapshot() -> None:
-    native = AgentNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    evidence = browser.observe().find(role="button", name="Submit", exact=True).click_and_observe()
-
-    assert evidence.before.find(role="button", name="Submit", exact=True).selector == "@e1"
-
-
-def test_agent_ref_action_evidence_captures_native_diff() -> None:
-    native = AgentNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    evidence = browser.observe().find(role="button", name="Submit", exact=True).click_and_observe()
-
-    assert evidence.diff.changed is True
-
-
-def test_action_evidence_after_snapshot_is_fresh_and_usable() -> None:
-    native = TransitionSnapshotNative()
-    browser = Browser(native_session=NativeSession(native=native))
-
-    evidence = browser.observe().find(role="button", name="Submit", exact=True).click_and_observe()
-    refreshed = evidence.after.find(role="button", name="Continue", exact=True)
-
-    assert evidence.before.origin == "https://example.com/form"
-    assert evidence.after.origin == "https://example.com/done"
-    assert refreshed.click() is refreshed
-
-
-class WaitAwareNative:
-    def __init__(self) -> None:
-        self.snapshot_count = 0
-        self.filled_value: str | None = None
-        self.seen_text_wait = False
-        self.seen_url_wait = False
-        self.seen_load_wait = False
-
-    @property
-    def ready_for_after_snapshot(self) -> bool:
-        return (
-            self.filled_value == "Ada"
-            and self.seen_text_wait
-            and self.seen_url_wait
-            and self.seen_load_wait
-        )
-
-    def execute_json(self, command_json: str) -> str:
-        command = json.loads(command_json)
-        action = command["action"]
-        if action == "snapshot":
-            self.snapshot_count += 1
-            if self.snapshot_count == 1:
-                data = {
-                    "snapshot": '@e1 [button] "Submit"\n@e2 [input] "Email"',
-                    "origin": "https://example.com/form",
-                    "refs": {
-                        "e1": {"role": "button", "name": "Submit"},
-                        "e2": {"role": "textbox", "name": "Email"},
-                    },
-                }
-            else:
-                origin = (
-                    "https://example.com/done"
-                    if self.ready_for_after_snapshot and command.get("compact") is False
-                    else "https://example.com/too-early"
-                )
-                data = {
-                    "snapshot": '@e3 [button] "Continue"\n@e4 [text] "Saved"',
-                    "origin": origin,
-                    "refs": {
-                        "e3": {"role": "button", "name": "Continue"},
-                        "e4": {"role": "text", "name": "Saved"},
-                    },
-                }
-        elif action == "fill":
-            self.filled_value = str(command.get("value"))
-            data = {}
-        elif action == "wait":
-            self.seen_text_wait = self.seen_text_wait or command.get("text") == "Saved"
-            self.seen_url_wait = self.seen_url_wait or command.get("url") == "**/done"
-            self.seen_load_wait = self.seen_load_wait or command.get("loadState") == "networkidle"
-            data = {}
-        elif action == "diff_snapshot":
-            data = {
-                "diff": '+ @e3 [button] "Continue"',
-                "additions": 1,
-                "removals": 1,
-                "unchanged": 0,
-                "changed": self.ready_for_after_snapshot and command.get("compact") is False,
-            }
-        else:
-            data = {}
-        return json.dumps({"id": command["id"], "success": True, "data": data})
-
-
-def _fill_and_observe(native: WaitAwareNative) -> ActionEvidence:
-    browser = Browser(native_session=NativeSession(native=native))
-    return (
-        browser.observe()
-        .find(name="Email")
-        .fill_and_observe(
-            "Ada",
-            wait_for_text="Saved",
-            wait_for_url="**/done",
-            wait_for_load_state="networkidle",
-            compact=False,
-        )
+        return super().execute_json(command_json)
+
+
+def _browser(native: Any) -> Browser:
+    return Browser(_native_session=NativeSession(native=native))
+
+
+def test_snapshot_binds_refs_and_expresses_cardinality() -> None:
+    page = _browser(TransitionNative()).observe()
+
+    assert isinstance(page, Snapshot)
+    assert page.ref("@e1").selector == "@e1"
+    assert page.one(role="textbox").name == "Email"
+    assert tuple(ref.id for ref in page.all(contains="m")) == ("e1", "e2")
+
+    with pytest.raises(LookupError, match="multiple"):
+        page.one(contains="m")
+    with pytest.raises(LookupError, match="no matching"):
+        page.one(name="Missing")
+
+
+@pytest.mark.parametrize(
+    "field,value,message",
+    [
+        ("snapshot", None, "snapshot.*string"),
+        ("origin", None, "origin.*string"),
+        ("refs", [], "refs.*object"),
+        ("refs", {"e1": {"role": "button"}}, "role.*name"),
+    ],
+)
+def test_snapshot_decoder_rejects_protocol_drift(
+    field: str,
+    value: object,
+    message: str,
+) -> None:
+    data = _snapshot()
+    data[field] = value
+
+    class MalformedNative:
+        def execute_json(self, command_json: str) -> str:
+            command = json.loads(command_json)
+            return json.dumps({"id": command["id"], "success": True, "data": data})
+
+    with pytest.raises(NativeParseError, match=message):
+        _browser(MalformedNative()).observe()
+
+
+def test_ref_action_returns_reproducible_transition_evidence() -> None:
+    native = TransitionNative()
+    spec = SnapshotSpec(compact=True, urls=True)
+    before = _browser(native).observe(spec)
+
+    result = before.one(role="button", name="Submit").click(
+        wait=Wait.all(Wait.text("Saved"), Wait.url("*/complete"))
     )
 
-
-def test_fill_and_observe_waits_before_after_snapshot() -> None:
-    native = WaitAwareNative()
-
-    evidence = _fill_and_observe(native)
-
-    assert evidence.after.origin == "https://example.com/done"
-
-
-def test_fill_and_observe_compact_false_returns_diff() -> None:
-    native = WaitAwareNative()
-
-    evidence = _fill_and_observe(native)
-
-    assert evidence.diff.changed is True
+    assert isinstance(result, ActionResult)
+    assert result.target.id == "e1"
+    assert result.before is before
+    assert result.after.spec is spec
+    assert result.after.origin.endswith("/complete")
+    assert result.diff.changed is True
 
 
-def test_fill_and_observe_records_action_target() -> None:
-    native = WaitAwareNative()
+def test_ref_reads_require_typed_native_fields() -> None:
+    ref = _browser(TransitionNative()).observe().ref("e1")
 
-    evidence = _fill_and_observe(native)
-
-    assert evidence.target == "@e2"
-
-
-def test_fill_and_observe_returns_fresh_after_ref() -> None:
-    native = WaitAwareNative()
-
-    evidence = _fill_and_observe(native)
-
-    assert evidence.after.find(role="button", name="Continue", exact=True).selector == "@e3"
+    assert ref.text() == "Submit"
+    assert ref.is_visible() is True
 
 
-def test_browser_async_observe_exposes_snapshot_refs() -> None:
+def test_confirmed_ref_read_keeps_its_public_type() -> None:
+    ref = _browser(ConfirmedRefReadNative()).observe().ref("e1")
+
+    with pytest.raises(ConfirmationRequired) as required:
+        ref.text()
+
+    assert required.value.pending.confirm() == "Submit"
+
+
+def test_stale_ref_translation_uses_structured_error_codes() -> None:
+    native = StaleNative(structured=True)
+    browser = _browser(native)
+    ref = browser.observe().one(name="Submit")
+
+    with pytest.raises(StaleRefError) as stale:
+        ref.click()
+
+    refreshed = stale.value.refresh()
+    assert refreshed.id == "e3"
+    assert refreshed.snapshot is not ref.snapshot
+    assert native.attempts == 1
+
+    message_browser = _browser(StaleNative(structured=False))
+    with pytest.raises(BrowserError) as error:
+        message_browser.observe().one(name="Submit").click()
+    assert not isinstance(error.value, StaleRefError)
+
+
+def test_confirmed_ref_action_finishes_the_same_high_level_contract() -> None:
+    browser = _browser(ConfirmedTransitionNative())
+    ref = browser.observe().one(name="Submit")
+
+    with pytest.raises(ConfirmationRequired) as required:
+        ref.click(wait=Wait.url("*/complete"))
+
+    result = required.value.pending.confirm()
+    assert isinstance(result, ActionResult)
+    assert result.target is ref
+    assert result.after.origin.endswith("/complete")
+
+
+def test_post_action_wait_failure_reports_that_the_action_completed() -> None:
+    native = WaitFailureNative()
+    ref = _browser(native).observe().one(name="Submit")
+
+    with pytest.raises(ActionTransitionError) as failed:
+        ref.click(wait=Wait.text("Saved"))
+
+    assert native.submitted is True
+    assert failed.value.action == "click"
+    assert failed.value.stage == "wait"
+    assert failed.value.before is ref.snapshot
+    assert failed.value.after is None
+
+
+def test_async_snapshot_and_action_match_the_sync_contract() -> None:
     async def run() -> None:
-        native = AgentNative()
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
+        native = TransitionNative()
+        browser = AsyncBrowser(
+            _native_session=AsyncNativeSession(native=native),
+        )
+        page = await browser.observe(SnapshotSpec(compact=True))
+        result = await page.one(name="Submit").click(wait=Wait.text("Saved"))
 
-        page = await browser.observe()
-        assert page.ref("e1").selector == "@e1"
-        assert page.find(role="button", name="Submit", exact=True).name == "Submit"
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_async_agent_ref_action_returns_same_handle() -> None:
-    async def run() -> None:
-        native = AgentNative()
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
-
-        page = await browser.observe()
-        ref = page.find(role="button", name="Submit", exact=True)
-        clicked = await ref.click()
-        assert clicked is ref
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_async_stale_agent_ref_error_can_refresh_explicitly() -> None:
-    async def run() -> None:
-        native = StaleRefNative()
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
-        page = await browser.observe()
-        ref = page.find(role="button", name="Submit", exact=True)
-
-        with pytest.raises(AsyncStaleAgentRefError) as exc_info:
-            await ref.click()
-
-        refreshed = await exc_info.value.refresh()
-        assert refreshed.selector == "@e2"
-        clicked = await refreshed.click()
-        assert clicked is refreshed
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_async_action_evidence_returns_snapshot_shape() -> None:
-    async def run() -> None:
-        native = TransitionSnapshotNative()
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
-
-        page = await browser.observe()
-        evidence = await page.find(role="button", name="Submit", exact=True).click_and_observe()
-
-        assert isinstance(evidence.before, AsyncAgentSnapshot)
-        assert isinstance(evidence.after, AsyncAgentSnapshot)
-        assert isinstance(evidence.diff, SnapshotDiff)
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_async_action_evidence_records_action_target() -> None:
-    async def run() -> None:
-        native = TransitionSnapshotNative()
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
-
-        page = await browser.observe()
-        evidence = await page.find(role="button", name="Submit", exact=True).click_and_observe()
-
-        assert evidence.target == "@e1"
-        await browser.aclose()
-
-    asyncio.run(run())
-
-
-def test_async_action_evidence_after_snapshot_is_usable() -> None:
-    async def run() -> None:
-        native = TransitionSnapshotNative()
-        browser = AsyncBrowser(native_session=AsyncNativeSession(native=native))
-
-        page = await browser.observe()
-        evidence = await page.find(role="button", name="Submit", exact=True).click_and_observe()
-        after = evidence.after
-        assert isinstance(after, AsyncAgentSnapshot)
-        refreshed = after.find(role="button", name="Continue", exact=True)
-        clicked = await refreshed.click()
-
-        assert evidence.after.origin == "https://example.com/done"
-        assert clicked is refreshed
-        await browser.aclose()
+        assert isinstance(page, AsyncSnapshot)
+        assert result.before is page
+        assert result.after.spec == page.spec
+        assert result.diff.additions == 1
+        await browser.close()
 
     asyncio.run(run())

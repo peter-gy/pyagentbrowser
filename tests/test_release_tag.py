@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import re
 import subprocess
+import tomllib
 from pathlib import Path
 
 import pytest
@@ -10,10 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def package_version() -> str:
-    text = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
-    match = re.search(r'^version = "([^"]+)"$', text, re.MULTILINE)
-    assert match
-    return match.group(1)
+    return str(tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"])
 
 
 def run_release_tag_check(tag: str) -> subprocess.CompletedProcess[str]:

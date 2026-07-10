@@ -1,15 +1,12 @@
-from agentbrowser import ActionConfirmationRequired, Browser
+from agentbrowser import Browser, ConfirmationRequired, SessionOptions
 
-with Browser.launch(
-    {"headless": True},
-    session={"confirm_actions": ["click"]},
-) as browser:
-    browser.page.open("https://example.com")
+session = SessionOptions(confirm_actions=("click",))
 
+with Browser.launch(session=session) as browser:
+    browser.open("https://example.com")
+    link = browser.observe().one(role="link", name="Learn more")
     try:
-        browser.find.text("Learn more").click()
-    except ActionConfirmationRequired as confirmation:
-        confirmation.pending_action.confirm()
-
-    browser.page.wait_for_url("*://www.iana.org/*")
-    print(browser.page.url())
+        result = link.click()
+    except ConfirmationRequired as required:
+        result = required.pending.confirm()
+    print(result.after.text)

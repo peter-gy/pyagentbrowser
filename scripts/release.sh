@@ -50,8 +50,8 @@ check_version() {
   local actual="${release_tag#refs/tags/}"
   actual="${actual#v}"
 
-  if [[ ! "$actual" =~ ^[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$ ]]; then
-    printf 'Release tag %s must look like v1.2.3 or v1.2.3rc0\n' "$release_tag" >&2
+  if [[ ! "$actual" =~ ^[0-9]+\.[0-9]+\.[0-9]+((a|b|rc)[0-9]+)?$ ]]; then
+    printf 'Release tag %s must look like v1.2.3, v1.2.3a1, or v1.2.3rc1\n' "$release_tag" >&2
     exit 1
   fi
 

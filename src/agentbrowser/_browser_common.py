@@ -4,7 +4,12 @@ from collections.abc import Mapping
 from pathlib import Path
 from typing import Any, Protocol, TypeAlias, cast
 
-from agentbrowser.models import ActionConfirmationRequired, BrowserResponse, SnapshotDiff
+from agentbrowser.models import (
+    BrowserResponse,
+    ConfirmationRequired,
+    NativeParseError,
+    SnapshotDiff,
+)
 
 CDP_INVALIDATING_ACTIONS = frozenset(
     {
@@ -13,8 +18,10 @@ CDP_INVALIDATING_ACTIONS = frozenset(
         "back",
         "forward",
         "reload",
+        "tab_new",
         "tab_switch",
         "tab_close",
+        "window_new",
     }
 )
 STALE_REF_ERROR_CODES = frozenset({"stale_ref", "unknown_ref"})
@@ -27,7 +34,7 @@ class PendingActionHandle(Protocol):
     confirmation_id: str
 
 
-ConfirmationTarget: TypeAlias = ActionConfirmationRequired | PendingActionHandle | str
+ConfirmationTarget: TypeAlias = ConfirmationRequired[Any] | PendingActionHandle | str
 
 
 def normalize_url(url: str) -> str:
@@ -48,7 +55,7 @@ def normalize_url(url: str) -> str:
 
 
 def confirmation_id(confirmation: ConfirmationTarget | None) -> str | None:
-    if isinstance(confirmation, ActionConfirmationRequired):
+    if isinstance(confirmation, ConfirmationRequired):
         return confirmation.confirmation_id
     if confirmation is None or isinstance(confirmation, str):
         return confirmation
@@ -70,6 +77,18 @@ def response_data_mapping(response: BrowserResponse) -> Mapping[str, Any] | None
     return None
 
 
+def response_browser_launched(response: BrowserResponse) -> bool | None:
+    data = response_data_mapping(response)
+    lifecycle = data.get("lifecycle") if data is not None else None
+    if not isinstance(lifecycle, Mapping):
+        return None
+    effective_launch = lifecycle.get("effectiveLaunch")
+    if not isinstance(effective_launch, Mapping):
+        return None
+    browser_launched = effective_launch.get("browserLaunched")
+    return browser_launched if isinstance(browser_launched, bool) else None
+
+
 def action_sets_launched(action: str) -> bool:
     return action in {"launch", "navigate"}
 
@@ -86,13 +105,31 @@ def action_invalidates_cdp(action: str) -> bool:
     return action in CDP_INVALIDATING_ACTIONS
 
 
+def action_resets_cdp(action: str) -> bool:
+    return action in {"launch", "close", INTERNAL_SHUTDOWN_ACTION}
+
+
 def snapshot_diff_from_data(data: Mapping[str, Any]) -> SnapshotDiff:
+    text = data.get("diff")
+    additions = data.get("additions")
+    removals = data.get("removals")
+    unchanged = data.get("unchanged")
+    changed = data.get("changed")
+    if not isinstance(text, str):
+        raise NativeParseError("diff_snapshot field 'diff' must be a string")
+    if any(
+        not isinstance(value, int) or isinstance(value, bool)
+        for value in (additions, removals, unchanged)
+    ):
+        raise NativeParseError("diff_snapshot counts must be integers")
+    if not isinstance(changed, bool):
+        raise NativeParseError("diff_snapshot field 'changed' must be a boolean")
     return SnapshotDiff(
-        text=str(data.get("diff", "")),
-        additions=int(data.get("additions", 0)),
-        removals=int(data.get("removals", 0)),
-        unchanged=int(data.get("unchanged", 0)),
-        changed=bool(data.get("changed", False)),
+        text=text,
+        additions=cast(int, additions),
+        removals=cast(int, removals),
+        unchanged=cast(int, unchanged),
+        changed=changed,
         raw=data,
     )
 

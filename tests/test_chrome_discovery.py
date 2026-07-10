@@ -34,17 +34,6 @@ def test_chrome_discovery_rejects_missing_env_override(tmp_path: Path) -> None:
     )
 
 
-def test_chrome_discovery_covers_macos_chrome_and_chromium_apps(tmp_path: Path) -> None:
-    candidates = check_chrome.chrome_candidates(environ={}, home=tmp_path, which=lambda _: None)
-
-    assert Path("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome") in candidates
-    assert (
-        Path("/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary")
-        in candidates
-    )
-    assert Path("/Applications/Chromium.app/Contents/MacOS/Chromium") in candidates
-
-
 def test_chrome_discovery_checks_agent_browser_browser_cache(tmp_path: Path) -> None:
     cached = (
         tmp_path

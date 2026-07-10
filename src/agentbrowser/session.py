@@ -11,9 +11,9 @@ from agentbrowser._allowlist import DomainAllowlist
 from agentbrowser._native import NativeBrowser
 from agentbrowser.models import (
     OMIT,
-    ActionConfirmationRequired,
     BrowserError,
     BrowserResponse,
+    ConfirmationRequired,
     DashboardOptions,
     JSONMapping,
     JSONObject,
@@ -28,6 +28,11 @@ DEFAULT_TIMEOUT_MS = 15_000
 class PendingConfirmation:
     command: JSONObject
     policy: DomainAllowlist
+    cleanup_paths: tuple[Path, ...] = ()
+
+    def cleanup(self) -> None:
+        for path in self.cleanup_paths:
+            path.unlink(missing_ok=True)
 
 
 class NativeEngine(Protocol):
@@ -88,6 +93,7 @@ class NativeSession:
             "session": session,
             "restore_key": restore.key if restore is not None else None,
             "restore_save": restore.save if restore is not None else None,
+            "autosave_interval_ms": (restore.autosave_interval_ms if restore is not None else None),
             "restore_check_url": restore.check_url if restore is not None else None,
             "restore_check_text": restore.check_text if restore is not None else None,
             "restore_check_fn": restore.check_fn if restore is not None else None,
@@ -104,17 +110,23 @@ class NativeSession:
         self._allowlist = DomainAllowlist(allowed_domains)
         self._pending_confirmations: dict[str, PendingConfirmation] = {}
 
+    @property
+    def started(self) -> bool:
+        """Whether the native engine has been constructed."""
+        return self._native_started
+
     def set_allowed_domains(self, allowed_domains: str | None) -> None:
         """Replace the Python-side domain allowlist for this session."""
         self._allowlist = DomainAllowlist(allowed_domains)
         if not self._native_started:
             self._native_options["allowed_domains"] = allowed_domains
 
-    def set_dashboard(self, dashboard: bool | DashboardOptions | None) -> None:
-        """Configure dashboard startup before the native session exists."""
-        if self._native_started:
-            raise RuntimeError("dashboard must be started before native session startup")
-        self._native_options["dashboard"] = _dashboard_options(dashboard)
+    def discard_pending_confirmations(self) -> None:
+        """Release resources retained by pending confirmations."""
+        pending = tuple(self._pending_confirmations.values())
+        self._pending_confirmations.clear()
+        for confirmation in pending:
+            confirmation.cleanup()
 
     def command(self, action: str, **params: Any) -> JSONValue:
         """Run a native command and return checked response data."""
@@ -125,48 +137,56 @@ class NativeSession:
         """Run a native command and return the full response envelope."""
         command = self.build_command(action, **params)
         prepared = self._allowlist.prepare(command)
+        pending_confirmation = self._consume_pending_confirmation(prepared.command)
+        retain_prepared = False
         try:
             raw_json = self._ensure_native().execute_json(json.dumps(prepared.command))
-        finally:
-            prepared.cleanup()
+            try:
+                raw = json.loads(raw_json)
+            except json.JSONDecodeError as err:
+                raise BrowserError(
+                    action,
+                    f"native response was not valid JSON: {err}",
+                    {"response": raw_json},
+                ) from err
 
-        try:
-            raw = json.loads(raw_json)
-        except json.JSONDecodeError as err:
-            raise BrowserError(
-                action,
-                f"native response was not valid JSON: {err}",
-                {"response": raw_json},
-            ) from err
+            if not isinstance(raw, dict):
+                raise BrowserError(action, "native response was not an object", {"response": raw})
 
-        if not isinstance(raw, dict):
-            raise BrowserError(action, "native response was not an object", {"response": raw})
-
-        response = _response_from_mapping(
-            action=action,
-            command_id=prepared.command["id"],
-            raw=raw,
-        )
-        if response.success:
-            pending_confirmation = self._consume_pending_confirmation(prepared.command)
-            response = _filter_confirmed_response(
-                response,
-                prepared.policy,
-                pending_confirmation,
+            response = _response_from_mapping(
+                action=action,
+                command_id=prepared.command["id"],
+                raw=raw,
             )
-            filtered_data = prepared.policy.filter_successful_response(
-                prepared.command,
-                response.data,
-            )
-            if filtered_data is not response.data:
-                response = replace(
+            if response.success:
+                response = _filter_confirmed_response(
                     response,
-                    data=filtered_data,
-                    raw=cast(JSONMapping, {**response.raw, "data": filtered_data}),
+                    prepared.policy,
+                    pending_confirmation,
                 )
-            self._allowlist = prepared.policy.finish(prepared.command)
-            self._record_pending_confirmation(response, prepared.command, prepared.policy)
-        return response
+                filtered_data = prepared.policy.filter_successful_response(
+                    prepared.command,
+                    response.data,
+                )
+                if filtered_data is not response.data:
+                    response = replace(
+                        response,
+                        data=filtered_data,
+                        raw=cast(JSONMapping, {**response.raw, "data": filtered_data}),
+                    )
+                self._allowlist = prepared.policy.finish(prepared.command)
+                retain_prepared = self._record_pending_confirmation(
+                    response,
+                    prepared.command,
+                    prepared.policy,
+                    prepared.cleanup_paths,
+                )
+            return response
+        finally:
+            if pending_confirmation is not None:
+                pending_confirmation.cleanup()
+            if not retain_prepared:
+                prepared.cleanup()
 
     def _ensure_native(self) -> NativeEngine:
         if self._native is None:
@@ -200,15 +220,21 @@ class NativeSession:
         response: BrowserResponse,
         command: JSONObject,
         policy: DomainAllowlist,
-    ) -> None:
+        cleanup_paths: tuple[Path, ...] = (),
+    ) -> bool:
         data = _response_data_mapping(response)
         if data is None or not bool(data.get("confirmation_required")):
-            return
+            return False
         confirmation_id = data.get("confirmation_id") or response.raw.get("id") or response.id
+        previous = self._pending_confirmations.pop(str(confirmation_id), None)
+        if previous is not None:
+            previous.cleanup()
         self._pending_confirmations[str(confirmation_id)] = PendingConfirmation(
             command=dict(command),
             policy=policy,
+            cleanup_paths=cleanup_paths,
         )
+        return True
 
 
 def _jsonable(value: Any) -> JSONValue:
@@ -254,7 +280,7 @@ def _checked_response(action: str, response: BrowserResponse) -> BrowserResponse
         raise BrowserError(action, message, response.raw)
     data = _response_data_mapping(response)
     if data is not None and bool(data.get("confirmation_required")):
-        raise ActionConfirmationRequired(action, data, response.raw)
+        raise ConfirmationRequired(action, data, response.raw)
     if action == "confirm":
         return _unwrap_confirmed_response(response)
     return response
@@ -347,7 +373,7 @@ def _unwrap_confirmed_response(response: BrowserResponse) -> BrowserResponse:
         raise BrowserError(confirmed_action, message, result)
     unwrapped_data = _response_data_mapping(unwrapped)
     if unwrapped_data is not None and bool(unwrapped_data.get("confirmation_required")):
-        raise ActionConfirmationRequired(confirmed_action, unwrapped_data, result)
+        raise ConfirmationRequired(confirmed_action, unwrapped_data, result)
     return unwrapped
 
 

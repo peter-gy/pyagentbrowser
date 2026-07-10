@@ -1,25 +1,27 @@
 from __future__ import annotations
 
 import os
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import TYPE_CHECKING, Any, Literal, Self, cast, overload
+from typing import TYPE_CHECKING, Any, Generic, Literal, Self, TypeVar, cast, overload
 from weakref import proxy as weak_proxy
 
 from agentbrowser._browser_common import (
     INTERNAL_SHUTDOWN_ACTION,
-    ConfirmationTarget,
     action_clears_pending_confirmation,
     action_closes_browser,
     action_invalidates_cdp,
+    action_resets_cdp,
     action_sets_launched,
     confirmation_id,
+    response_browser_launched,
     response_confirmation_id,
     response_data_mapping,
+    snapshot_diff_from_data,
 )
-from agentbrowser.agent import Agent, AgentSnapshot
+from agentbrowser.agent import Snapshot
 from agentbrowser.command_params import (
     geolocation_params,
     media_params,
@@ -38,13 +40,10 @@ from agentbrowser.domains import (
     Dialogs,
     Diff,
     Downloads,
-    Find,
     Keyboard,
     Mouse,
     Network,
     Page,
-    Restore,
-    Runtime,
     Scripts,
     State,
     Storage,
@@ -52,25 +51,28 @@ from agentbrowser.domains import (
 )
 from agentbrowser.install import ensure_installed
 from agentbrowser.launch import (
-    BrowserSessionOptions,
-    BrowserSessionOptionsInput,
-    CDPAttachInput,
+    CDPTarget,
     LaunchConfiguration,
-    LaunchOptionsInput,
+    LaunchOptions,
+    SessionOptions,
     normalize_session,
 )
 from agentbrowser.models import (
     OMIT,
-    ActionConfirmationRequired,
     BrowserResponse,
-    DashboardOptions,
+    ConfirmationRequired,
     JSONMapping,
     JSONValue,
-    RestoreOptions,
-    Snapshot,
+    LoadState,
+    ReadMode,
+    ReadResult,
+    SnapshotData,
     SnapshotDiff,
+    SnapshotSpec,
+    path_value,
     snapshot_from_data,
 )
+from agentbrowser.query import Queries
 from agentbrowser.session import (
     NativeSession,
     _checked_response,
@@ -80,6 +82,9 @@ from agentbrowser.session import (
 
 if TYPE_CHECKING:
     from agentbrowser.cdp import CDPController
+
+T = TypeVar("T")
+U = TypeVar("U")
 
 _SKIP_AUTO_INSTALL_ACTIONS = {
     "",
@@ -163,69 +168,196 @@ class Dashboard:
 
     _browser: Browser
 
-    def start(self, options: DashboardOptions | None = None) -> Mapping[str, Any]:
-        """Start dashboard observability and return the stream status."""
-        self._browser._session.set_dashboard(True if options is None else options)
+    def status(self) -> Mapping[str, Any]:
+        """Return the configured dashboard stream status."""
         return self._browser._command("stream_status")
+
+    def stop(self) -> None:
+        """Stop dashboard streaming for this browser."""
+        self._browser._command("stream_disable", _decode=lambda _data: None)
 
 
 @dataclass(frozen=True, slots=True)
-class PendingAction:
+class Emulation:
+    """Browser environment and device emulation."""
+
+    _browser: Browser
+
+    def viewport(
+        self,
+        width: int,
+        height: int,
+        *,
+        device_scale_factor: float = 1.0,
+        mobile: bool = False,
+    ) -> None:
+        """Set viewport dimensions in CSS pixels."""
+        self._browser._command(
+            "viewport",
+            _decode=lambda _data: None,
+            **viewport_params(
+                width,
+                height,
+                device_scale_factor=device_scale_factor,
+                mobile=mobile,
+            ),
+        )
+
+    def device(self, name: str) -> None:
+        """Apply a named device preset."""
+        self._browser._command("device", _decode=lambda _data: None, name=name)
+
+    def headers(self, headers: Mapping[str, str]) -> None:
+        """Set extra HTTP headers."""
+        self._browser._command(
+            "headers",
+            _decode=lambda _data: None,
+            headers=dict(headers),
+        )
+
+    def offline(self, enabled: bool = True) -> None:
+        """Set network offline emulation."""
+        self._browser._command(
+            "offline",
+            _decode=lambda _data: None,
+            offline=enabled,
+        )
+
+    def user_agent(self, value: str) -> None:
+        """Set the browser user agent."""
+        self._browser._command(
+            "useragent",
+            _decode=lambda _data: None,
+            userAgent=value,
+        )
+
+    def media(
+        self,
+        *,
+        media: str | None = None,
+        color_scheme: str | None = None,
+        reduced_motion: str | None = None,
+        features: Mapping[str, str] | None = None,
+    ) -> None:
+        """Set CSS media emulation."""
+        self._browser._command(
+            "set_media",
+            _decode=lambda _data: None,
+            **media_params(
+                media=media,
+                color_scheme=color_scheme,
+                reduced_motion=reduced_motion,
+                features=features,
+            ),
+        )
+
+    def timezone(self, timezone_id: str) -> None:
+        """Set the emulated timezone."""
+        self._browser._command(
+            "timezone",
+            _decode=lambda _data: None,
+            timezoneId=timezone_id,
+        )
+
+    def locale(self, locale: str) -> None:
+        """Set the emulated locale."""
+        self._browser._command("locale", _decode=lambda _data: None, locale=locale)
+
+    def geolocation(
+        self,
+        latitude: float,
+        longitude: float,
+        *,
+        accuracy: float | None = None,
+    ) -> None:
+        """Set emulated coordinates."""
+        self._browser._command(
+            "geolocation",
+            _decode=lambda _data: None,
+            **geolocation_params(latitude, longitude, accuracy=accuracy),
+        )
+
+    def permissions(
+        self,
+        permissions: Sequence[str],
+        *,
+        origin: str | None = None,
+    ) -> None:
+        """Grant permissions for an optional origin."""
+        self._browser._command(
+            "permissions",
+            _decode=lambda _data: None,
+            **permissions_params(permissions, origin=origin),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class PendingAction(Generic[T]):
     """Native action awaiting explicit confirmation or denial."""
 
     _browser: Browser
     confirmation_id: str
     action: str
-    data: Mapping[str, Any]
+    details: Mapping[str, Any]
+    _decode: Callable[[JSONMapping], T] | None = None
+    _expect: Literal["object", "any"] = "object"
+    _complete: Callable[[Any], T] | None = None
 
-    def confirm(self) -> Mapping[str, Any]:
-        """Confirm this pending action."""
-        return self._browser.confirm(self)
+    def confirm(self) -> T:
+        """Confirm this pending action and decode its original return type."""
+        result: Any = self._browser._native_data(
+            "confirm",
+            expect=self._expect,
+            confirmation_id=self.confirmation_id,
+        )
+        if self._decode is not None:
+            result = self._decode(cast(JSONMapping, result))
+        return self._complete(result) if self._complete is not None else cast(T, result)
 
-    def deny(self) -> Mapping[str, Any]:
+    def deny(self) -> None:
         """Deny this pending action."""
-        return self._browser.deny(self)
+        self._browser._command("deny", confirmation_id=self.confirmation_id)
+
+    def map(self, complete: Callable[[T], U]) -> PendingAction[U]:
+        """Complete a higher-level operation after native confirmation."""
+        previous = self._complete
+        if previous is None:
+            composed: Callable[[Any], U] = complete
+        else:
+
+            def composed(value: Any) -> U:
+                try:
+                    intermediate = previous(value)
+                except ConfirmationRequired as error:
+                    if error.pending is not None:
+                        error.pending = error.pending.map(complete)
+                    raise
+                return complete(intermediate)
+
+        return cast(PendingAction[U], replace(self, _complete=composed))
 
 
 class Browser:
-    """Synchronous controller for the native agent-browser engine.
+    """Synchronous owner for one native browser session.
 
-    `Browser` owns one native browser session and exposes command namespaces
-    such as `page`, `find`, `capture`, `tabs`, `network`, and `cdp`.
-    Construction is lazy. Use `Browser.launch({"headless": True})` to create
-    and start a browser, `Browser.attach({"port": 9222})` to attach to a
-    running browser, or `Browser.from_session(...)` to name a restorable
-    session before the first native command.
-
-    Example:
-        ```python
-        from agentbrowser import Browser
-
-        with Browser.launch({"headless": True}) as browser:
-            browser.page.open("https://example.com")
-            page = browser.agent.observe()
-            print(page.text)
-
-            browser.find.text("Learn more").click()
-            browser.page.wait_for_url("*://www.iana.org/*")
-            print(browser.page.url())
-        ```
+    Use `launch()` for a local process, `attach()` for an existing CDP target,
+    and `observe()` for browser-bound snapshots and refs.
     """
 
     def __init__(
         self,
         *,
-        session: BrowserSessionOptionsInput | None = None,
-        native_session: NativeSession | None = None,
+        session: SessionOptions | None = None,
+        _native_session: NativeSession | None = None,
     ) -> None:
         base_options = normalize_session(session)
         launch_configuration = LaunchConfiguration.from_public_options(
-            allowed_domains=base_options.allowed_domains
+            allowed_domains=base_options._allowed_domains()
         )
         self._init(
             launch_configuration,
             session=base_options,
-            native_session=native_session,
+            native_session=_native_session,
         )
 
     @classmethod
@@ -233,7 +365,7 @@ class Browser:
         cls,
         launch_configuration: LaunchConfiguration,
         *,
-        session: BrowserSessionOptionsInput | None = None,
+        session: SessionOptions | None = None,
         native_session: NativeSession | None = None,
     ) -> Browser:
         browser = cls.__new__(cls)
@@ -248,7 +380,7 @@ class Browser:
         self,
         launch_configuration: LaunchConfiguration,
         *,
-        session: BrowserSessionOptionsInput | None = None,
+        session: SessionOptions | None = None,
         native_session: NativeSession | None = None,
     ) -> None:
         session_config = normalize_session(session)
@@ -256,16 +388,17 @@ class Browser:
             session=session_config.session_id,
             restore=session_config.restore,
             namespace=session_config.namespace,
-            default_timeout_ms=session_config.default_timeout_ms,
-            allowed_domains=session_config.allowed_domains,
+            default_timeout_ms=session_config._timeout_ms(),
+            allowed_domains=session_config._allowed_domains(),
             engine=launch_configuration.engine,
             action_policy=session_config.action_policy,
             confirm_actions=session_config.confirm_actions,
-            no_auto_dialog=session_config.no_auto_dialog,
+            no_auto_dialog=not session_config.auto_dialogs,
+            dashboard=session_config.dashboard,
         )
-        if native_session is not None and session_config.allowed_domains is not None:
-            self._session.set_allowed_domains(session_config.allowed_domains)
-        default_session_config = BrowserSessionOptions()
+        if native_session is not None and session_config.allowed_domains:
+            self._session.set_allowed_domains(session_config._allowed_domains())
+        default_session_config = SessionOptions()
         if native_session is not None and session_config.namespace is not None:
             raise ValueError(
                 "namespace must be set on NativeSession when native_session is supplied"
@@ -276,10 +409,7 @@ class Browser:
             )
         if native_session is not None and session_config.restore is not None:
             raise ValueError("restore must be set on NativeSession when native_session is supplied")
-        if (
-            native_session is not None
-            and session_config.default_timeout_ms != default_session_config.default_timeout_ms
-        ):
+        if native_session is not None and session_config.timeout != default_session_config.timeout:
             raise ValueError(
                 "default_timeout_ms must be set on NativeSession when native_session is supplied"
             )
@@ -287,44 +417,48 @@ class Browser:
             raise ValueError(
                 "action_policy must be set on NativeSession when native_session is supplied"
             )
-        if native_session is not None and session_config.confirm_actions is not None:
+        if native_session is not None and session_config.confirm_actions:
             raise ValueError(
                 "confirm_actions must be set on NativeSession when native_session is supplied"
             )
         if (
             native_session is not None
-            and session_config.no_auto_dialog != default_session_config.no_auto_dialog
+            and session_config.auto_dialogs != default_session_config.auto_dialogs
         ):
             raise ValueError(
                 "no_auto_dialog must be set on NativeSession when native_session is supplied"
+            )
+        if native_session is not None and session_config.dashboard is not None:
+            raise ValueError(
+                "dashboard must be set on NativeSession when native_session is supplied"
             )
         self._launch_configuration = launch_configuration
         self._auto_install = native_session is None
         self._install_prepared = False
         self._launched = False
+        self._closed = False
         self._cdp_controller: CDPController | None = None
 
         command_target = cast(CommandTarget, weak_proxy(self))
+        browser_proxy = cast(Browser, weak_proxy(self))
         self.active_frame = ActiveFrame(command_target)
-        self.agent = Agent(self)
         self.capture = Capture(command_target)
-        self.cdp = CDP(self)
+        self.cdp = CDP(browser_proxy)
         self.clipboard = Clipboard(command_target)
         self.cookies = Cookies(command_target)
-        self.dialogs = Dialogs(command_target)
         self.diagnostics = Diagnostics(command_target)
-        self.dashboard = Dashboard(self)
+        self.dashboard = Dashboard(browser_proxy)
+        self.dialogs = Dialogs(command_target)
         self.diff = Diff(command_target)
         self.downloads = Downloads(command_target)
-        self.find = Find(self)
+        self.emulation = Emulation(browser_proxy)
+        self.find = Queries(browser_proxy)
         self.keyboard = Keyboard(command_target)
         self.mouse = Mouse(command_target)
-        self.native = Native(self)
+        self.native = Native(browser_proxy)
         self.network = Network(command_target)
-        self.page = Page(self)
-        self.restore = Restore(command_target)
-        self.runtime = Runtime(command_target)
-        self.scripts = Scripts(self)
+        self.page = Page(browser_proxy)
+        self.scripts = Scripts(command_target)
         self.state = State(command_target)
         self.storage = Storage(command_target)
         self.tabs = Tabs(command_target)
@@ -344,35 +478,42 @@ class Browser:
         """Whether the native browser has been launched in this session."""
         return self._launched
 
+    @property
+    def closed(self) -> bool:
+        """Whether this browser has been closed."""
+        return self._closed
+
     @classmethod
     def launch(
         cls,
-        options: LaunchOptionsInput | None = None,
+        options: LaunchOptions | None = None,
         *,
-        session: BrowserSessionOptionsInput | None = None,
-        native_session: NativeSession | None = None,
+        session: SessionOptions | None = None,
     ) -> Browser:
         """Create a browser and start the native browser process."""
         session_config = normalize_session(session)
         browser = cls._from_configuration(
             LaunchConfiguration.from_public_options(
                 options,
-                allowed_domains=session_config.allowed_domains,
+                allowed_domains=session_config._allowed_domains(),
             ),
             session=session_config,
-            native_session=native_session,
         )
-        browser.launch_process()
+        try:
+            browser._launch_process()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda _value: browser)
+            raise
         return browser
 
     @classmethod
     def attach(
         cls,
-        target: CDPAttachInput,
+        target: CDPTarget,
         *,
-        launch: LaunchOptionsInput | None = None,
-        session: BrowserSessionOptionsInput | None = None,
-        native_session: NativeSession | None = None,
+        launch: LaunchOptions | None = None,
+        session: SessionOptions | None = None,
     ) -> Browser:
         """Create a browser and attach to a running CDP target."""
         session_config = normalize_session(session)
@@ -380,82 +521,114 @@ class Browser:
             LaunchConfiguration.from_public_options(
                 launch,
                 attach=target,
-                allowed_domains=session_config.allowed_domains,
+                allowed_domains=session_config._allowed_domains(),
             ),
             session=session_config,
-            native_session=native_session,
         )
-        browser.connect()
+        try:
+            browser._connect()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda _value: browser)
+            raise
         return browser
-
-    @classmethod
-    def from_session(
-        cls,
-        session_id: str,
-        *,
-        restore: RestoreOptions | None = None,
-        launch: LaunchOptionsInput | None = None,
-        session: BrowserSessionOptionsInput | None = None,
-        native_session: NativeSession | None = None,
-    ) -> Browser:
-        """Create a lazy browser controller for a named native session."""
-        base_options = normalize_session(session)
-        if base_options.session_id not in {None, session_id}:
-            raise ValueError("session.session_id must match session_id")
-        if restore is not None and base_options.restore is not None:
-            raise ValueError("pass restore or session.restore, not both")
-        resolved_options = replace(
-            base_options,
-            session_id=session_id,
-            restore=restore or base_options.restore,
-        )
-        return cls._from_configuration(
-            LaunchConfiguration.from_public_options(
-                launch,
-                allowed_domains=resolved_options.allowed_domains,
-            ),
-            session=resolved_options,
-            native_session=native_session,
-        )
 
     def observe(
         self,
+        spec: SnapshotSpec | None = None,
+    ) -> Snapshot:
+        """Capture an accessibility snapshot bound to this browser."""
+        try:
+            data = self._snapshot_data(spec or SnapshotSpec())
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda result: Snapshot(self, result))
+            raise
+        return Snapshot(self, data)
+
+    def open(self, url: str, *, wait_until: LoadState = "load") -> Self:
+        """Navigate the active tab and return this browser."""
+        try:
+            self.page.open(url, wait_until=wait_until)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda _value: self)
+            raise
+        return self
+
+    def title(self) -> str:
+        """Return the active page title."""
+        return self.page.title()
+
+    def url(self) -> str:
+        """Return the active page URL."""
+        return self.page.url()
+
+    def content(self) -> str:
+        """Return the active page HTML."""
+        return self.page.content()
+
+    def evaluate(self, script: str) -> Any:
+        """Evaluate JavaScript in the active page."""
+        return self.page.evaluate(script)
+
+    def read(
+        self,
+        url: str | None = None,
         *,
-        selector: str | None = None,
-        interactive: bool = True,
-        compact: bool = False,
-        max_depth: int | None = None,
-        urls: bool = False,
-    ) -> AgentSnapshot:
-        """Capture an accessibility snapshot bound to this browser.
-
-        Parameters
-        ----------
-        selector
-            Optional selector that scopes the snapshot.
-        interactive
-            Include interactable element refs when supported by the native engine.
-        compact
-            Request compact snapshot text.
-        max_depth
-            Maximum accessibility tree depth.
-        urls
-            Include URLs in snapshot output when available.
-
-        Returns
-        -------
-        AgentSnapshot
-            Snapshot wrapper whose refs can be acted on directly.
-        """
-        return self.agent.observe(
-            selector=selector,
-            interactive=interactive,
-            compact=compact,
-            max_depth=max_depth,
-            urls=urls,
+        mode: ReadMode | None = None,
+        filter: str | None = None,
+        timeout_ms: int | None = None,
+        headers: Mapping[str, str] | None = None,
+        allowed_domains: Sequence[str] | None = None,
+    ) -> ReadResult:
+        """Return agent-readable content for a URL or the active page."""
+        return self.page.read(
+            url,
+            mode=mode,
+            filter=filter,
+            timeout_ms=timeout_ms,
+            headers=headers,
+            allowed_domains=allowed_domains,
         )
 
-    def _command(self, action: str, **params: Any) -> JSONMapping:
+    def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
+        """Wait until text appears in the active page."""
+        self.page.wait_for_text(text, timeout_ms=timeout_ms)
+
+    def wait_for_url(self, url: str, *, timeout_ms: int | None = None) -> None:
+        """Wait until the active URL matches a pattern."""
+        self.page.wait_for_url(url, timeout_ms=timeout_ms)
+
+    def wait_for_load(self, state: LoadState = "load") -> None:
+        """Wait for a page load state."""
+        self.page.wait_for_load_state(state)
+
+    @overload
+    def _command(
+        self,
+        action: str,
+        *,
+        _decode: Callable[[JSONMapping], T],
+        **params: Any,
+    ) -> T: ...
+
+    @overload
+    def _command(
+        self,
+        action: str,
+        *,
+        _decode: None = None,
+        **params: Any,
+    ) -> JSONMapping: ...
+
+    def _command(
+        self,
+        action: str,
+        *,
+        _decode: Callable[[JSONMapping], T] | None = None,
+        **params: Any,
+    ) -> T | JSONMapping:
         """Run a native command and require object-shaped response data.
 
         Parameters
@@ -472,13 +645,19 @@ class Browser:
 
         Raises
         ------
-        ActionConfirmationRequired
+        ConfirmationRequired
             If the native policy requires confirmation before execution.
         BrowserError
             If the native command fails or returns non-object response data.
         """
-        data = self._native_data(action, expect="object", **params)
-        return cast(JSONMapping, data)
+        try:
+            data = self._native_data(action, expect="object", **params)
+        except ConfirmationRequired as err:
+            if err.confirmation_id is not None:
+                err.pending = self._pending_action(err, decoder=_decode)
+            raise
+        mapping = cast(JSONMapping, data)
+        return _decode(mapping) if _decode is not None else mapping
 
     def _native_data(
         self,
@@ -487,21 +666,26 @@ class Browser:
         expect: str = "object",
         **params: Any,
     ) -> JSONMapping | JSONValue:
+        self._ensure_open()
         if expect not in {"object", "any"}:
             raise ValueError('expect must be "object" or "any"')
         self._prepare_install_for_action(action, params)
         try:
             response = _checked_response(action, self._session.execute(action, **params))
-        except ActionConfirmationRequired as err:
+        except ConfirmationRequired as err:
             if err.confirmation_id is not None:
-                err.pending_action = self.pending_action(err)
+                err.pending = self._pending_action(
+                    err,
+                    expect=cast(Literal["object", "any"], expect),
+                )
             raise
-        self._record_successful_action(response.action)
+        self._record_successful_action(response)
         if expect == "any":
             return response.data
         return _require_response_data_mapping(response)
 
     def _native_execute(self, action: str, **params: Any) -> BrowserResponse:
+        self._ensure_open()
         self._prepare_install_for_action(action, params)
         response = self._session.execute(action, **params)
         confirmation_consumed = action == "confirm" and response.success
@@ -512,16 +696,19 @@ class Browser:
             return response
         if confirmation_consumed:
             if response.success:
-                self._record_successful_action(response.action)
+                self._record_successful_action(response)
             return response
         if response.success:
-            self._record_successful_action(response.action)
+            self._record_successful_action(response)
         return response
 
-    def pending_action(
+    def _pending_action(
         self,
-        confirmation: ActionConfirmationRequired | BrowserResponse | str,
-    ) -> PendingAction:
+        confirmation: ConfirmationRequired[Any] | BrowserResponse | str,
+        *,
+        decoder: Callable[[JSONMapping], T] | None = None,
+        expect: Literal["object", "any"] = "object",
+    ) -> PendingAction[T]:
         """Return a named pending action for a confirmation exception, response, or id."""
         if isinstance(confirmation, BrowserResponse):
             pending_id = response_confirmation_id(confirmation)
@@ -529,7 +716,7 @@ class Browser:
             data = response_data_mapping(confirmation) or {}
         else:
             pending_id = confirmation_id(confirmation)
-            if isinstance(confirmation, ActionConfirmationRequired):
+            if isinstance(confirmation, ConfirmationRequired):
                 action = confirmation.action
                 data = confirmation.data
             else:
@@ -541,15 +728,23 @@ class Browser:
             _browser=self,
             confirmation_id=pending_id,
             action=action,
-            data=dict(data),
+            details=dict(data),
+            _decode=decoder,
+            _expect=expect,
         )
 
-    def _record_successful_action(self, action: str) -> None:
-        if action_sets_launched(action):
+    def _record_successful_action(self, response: BrowserResponse) -> None:
+        action = response.action
+        browser_launched = response_browser_launched(response)
+        if browser_launched is not None:
+            self._launched = browser_launched
+        elif action_sets_launched(action):
             self._launched = True
         elif action_clears_pending_confirmation(action) and action_closes_browser(action):
             self._launched = False
-        if action_invalidates_cdp(action):
+        if action_resets_cdp(action):
+            self._reset_cdp()
+        elif action_invalidates_cdp(action):
             self._invalidate_cdp()
 
     def _cdp(self) -> CDPController:
@@ -563,11 +758,16 @@ class Browser:
         if self._cdp_controller is not None:
             self._cdp_controller.invalidate()
 
-    def connect(self) -> Mapping[str, Any]:
+    def _reset_cdp(self) -> None:
+        if self._cdp_controller is not None:
+            self._cdp_controller.close()
+            self._cdp_controller = None
+
+    def _connect(self) -> Mapping[str, Any]:
         """Attach to the configured CDP target without navigating.
 
-        `connect()` is only valid for browsers created through
-        `Browser.attach(CDPAttach(...))`.
+        This internal handshake is valid for browsers created through
+        `Browser.attach(CDPTarget(...))`.
 
         Returns
         -------
@@ -578,13 +778,13 @@ class Browser:
             self._launch_configuration.cdp_url is None
             and self._launch_configuration.cdp_port is None
         ):
-            raise RuntimeError("connect requires Browser.attach(CDPAttach(...))")
+            raise RuntimeError("CDP connection requires Browser.attach(CDPTarget(...))")
         return self._launch_native()
 
-    def launch_process(
+    def _launch_process(
         self,
         *,
-        options: LaunchOptionsInput | None = None,
+        options: LaunchOptions | None = None,
     ) -> Mapping[str, Any]:
         """Launch a native browser process using explicit process options.
 
@@ -602,13 +802,13 @@ class Browser:
             self._launch_configuration.cdp_url is not None
             or self._launch_configuration.cdp_port is not None
         ):
-            raise RuntimeError("launch_process cannot use CDPAttach; call connect()")
+            raise RuntimeError("local launch cannot use CDPTarget")
         return self._launch_native(options=options)
 
     def _launch_native(
         self,
         *,
-        options: LaunchOptionsInput | None = None,
+        options: LaunchOptions | None = None,
     ) -> Mapping[str, Any]:
         launch_params = self._launch_configuration.command_params(options=options)
         self._prepare_install_for_launch(launch_params)
@@ -638,110 +838,46 @@ class Browser:
         launch_params["executablePath"] = str(result.executable_path)
         self._install_prepared = True
 
-    def close(self, *, timeout: float = 5.0) -> None:
+    def close(self) -> None:
         """Close the native browser session and any active CDP connection."""
-        del timeout
+        if self._closed:
+            return
         if self._cdp_controller is not None:
             with suppress(Exception):
                 self._cdp_controller.close()
             self._cdp_controller = None
-        response = self._session.execute(INTERNAL_SHUTDOWN_ACTION)
-        _checked_response("close", replace(response, action="close"))
-        self._record_successful_action("close")
+        try:
+            if self._session.started:
+                response = self._session.execute(INTERNAL_SHUTDOWN_ACTION)
+                checked = _checked_response("close", replace(response, action="close"))
+                self._record_successful_action(checked)
+        finally:
+            self._session.discard_pending_confirmations()
+            self._launched = False
+            self._closed = True
 
-    def confirm(
+    def _ensure_open(self) -> None:
+        if self._closed:
+            raise RuntimeError("Browser is closed")
+
+    def _snapshot_data(
         self,
-        confirmation: ConfirmationTarget,
-    ) -> Mapping[str, Any]:
-        """Confirm a pending native action.
-
-        Parameters
-        ----------
-        confirmation
-            Confirmation exception, pending action, or confirmation id.
-
-        Returns
-        -------
-        Mapping[str, object]
-            Native response data for the confirmed action.
-        """
-        pending_id = (
-            confirmation.confirmation_id
-            if isinstance(confirmation, PendingAction)
-            else confirmation_id(confirmation)
-        )
-        if pending_id is None:
-            raise ValueError("confirm requires an ActionConfirmationRequired or confirmation id")
-        return self._command("confirm", confirmation_id=pending_id)
-
-    def deny(
-        self,
-        confirmation: ConfirmationTarget,
-    ) -> Mapping[str, Any]:
-        """Deny a pending native action.
-
-        Parameters
-        ----------
-        confirmation
-            Confirmation exception, pending action, or confirmation id.
-
-        Returns
-        -------
-        Mapping[str, object]
-            Native response data for the denial command.
-        """
-        pending_id = (
-            confirmation.confirmation_id
-            if isinstance(confirmation, PendingAction)
-            else confirmation_id(confirmation)
-        )
-        if pending_id is None:
-            raise ValueError("deny requires an ActionConfirmationRequired or confirmation id")
-        data = self._command("deny", confirmation_id=pending_id)
-        return data
-
-    def snapshot(
-        self,
-        *,
-        selector: str | None = None,
-        interactive: bool = False,
-        compact: bool = False,
-        max_depth: int | None = None,
-        urls: bool = False,
-    ) -> Snapshot:
-        """Return a raw accessibility snapshot.
-
-        Parameters
-        ----------
-        selector
-            Optional selector that scopes the snapshot.
-        interactive
-            Include interactable element refs when supported by the native engine.
-        compact
-            Request compact snapshot text.
-        max_depth
-            Maximum accessibility tree depth.
-        urls
-            Include URLs in snapshot output when available.
-
-        Returns
-        -------
-        Snapshot
-            Parsed snapshot text, refs, origin, and raw response data.
-        """
-        data = self._command(
+        spec: SnapshotSpec | None = None,
+    ) -> SnapshotData:
+        spec = spec or SnapshotSpec(interactive=False)
+        return self._command(
             "snapshot",
-            selector=optional(selector),
-            interactive=interactive,
-            compact=compact,
-            maxDepth=optional(max_depth),
-            urls=urls,
+            _decode=lambda data: snapshot_from_data(data, spec=spec),
+            selector=optional(spec.selector),
+            interactive=spec.interactive,
+            compact=spec.compact,
+            maxDepth=optional(spec.max_depth),
+            urls=spec.urls,
         )
-        return snapshot_from_data(data)
 
-    def diff_snapshot(
+    def _diff_snapshot(
         self,
-        baseline: str | Path | Snapshot | None = None,
+        baseline: str | Path | SnapshotData | None = None,
         *,
         selector: str | None = None,
         compact: bool = False,
@@ -767,113 +903,26 @@ class Browser:
             Parsed diff counts and raw response data.
         """
         baseline_value: str | Path | None
-        baseline_value = baseline.text if isinstance(baseline, Snapshot) else baseline
-        return self.diff.snapshot(
-            baseline=baseline_value,
-            selector=selector,
+        if isinstance(baseline, SnapshotData):
+            selector = baseline.spec.selector if selector is None else selector
+            compact = baseline.spec.compact
+            max_depth = baseline.spec.max_depth if max_depth is None else max_depth
+        baseline_value = baseline.text if isinstance(baseline, SnapshotData) else baseline
+        return self._command(
+            "diff_snapshot",
+            _decode=snapshot_diff_from_data,
+            baseline=optional(
+                path_value(baseline_value) if isinstance(baseline_value, Path) else baseline_value
+            ),
+            selector=optional(selector),
             compact=compact,
-            max_depth=max_depth,
+            maxDepth=optional(max_depth),
         )
 
-    def set_viewport(
-        self,
-        width: int,
-        height: int,
-        *,
-        device_scale_factor: float = 1.0,
-        mobile: bool = False,
-    ) -> Mapping[str, Any]:
-        """Set the browser viewport.
-
-        Parameters
-        ----------
-        width, height
-            Viewport size in CSS pixels.
-        device_scale_factor
-            Device scale factor used for emulation.
-        mobile
-            Whether to emulate a mobile viewport.
-
-        Returns
-        -------
-        Mapping[str, object]
-            Native response data.
-        """
-        return self._command(
-            "viewport",
-            **viewport_params(
-                width,
-                height,
-                device_scale_factor=device_scale_factor,
-                mobile=mobile,
-            ),
-        )
-
-    def set_device(self, name: str) -> Mapping[str, Any]:
-        """Set a named device preset."""
-        return self._command("device", name=name)
-
-    def set_headers(self, headers: Mapping[str, str]) -> Mapping[str, Any]:
-        """Set extra HTTP headers for subsequent page requests."""
-        return self._command("headers", headers=dict(headers))
-
-    def set_offline(self, enabled: bool = True) -> Mapping[str, Any]:
-        """Enable or disable offline network emulation."""
-        return self._command("offline", offline=enabled)
-
-    def set_user_agent(self, user_agent: str) -> Mapping[str, Any]:
-        """Set the browser user-agent string."""
-        return self._command("useragent", userAgent=user_agent)
-
-    def set_media(
-        self,
-        *,
-        media: str | None = None,
-        color_scheme: str | None = None,
-        reduced_motion: str | None = None,
-        features: Mapping[str, str] | None = None,
-    ) -> Mapping[str, Any]:
-        """Set emulated CSS media features."""
-        return self._command(
-            "set_media",
-            **media_params(
-                media=media,
-                color_scheme=color_scheme,
-                reduced_motion=reduced_motion,
-                features=features,
-            ),
-        )
-
-    def set_timezone(self, timezone_id: str) -> Mapping[str, Any]:
-        """Set the emulated timezone id, for example `Europe/Vienna`."""
-        return self._command("timezone", timezoneId=timezone_id)
-
-    def set_locale(self, locale: str) -> Mapping[str, Any]:
-        """Set the emulated browser locale, for example `en-US`."""
-        return self._command("locale", locale=locale)
-
-    def set_geolocation(
-        self,
-        latitude: float,
-        longitude: float,
-        *,
-        accuracy: float | None = None,
-    ) -> Mapping[str, Any]:
-        """Set emulated geolocation coordinates."""
-        return self._command(
-            "geolocation",
-            **geolocation_params(latitude, longitude, accuracy=accuracy),
-        )
-
-    def set_permissions(
-        self, permissions: Sequence[str], *, origin: str | None = None
-    ) -> Mapping[str, Any]:
-        """Grant browser permissions, optionally scoped to an origin."""
-        return self._command("permissions", **permissions_params(permissions, origin=origin))
-
-    def bring_to_front(self) -> Mapping[str, Any]:
+    def activate(self) -> Self:
         """Bring the browser window to the foreground."""
-        return self._command("bringtofront")
+        self._command("bringtofront", _decode=lambda _data: self)
+        return self
 
 
 def _uses_local_chrome(params: Mapping[str, Any]) -> bool:

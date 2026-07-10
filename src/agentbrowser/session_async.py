@@ -104,12 +104,6 @@ class AsyncNativeSession:
             raise RuntimeError("cannot change allowed_domains after AsyncNativeSession starts")
         self._config = replace(self._config, allowed_domains=allowed_domains)
 
-    def set_dashboard(self, dashboard: bool | DashboardOptions | None) -> None:
-        """Configure dashboard startup before the async worker starts."""
-        if self._thread is not None:
-            raise RuntimeError("dashboard must be started before AsyncNativeSession starts")
-        self._config = replace(self._config, dashboard=dashboard)
-
     async def command(self, action: str, **params: Any) -> JSONValue:
         """Run a native command and return checked response data."""
         response = await self.execute(action, **params)
@@ -243,6 +237,7 @@ def _run_async_native_session(
             if not native_closed:
                 with suppress(BaseException):
                     session.execute(INTERNAL_SHUTDOWN_ACTION)
+            session.discard_pending_confirmations()
             return
         command = item
         if not isinstance(command, _AsyncCommand):
@@ -256,6 +251,7 @@ def _run_async_native_session(
         except BaseException as err:
             _call_soon(command.loop, _set_future_exception, command.future, err)
             if command.action == INTERNAL_SHUTDOWN_ACTION:
+                session.discard_pending_confirmations()
                 return
         else:
             action = command.action
@@ -267,6 +263,7 @@ def _run_async_native_session(
                 native_closed = True
             _call_soon(command.loop, _set_future_result, command.future, response)
             if command.action == INTERNAL_SHUTDOWN_ACTION:
+                session.discard_pending_confirmations()
                 return
 
 

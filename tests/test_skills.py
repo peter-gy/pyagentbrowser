@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-import agentbrowser as ab
-from agentbrowser import Skill, SkillFile, SkillPart, skills
+import agentbrowser.skills as skills
+from agentbrowser.skills import Skill, SkillFile, SkillPart
 
 ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.sdk_dx
@@ -41,14 +41,6 @@ def test_skills_full_load_includes_supplementary_parts() -> None:
     for part in supplementary_parts:
         assert skill.part(part.path) == file_by_path[part.path]
         assert skill.part(part.path).content
-
-
-def test_skills_list_exposes_discoverable_skill_metadata() -> None:
-    catalog = skills.list()
-    names = skills.available()
-
-    assert set(names) == {skill.name for skill in catalog}
-    assert all(skill.description for skill in catalog)
 
 
 def test_skills_read_returns_main_part_content() -> None:
@@ -117,17 +109,9 @@ def test_skills_get_missing_name_raises_key_error() -> None:
         skills.get("missing")
 
 
-def test_package_root_exposes_skills_namespace() -> None:
-    assert ab.skills is skills
-    assert ab.Skill is Skill
-    assert ab.SkillFile is SkillFile
-    assert ab.SkillPart is SkillPart
-
-
 def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
     upstream = ROOT / "third_party" / "agent-browser" / "skill-data"
-    if not upstream.is_dir():
-        pytest.skip("upstream submodule skill-data is not checked out")
+    assert upstream.is_dir()
 
     upstream_files = {
         path.relative_to(upstream): path.read_text()
@@ -141,11 +125,3 @@ def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
             public_files[Path(skill.name) / file.path] = skills.read(skill.name, file.path)
 
     assert public_files == upstream_files
-
-
-def test_skills_public_api_loads_native_embedded_payload() -> None:
-    skill = skills.get("core", full=True)
-
-    assert "core" in skills.available()
-    assert skill.description
-    assert skill.files

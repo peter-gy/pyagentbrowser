@@ -684,11 +684,11 @@ fn rewrite_actions_namespace(contents: String) -> String {
     get_socket_dir_for_namespace,
     INTERNAL_DAEMON_SHUTDOWN_ACTION,
 };"#;
-    const UPSTREAM_SESSION_FIELD: &str = r#"    pub restore_saved_path: Option<String>,
-    pub session_id: String,"#;
-    const REWRITTEN_SESSION_FIELD: &str = r#"    pub restore_saved_path: Option<String>,
-    pub session_id: String,
-    pub namespace: Option<String>,"#;
+    const UPSTREAM_SESSION_FIELD: &str = r#"    pub session_id: String,
+    pub tracing_state: TracingState,"#;
+    const REWRITTEN_SESSION_FIELD: &str = r#"    pub session_id: String,
+    pub namespace: Option<String>,
+    pub tracing_state: TracingState,"#;
     const UPSTREAM_SESSION_INIT: &str = r#"            session_id: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),"#;
     const REWRITTEN_SESSION_INIT: &str = r#"            session_id: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),
             namespace: env::var("AGENT_BROWSER_NAMESPACE").ok(),"#;
@@ -1120,9 +1120,15 @@ pub fn get_sessions_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
     rewritten = replace_n_named(
         rewritten,
         "state namespace sessions dir",
-        "let dir = get_sessions_dir();",
-        "let dir = get_sessions_dir_for_namespace(namespace);",
-        6,
+        "\n    let dir = get_sessions_dir();",
+        "\n    let dir = get_sessions_dir_for_namespace(namespace);",
+        5,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "state namespace implicit save sessions dir",
+        "\n            let dir = get_sessions_dir();",
+        "\n            let dir = get_sessions_dir_for_namespace(namespace);",
     );
     rewritten = replace_once_named(
         rewritten,
@@ -1356,8 +1362,8 @@ fn replace_n_named(
 ) -> String {
     let occurrences = contents.matches(expected).count();
     assert!(
-        occurrences >= expected_count,
-        "generated upstream rewrite expected at least {expected_count} {patch_name} blocks, found {occurrences}"
+        occurrences == expected_count,
+        "generated upstream rewrite expected exactly {expected_count} {patch_name} blocks, found {occurrences}"
     );
     for _ in 0..expected_count {
         contents = contents.replacen(expected, replacement, 1);

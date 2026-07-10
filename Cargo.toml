@@ -1,7 +1,9 @@
 [workspace]
-members = ["crates/pyagentbrowser"]
-exclude = [
+members = [
     "crates/agent-browser-adapter",
+    "crates/pyagentbrowser",
+]
+exclude = [
     "third_party/agent-browser",
     "third_party/agent-browser/cli",
 ]

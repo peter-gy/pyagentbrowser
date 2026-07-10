@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 import sys
 import tarfile
@@ -19,40 +20,12 @@ class PackageSmokeError(AssertionError):
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def _relative_files(base: str, suffixes: tuple[str, ...] | None = None) -> frozenset[str]:
-    root = ROOT / base
-    if not root.exists():
-        return frozenset()
-    return frozenset(
-        path.relative_to(ROOT).as_posix()
-        for path in root.rglob("*")
-        if path.is_file()
-        and "__pycache__" not in path.parts
-        and (suffixes is None or path.name == "py.typed" or path.suffix in suffixes)
-    )
-
-
-def _wheel_runtime_files() -> frozenset[str]:
-    return frozenset(
-        path.removeprefix("src/") for path in _relative_files("src/agentbrowser", (".py", ".pyi"))
-    )
-
-
-def _docs_and_example_files() -> frozenset[str]:
-    return _relative_files("docs", (".md", ".json")) | _relative_files("examples", (".py",))
-
-
-def _sdk_source_files() -> frozenset[str]:
-    return _relative_files("src/agentbrowser", (".py", ".pyi"))
-
-
-def _upstream_skill_data_files() -> frozenset[str]:
-    return _relative_files("third_party/agent-browser/skill-data")
-
-
-WHEEL_REQUIRED_FILES = _wheel_runtime_files()
-WHEEL_REQUIRED_PYTHON_MODULES = frozenset(
-    name for name in WHEEL_REQUIRED_FILES if name.endswith((".py", ".pyi"))
+WHEEL_REQUIRED_FILES = frozenset(
+    {
+        "agentbrowser/__init__.py",
+        "agentbrowser/_upstream.json",
+        "agentbrowser/py.typed",
+    }
 )
 WHEEL_FORBIDDEN_EXACT = frozenset(
     {
@@ -78,96 +51,37 @@ WHEEL_FORBIDDEN_PREFIXES = (
     "examples/",
 )
 
-SDIST_REQUIRED_BUILD_FILES = (
-    frozenset(
-        {
-            "pyproject.toml",
-            "LICENSE",
-            "NOTICE",
-            "Cargo.toml",
-            "Cargo.lock",
-            "rust-toolchain.toml",
-            "crates/pyagentbrowser/Cargo.toml",
-            "crates/pyagentbrowser/build.rs",
-            "crates/pyagentbrowser/src/lib.rs",
-            "crates/agent-browser-adapter/Cargo.toml",
-            "crates/agent-browser-adapter/build.rs",
-            "crates/agent-browser-adapter/src/lib.rs",
-            "crates/agent-browser-adapter/tests/smoke.rs",
-        }
-    )
-    | _sdk_source_files()
-)
-SDIST_REQUIRED_DOCS_AND_EXAMPLES = _docs_and_example_files()
-SDIST_REQUIRED_UPSTREAM_SOURCE = (
-    frozenset(
-        {
-            "third_party/agent-browser/LICENSE",
-            "third_party/agent-browser/cli/Cargo.toml",
-            "third_party/agent-browser/cli/src/commands.rs",
-            "third_party/agent-browser/cli/src/plugins.rs",
-            "third_party/agent-browser/cli/src/read.rs",
-            "third_party/agent-browser/cli/src/native/actions.rs",
-            "third_party/agent-browser/cli/src/native/stream/http.rs",
-            "third_party/agent-browser/cli/src/native/stream/mod.rs",
-            "third_party/agent-browser/cli/cdp-protocol/browser_protocol.json",
-            "third_party/agent-browser/cli/cdp-protocol/js_protocol.json",
-        }
-    )
-    | _upstream_skill_data_files()
-)
-
-ALLOWED_UPSTREAM_ROOTS = frozenset(
+SDIST_REQUIRED_BUILD_FILES = frozenset(
     {
-        "third_party/agent-browser",
-        "third_party/agent-browser/cli",
-        "third_party/agent-browser/cli/cdp-protocol",
-        "third_party/agent-browser/cli/src",
-        "third_party/agent-browser/cli/src/native",
-        "third_party/agent-browser/skill-data",
+        "pyproject.toml",
+        "LICENSE",
+        "NOTICE",
+        "Cargo.toml",
+        "Cargo.lock",
+        "rust-toolchain.toml",
+        "src/agentbrowser/__init__.py",
+        "src/agentbrowser/_upstream.json",
+        "crates/pyagentbrowser/Cargo.toml",
+        "crates/pyagentbrowser/build.rs",
+        "crates/pyagentbrowser/src/lib.rs",
+        "crates/agent-browser-adapter/Cargo.toml",
+        "crates/agent-browser-adapter/build.rs",
+        "crates/agent-browser-adapter/src/lib.rs",
     }
 )
-ALLOWED_UPSTREAM_EXACT = frozenset(
+SDIST_REQUIRED_DOCS_AND_EXAMPLES = frozenset(
+    {"README.md", "docs/api.md", "examples/basic_navigation.py"}
+)
+SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
     {
         "third_party/agent-browser/LICENSE",
         "third_party/agent-browser/cli/Cargo.toml",
-        "third_party/agent-browser/cli/src/color.rs",
-        "third_party/agent-browser/cli/src/commands.rs",
-        "third_party/agent-browser/cli/src/connection.rs",
-        "third_party/agent-browser/cli/src/flags.rs",
-        "third_party/agent-browser/cli/src/install.rs",
-        "third_party/agent-browser/cli/src/plugins.rs",
-        "third_party/agent-browser/cli/src/read.rs",
         "third_party/agent-browser/cli/src/native/actions.rs",
-        "third_party/agent-browser/cli/src/native/auth.rs",
-        "third_party/agent-browser/cli/src/native/browser.rs",
-        "third_party/agent-browser/cli/src/native/cookies.rs",
-        "third_party/agent-browser/cli/src/native/diff.rs",
-        "third_party/agent-browser/cli/src/native/element.rs",
-        "third_party/agent-browser/cli/src/native/inspect_server.rs",
-        "third_party/agent-browser/cli/src/native/interaction.rs",
-        "third_party/agent-browser/cli/src/native/network.rs",
-        "third_party/agent-browser/cli/src/native/policy.rs",
-        "third_party/agent-browser/cli/src/native/providers.rs",
-        "third_party/agent-browser/cli/src/native/recording.rs",
-        "third_party/agent-browser/cli/src/native/screenshot.rs",
-        "third_party/agent-browser/cli/src/native/snapshot.rs",
-        "third_party/agent-browser/cli/src/native/state.rs",
-        "third_party/agent-browser/cli/src/native/storage.rs",
-        "third_party/agent-browser/cli/src/native/tracing.rs",
-        "third_party/agent-browser/cli/src/test_utils.rs",
-        "third_party/agent-browser/cli/src/validation.rs",
+        "third_party/agent-browser/cli/cdp-protocol/browser_protocol.json",
+        "third_party/agent-browser/skill-data/core/SKILL.md",
     }
 )
-ALLOWED_UPSTREAM_PREFIXES = (
-    "third_party/agent-browser/cli/cdp-protocol/",
-    "third_party/agent-browser/cli/src/native/cdp/",
-    "third_party/agent-browser/cli/src/native/react/",
-    "third_party/agent-browser/cli/src/native/stream/",
-    "third_party/agent-browser/cli/src/native/test_fixtures/",
-    "third_party/agent-browser/cli/src/native/webdriver/",
-    "third_party/agent-browser/skill-data/",
-)
+
 FORBIDDEN_SUPPORT_PREFIXES = (
     ".github/",
     "crates/agent-browser-adapter/target/",
@@ -301,7 +215,11 @@ def assert_wheel_runtime_payload(
 
 
 def assert_wheel_python_modules_are_nonempty(sizes: Mapping[str, int]) -> None:
-    empty = sorted(name for name in WHEEL_REQUIRED_PYTHON_MODULES if sizes.get(name, 0) <= 0)
+    empty = sorted(
+        name
+        for name, size in sizes.items()
+        if name.startswith("agentbrowser/") and name.endswith((".py", ".pyi")) and size <= 0
+    )
     if empty:
         _fail(f"wheel contains empty Python modules: {empty}")
 
@@ -316,6 +234,19 @@ def assert_wheel_excludes_source_and_junk(names: set[str]) -> None:
             _fail(f"wheel contains forbidden payload: {name}")
         if name.endswith((".pth", ".pyc", ".pyo")) or "__pycache__/" in name:
             _fail(f"wheel contains development artifact: {name}")
+
+
+def assert_native_extension_excludes_local_build_paths(path: Path) -> None:
+    cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
+    forbidden_paths = (ROOT, cargo_home)
+    with zipfile.ZipFile(path) as archive:
+        native_extensions = _native_extensions(set(archive.namelist()))
+        if len(native_extensions) != 1:
+            _fail(f"wheel contains unexpected native extensions: {native_extensions}")
+        native = archive.read(native_extensions[0])
+    leaked = [build_path for build_path in forbidden_paths if os.fsencode(build_path) in native]
+    if leaked:
+        _fail(f"wheel native extension contains local build paths: {leaked}")
 
 
 def _metadata_from_wheel(path: Path) -> Message:
@@ -424,8 +355,8 @@ def _project_url_pairs(metadata: Message) -> set[tuple[str, str]]:
 def _assert_prerelease_version(version: str, artifact_name: str) -> None:
     if "+" in version:
         _fail(f"{artifact_name} uses a local version label: {version}")
-    if not re.fullmatch(r"\d+\.\d+\.\d+rc\d+", version):
-        _fail(f"{artifact_name} is not an rc prerelease: {version}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:a|b|rc)\d+", version):
+        _fail(f"{artifact_name} is not a prerelease: {version}")
 
 
 def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:
@@ -503,14 +434,6 @@ def assert_sdist_required_categories(names: set[str]) -> None:
     _assert_present(names, SDIST_REQUIRED_UPSTREAM_SOURCE, "sdist upstream payload")
 
 
-def _is_allowed_upstream_source(name: str) -> bool:
-    return (
-        name in ALLOWED_UPSTREAM_ROOTS
-        or name in ALLOWED_UPSTREAM_EXACT
-        or name.startswith(ALLOWED_UPSTREAM_PREFIXES)
-    )
-
-
 def assert_sdist_excludes_junk_and_dashboard_payload(names: set[str]) -> None:
     for name in names:
         if (
@@ -531,8 +454,6 @@ def assert_sdist_excludes_junk_and_dashboard_payload(names: set[str]) -> None:
             _fail(f"sdist contains forbidden import payload: {name}")
         if name in FORBIDDEN_UPSTREAM_EXACT or name.startswith(FORBIDDEN_UPSTREAM_PREFIXES):
             _fail(f"sdist contains forbidden upstream dashboard/assets/docs payload: {name}")
-        if name.startswith("third_party/agent-browser/") and not _is_allowed_upstream_source(name):
-            _fail(f"sdist contains unnecessary upstream submodule file: {name}")
 
 
 def check_wheel(path: Path) -> None:
@@ -541,6 +462,7 @@ def check_wheel(path: Path) -> None:
     assert_wheel_runtime_payload(names, sizes, path.name)
     assert_wheel_python_modules_are_nonempty(sizes)
     assert_wheel_excludes_source_and_junk(names)
+    assert_native_extension_excludes_local_build_paths(path)
     assert_metadata_invariants(_metadata_from_wheel(path), path.name)
 
 

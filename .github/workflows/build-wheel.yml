@@ -50,6 +50,11 @@ jobs:
           python-version: ${{ inputs.python }}
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Set reproducible build inputs
+        run: |
+          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
+          echo "RUSTFLAGS=--remap-path-prefix=${GITHUB_WORKSPACE}=/src/pyagentbrowser --remap-path-prefix=/io=/src/pyagentbrowser --remap-path-prefix=${HOME}/.cargo=/cargo --remap-path-prefix=/root/.cargo=/cargo --remap-path-prefix=/usr/local/cargo=/cargo" >> "$GITHUB_ENV"
+
       - name: Build Linux wheel
         if: runner.os == 'Linux'
         uses: PyO3/maturin-action@v1
@@ -67,13 +72,14 @@ jobs:
             -e CARGO_NET_RETRY
             -e CARGO_REGISTRIES_CRATES_IO_PROTOCOL
             -e CFLAGS_aarch64_unknown_linux_gnu
+            -e RUSTFLAGS
+            -e SOURCE_DATE_EPOCH
           args: >-
             --release
             --locked
             --compatibility pypi
             --out dist
             --interpreter python${{ inputs.python }}
-            ${{ inputs.sdist && '--sdist' || '' }}
 
       - name: Build native wheel
         if: runner.os != 'Linux'
@@ -88,9 +94,21 @@ jobs:
             --out dist
             --interpreter python
 
+      - name: Build source distribution
+        if: inputs.sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          maturin-version: v1.14.1
+          command: sdist
+          docker-options: >-
+            -e RUSTFLAGS
+            -e SOURCE_DATE_EPOCH
+          args: --out dist
+
       - name: Check built wheel payload
         run: |
           python - <<'PY'
+          import os
           from pathlib import Path
           import zipfile
 
@@ -98,9 +116,22 @@ jobs:
           assert len(wheels) == 1, wheels
           with zipfile.ZipFile(wheels[0]) as wheel:
               names = set(wheel.namelist())
+              native_names = sorted(
+                  name for name in names if name.startswith("agentbrowser/_native")
+              )
+              assert len(native_names) == 1, native_names
+              native_name = native_names[0]
+              native = wheel.read(native_name)
           assert any(name.endswith(".dist-info/METADATA") for name in names)
           assert any(name.startswith("agentbrowser/") for name in names)
-          assert any(name.startswith("agentbrowser/_native") for name in names)
+          forbidden_paths = (
+              os.environ["GITHUB_WORKSPACE"].encode(),
+              str(Path.home() / ".cargo").encode(),
+              b"/io/",
+              b"/root/.cargo/",
+              b"/usr/local/cargo/",
+          )
+          assert all(path not in native for path in forbidden_paths)
           PY
 
       - name: Test built wheel
