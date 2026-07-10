@@ -134,6 +134,10 @@ def _fail(message: str) -> NoReturn:
     raise PackageSmokeError(message)
 
 
+def _normalized_newlines(text: str) -> str:
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
 def project_metadata() -> Mapping[str, object]:
     pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
     project = pyproject.get("project")
@@ -433,7 +437,7 @@ def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:
     if not isinstance(description, str):
         _fail(f"{artifact_name} metadata is missing the README long description")
     readme = (ROOT / str(project["readme"])).read_text()
-    if description.strip() != readme.strip():
+    if _normalized_newlines(description).strip() != _normalized_newlines(readme).strip():
         _fail(f"{artifact_name} metadata long description does not match README.md")
 
 
