@@ -6,6 +6,11 @@ from threading import Event
 from typing import Any, cast
 
 NativeReply = Mapping[str, Any] | Callable[[dict[str, Any]], Mapping[str, Any]]
+CLOSE_DATA = {
+    "closed": True,
+    "restoreStatus": "not_configured",
+    "saveStatus": "not_configured",
+}
 
 
 class ScriptedNative:
@@ -32,6 +37,8 @@ class ScriptedNative:
             if isinstance(reply, Mapping)
             else cast(Callable[[dict[str, Any]], Mapping[str, Any]], reply)(command)
         )
+        if command["action"] == "__agent_browser_internal_shutdown" and not result:
+            result = dict(CLOSE_DATA)
         if "success" in result:
             response = dict(result)
             response.setdefault("id", command["id"])
@@ -97,7 +104,7 @@ class ConfirmationNative:
         elif action == "deny":
             data = {"denied": True, "action": self.action}
         elif action == "__agent_browser_internal_shutdown":
-            data = {}
+            data = dict(CLOSE_DATA)
         else:
             data = {
                 "confirmation_required": True,

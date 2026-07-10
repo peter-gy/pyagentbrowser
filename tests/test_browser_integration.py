@@ -4,7 +4,7 @@ import asyncio
 import socket
 import subprocess
 import time
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from dataclasses import dataclass
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -25,6 +25,7 @@ from agentbrowser import (
     LaunchOptions,
     RestoreOptions,
     SessionOptions,
+    SessionStatus,
     SnapshotDiff,
 )
 
@@ -120,12 +121,12 @@ def _stop_process(process: subprocess.Popen[bytes]) -> None:
         process.wait(timeout=3)
 
 
-def _wait_for_restore_save(browser: Browser, timeout: float = 6.0) -> Mapping[str, object]:
+def _wait_for_restore_save(browser: Browser, timeout: float = 6.0) -> SessionStatus:
     deadline = time.monotonic() + timeout
-    latest: Mapping[str, object] = {}
+    latest: SessionStatus | None = None
     while time.monotonic() < deadline:
-        latest = browser.native.data("session_info")
-        if latest.get("saveStatus") == "saved":
+        latest = browser.session.status()
+        if latest.save_status == "saved":
             return latest
         time.sleep(0.1)
     pytest.fail(f"restore state was not autosaved: {latest}")
@@ -204,25 +205,25 @@ def test_periodic_restore_autosave_survives_abrupt_browser_exit(
         browser.open(local_site.base_url)
         browser.storage.set("periodic", "saved")
         time.sleep(2.2)
-        info = _wait_for_restore_save(browser)
-        saved_path = Path(str(info["restoreSavedPath"]))
+        status = _wait_for_restore_save(browser)
+        saved_path = status.restore_saved_path
+        assert saved_path is not None
         assert saved_path.is_file()
 
         browser.cdp.send("Browser.close")
         deadline = time.monotonic() + 3
         while time.monotonic() < deadline:
-            if not browser.native.data("session_info").get("browserLaunched"):
+            if not browser.session.status().browser_launched:
                 break
             time.sleep(0.1)
-        assert browser.native.data("session_info")["browserLaunched"] is False
+        assert browser.session.status().browser_launched is False
     finally:
         browser.close()
 
     restored = _browser(chrome_path, session=session)
     try:
         restored.open(local_site.base_url)
-        info = restored.native.data("session_info")
-        assert info["restoreStatus"] == "loaded"
+        assert restored.session.status().restore_status == "loaded"
         assert restored.storage.get("periodic") == "saved"
     finally:
         restored.close()

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 from pathlib import Path
+from threading import Event
 from typing import Any, cast
 
 import pytest
@@ -17,6 +18,7 @@ from agentbrowser import (
     Browser,
     BrowserError,
     CDPTarget,
+    CloseResult,
     ConfirmationRequired,
     DashboardOptions,
     LaunchOptions,
@@ -25,8 +27,10 @@ from agentbrowser import (
     ReadMode,
     ReadResult,
     Ref,
+    RestoreSaveError,
     Screenshot,
     SessionOptions,
+    SessionStatus,
     Snapshot,
 )
 from agentbrowser.session import NativeSession
@@ -41,6 +45,31 @@ def _browser(native: Any) -> Browser:
 
 def _command_without_id(command: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in command.items() if key != "id"}
+
+
+def _session_status_data() -> dict[str, Any]:
+    return {
+        "session": "research",
+        "namespace": "worker-a",
+        "socketDir": "/tmp/agent-browser",
+        "backgroundPid": 42,
+        "browserLaunched": True,
+        "pageCount": 2,
+        "engine": "chrome",
+        "launchHash": 101,
+        "compatibilityStatus": "current",
+        "restoreKey": "research",
+        "restoreStatus": "loaded",
+        "restoreStatusDetail": None,
+        "restoreLoadedPath": "/tmp/research.json",
+        "restoreValidationPending": False,
+        "restoreSave": "always",
+        "saveStatus": "saved",
+        "restoreSavedPath": "/tmp/research.json",
+        "restoreCheckUrl": None,
+        "restoreCheckText": "Dashboard",
+        "restoreCheckFn": None,
+    }
 
 
 def test_browser_core_is_agent_first_and_returns_typed_values() -> None:
@@ -170,6 +199,47 @@ def test_dashboard_namespace_reports_status_and_stops_streaming() -> None:
     assert browser.dashboard.stop() is None
 
 
+def test_session_namespace_returns_typed_lifecycle_status() -> None:
+    native = ScriptedNative({"session_info": _session_status_data()})
+    browser = _browser(native)
+
+    status = browser.session.status()
+
+    assert status == SessionStatus(
+        session_id="research",
+        namespace="worker-a",
+        socket_dir=Path("/tmp/agent-browser"),
+        background_pid=42,
+        browser_launched=True,
+        page_count=2,
+        engine="chrome",
+        launch_hash=101,
+        compatibility_status="current",
+        restore_key="research",
+        restore_status="loaded",
+        restore_status_detail=None,
+        restore_loaded_path=Path("/tmp/research.json"),
+        restore_validation_pending=False,
+        restore_save="always",
+        save_status="saved",
+        restore_saved_path=Path("/tmp/research.json"),
+        restore_check_url=None,
+        restore_check_text="Dashboard",
+        restore_check_fn=None,
+        raw=_session_status_data(),
+    )
+    assert native.commands[0]["action"] == "session_info"
+
+
+def test_session_status_requires_native_lifecycle_fields() -> None:
+    data = _session_status_data()
+    del data["restoreStatus"]
+    browser = _browser(ScriptedNative({"session_info": data}))
+
+    with pytest.raises(NativeParseError, match="restoreStatus"):
+        browser.session.status()
+
+
 def test_native_escape_hatch_preserves_arbitrary_json() -> None:
     native = ScriptedNative({"future_action": {"nested": {"items": [1, True, None]}}})
     browser = _browser(native)
@@ -223,15 +293,18 @@ def test_console_messages_preserve_a_present_empty_collection() -> None:
     [
         "ConsoleMessage",
         "Cookie",
+        "CloseResult",
         "NetworkRequest",
         "ProxyConfig",
         "RequestDetail",
+        "RestoreSaveError",
         "RouteResponse",
         "SessionId",
+        "SessionStatus",
         "TabInfo",
     ],
 )
-def test_public_signature_models_are_package_exports(name: str) -> None:
+def test_public_contract_types_are_package_exports(name: str) -> None:
     assert name in agentbrowser.__all__
     assert getattr(agentbrowser, name).__module__ == "agentbrowser.models"
 
@@ -613,16 +686,79 @@ def test_pending_denial_forwards_the_confirmation_token_and_returns_none() -> No
 
 
 def test_close_is_idempotent_and_browser_cannot_be_reused() -> None:
-    native = ScriptedNative({"__agent_browser_internal_shutdown": {}})
+    native = ScriptedNative(
+        {
+            "__agent_browser_internal_shutdown": {
+                "closed": True,
+                "restoreStatus": "loaded",
+                "saveStatus": "saved",
+                "statePath": "/tmp/research.json",
+            }
+        }
+    )
     browser = _browser(native)
 
-    browser.close()
-    browser.close()
+    first = browser.close()
+    second = browser.close()
 
+    assert first is second
+    assert first == CloseResult(
+        closed=True,
+        restore_status="loaded",
+        save_status="saved",
+        state_path=Path("/tmp/research.json"),
+        raw={
+            "closed": True,
+            "restoreStatus": "loaded",
+            "saveStatus": "saved",
+            "statePath": "/tmp/research.json",
+        },
+    )
     assert browser.closed is True
     assert len(native.commands) == 1
     with pytest.raises(RuntimeError, match="closed"):
         browser.native.data("probe")
+
+
+def test_close_surfaces_restore_save_errors_after_terminal_cleanup() -> None:
+    native = ScriptedNative(
+        {
+            "__agent_browser_internal_shutdown": {
+                "closed": True,
+                "restoreStatus": "loaded",
+                "saveStatus": "error",
+                "saveError": "permission denied",
+            }
+        }
+    )
+    browser = _browser(native)
+
+    with pytest.raises(RestoreSaveError, match="permission denied") as failed:
+        browser.close()
+
+    assert failed.value.result.closed is True
+    assert browser.closed is True
+    with pytest.raises(RestoreSaveError, match="permission denied"):
+        browser.close()
+
+
+def test_close_rejects_missing_native_save_status() -> None:
+    browser = _browser(
+        ScriptedNative(
+            {
+                "__agent_browser_internal_shutdown": {
+                    "closed": True,
+                    "restoreStatus": "loaded",
+                }
+            }
+        )
+    )
+
+    with pytest.raises(NativeParseError, match="saveStatus"):
+        browser.close()
+    assert browser.closed is True
+    with pytest.raises(NativeParseError, match="saveStatus"):
+        browser.close()
 
 
 def test_closing_an_unused_browser_does_not_start_its_native_session() -> None:
@@ -630,9 +766,10 @@ def test_closing_an_unused_browser_does_not_start_its_native_session() -> None:
     browser = Browser(_native_session=session)
 
     assert session.started is False
-    browser.close()
+    result = browser.close()
     assert session.started is False
     assert browser.closed is True
+    assert result == CloseResult(closed=True)
 
 
 def test_public_options_use_named_types_and_python_units(
@@ -671,7 +808,12 @@ def test_async_core_uses_the_same_nouns() -> None:
                 "launch": {},
                 "navigate": {},
                 "title": {"title": "Async"},
-                "__agent_browser_internal_shutdown": {},
+                "session_info": _session_status_data(),
+                "__agent_browser_internal_shutdown": {
+                    "closed": True,
+                    "restoreStatus": "loaded",
+                    "saveStatus": "saved",
+                },
             }
         )
         browser = AsyncBrowser(
@@ -680,8 +822,79 @@ def test_async_core_uses_the_same_nouns() -> None:
 
         assert await browser.open("example.com") is browser
         assert await browser.title() == "Async"
-        await browser.close()
+        assert (await browser.session.status()).restore_status == "loaded"
+        result = await browser.close()
+        assert result.save_status == "saved"
+        assert await browser.close() is result
         assert browser.closed is True
+
+    asyncio.run(run())
+
+
+def test_async_close_is_single_flight() -> None:
+    async def run() -> None:
+        started = Event()
+        release = Event()
+
+        def close_reply(_command: dict[str, Any]) -> dict[str, Any]:
+            started.set()
+            release.wait(timeout=5)
+            return {
+                "closed": True,
+                "restoreStatus": "not_configured",
+                "saveStatus": "not_configured",
+            }
+
+        native = ScriptedNative(
+            {
+                "probe": {},
+                "__agent_browser_internal_shutdown": close_reply,
+            }
+        )
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        await browser.native.data("probe")
+
+        first_close = asyncio.create_task(browser.close())
+        assert await asyncio.to_thread(started.wait, 1)
+        second_close = asyncio.create_task(browser.close())
+        await asyncio.sleep(0)
+        assert second_close.done() is False
+        release.set()
+        first, second = await asyncio.gather(first_close, second_close)
+
+        assert first is second
+        assert [
+            command["action"]
+            for command in native.commands
+            if command["action"] == "__agent_browser_internal_shutdown"
+        ] == ["__agent_browser_internal_shutdown"]
+
+    asyncio.run(run())
+
+
+def test_async_close_replays_the_terminal_decode_error() -> None:
+    async def run() -> None:
+        native = ScriptedNative(
+            {
+                "probe": {},
+                "__agent_browser_internal_shutdown": {
+                    "closed": True,
+                    "restoreStatus": "loaded",
+                },
+            }
+        )
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        await browser.native.data("probe")
+
+        for _attempt in range(2):
+            with pytest.raises(NativeParseError, match="saveStatus"):
+                await browser.close()
+
+        assert [
+            command["action"]
+            for command in native.commands
+            if command["action"] == "__agent_browser_internal_shutdown"
+        ] == ["__agent_browser_internal_shutdown"]
 
     asyncio.run(run())
 

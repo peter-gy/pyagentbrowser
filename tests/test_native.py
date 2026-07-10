@@ -115,14 +115,14 @@ def test_restore_and_namespace_options_reach_generated_adapter(
     )
 
     with Browser(session=session) as browser:
-        info = browser.native.data("session_info")
+        status = browser.session.status()
 
-    assert info["session"] == "py-state"
-    assert info["namespace"] == "Worktree: One"
-    assert info["restoreKey"] == "py-state"
-    assert info["restoreSave"] == "never"
-    assert info["restoreCheckText"] == "Dashboard"
-    assert Path(str(info["socketDir"])) == (socket_dir / "namespaces" / "worktree-one" / "run")
+    assert status.session_id == "py-state"
+    assert status.namespace == "Worktree: One"
+    assert status.restore_key == "py-state"
+    assert status.restore_save == "never"
+    assert status.restore_check_text == "Dashboard"
+    assert status.socket_dir == (socket_dir / "namespaces" / "worktree-one" / "run")
 
 
 def test_dashboard_sidecars_control_boundary_and_teardown(

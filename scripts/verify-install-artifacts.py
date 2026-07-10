@@ -22,7 +22,7 @@ from pathlib import Path
 
 import agentbrowser as ab
 import agentbrowser.skills as skills
-from agentbrowser import Browser
+from agentbrowser import Browser, CloseResult, RestoreSaveError, SessionStatus
 from agentbrowser.cdp import CDPClient
 from agentbrowser.models import Screenshot
 
@@ -32,6 +32,10 @@ assert isinstance(ab.__agent_browser_version__, str)
 assert ab.__agent_browser_version__
 assert importlib.util.find_spec("pyagentbrowser") is None
 assert resources.files("agentbrowser").joinpath("py.typed").is_file()
+
+browser = Browser()
+assert isinstance(browser.session.status(), SessionStatus)
+assert isinstance(browser.close(), CloseResult)
 
 assert "core" in skills.available()
 assert skills.get("core").parts

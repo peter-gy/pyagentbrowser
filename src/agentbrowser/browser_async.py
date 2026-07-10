@@ -46,6 +46,7 @@ from agentbrowser.domains_async import (
     AsyncNetwork,
     AsyncPage,
     AsyncScripts,
+    AsyncSession,
     AsyncState,
     AsyncStorage,
     AsyncTabs,
@@ -60,15 +61,18 @@ from agentbrowser.launch import (
 )
 from agentbrowser.models import (
     BrowserResponse,
+    CloseResult,
     ConfirmationRequired,
     JSONMapping,
     JSONValue,
     LoadState,
     ReadMode,
     ReadResult,
+    RestoreSaveError,
     SnapshotData,
     SnapshotDiff,
     SnapshotSpec,
+    close_result_from_data,
     path_value,
     snapshot_from_data,
 )
@@ -417,6 +421,7 @@ class AsyncBrowser:
         self._auto_install = native_session is None
         self._install_prepared = False
         self._launched = False
+        self._close_task: asyncio.Task[CloseResult] | None = None
         self._cdp_controller: AsyncCDPController | None = None
 
         command_target = cast(AsyncCommandTarget, weak_proxy(self))
@@ -439,6 +444,7 @@ class AsyncBrowser:
         self.network = AsyncNetwork(command_target)
         self.page = AsyncPage(browser_proxy)
         self.scripts = AsyncScripts(command_target)
+        self.session = AsyncSession(command_target)
         self.state = AsyncState(command_target)
         self.storage = AsyncStorage(command_target)
         self.tabs = AsyncTabs(command_target)
@@ -809,23 +815,33 @@ class AsyncBrowser:
         launch_params["executablePath"] = str(result.executable_path)
         self._install_prepared = True
 
-    async def _close_browser(self) -> None:
+    async def _close_browser(self) -> CloseResult:
         if self._cdp_controller is not None:
             with suppress(Exception):
                 await self._cdp_controller.close()
             self._cdp_controller = None
         response = await self._session.shutdown_native()
-        if response is not None:
-            checked = _checked_response("close", replace(response, action="close"))
-            await self._record_successful_action(checked)
+        if response is None:
+            return CloseResult(closed=True)
+        checked = _checked_response("close", replace(response, action="close"))
+        await self._record_successful_action(checked)
+        return close_result_from_data(_require_response_data_mapping(checked, action="close"))
 
-    async def close(self, *, timeout: float = 5.0) -> None:
-        """Close the browser and stop the async native worker."""
+    async def _close_once(self, *, timeout: float) -> CloseResult:
+        result = CloseResult(closed=True)
         try:
-            if not self._session.closed:
-                await asyncio.wait_for(self._close_browser(), timeout=timeout)
+            result = await asyncio.wait_for(self._close_browser(), timeout=timeout)
         finally:
             await self._session.aclose(timeout=timeout)
+        if result.save_error is not None:
+            raise RestoreSaveError(result)
+        return result
+
+    async def close(self, *, timeout: float = 5.0) -> CloseResult:
+        """Close the browser and return terminal restore-save state."""
+        if self._close_task is None:
+            self._close_task = asyncio.create_task(self._close_once(timeout=timeout))
+        return await asyncio.shield(self._close_task)
 
     async def _snapshot_data(
         self,

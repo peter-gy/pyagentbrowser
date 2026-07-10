@@ -5,6 +5,9 @@ session = SessionOptions(
     restore=RestoreOptions("research", save="always"),
 )
 
-with Browser.launch(session=session) as browser:
-    browser.open("https://example.com")
-    print(browser.native.data("session_info")["restoreStatus"])
+browser = Browser.launch(session=session)
+browser.open("https://example.com")
+print(browser.session.status().restore_status)
+
+closed = browser.close()
+print(closed.save_status)

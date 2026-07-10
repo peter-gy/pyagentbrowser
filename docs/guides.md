@@ -120,11 +120,15 @@ session = SessionOptions(
     ),
 )
 
-with Browser.launch(session=session) as browser:
-    browser.open("https://example.com")
+browser = Browser.launch(session=session)
+browser.open("https://example.com")
+print(browser.session.status().restore_status)
+
+closed = browser.close()
+print(closed.save_status)
 ```
 
-An explicit `autosave_interval_ms` takes precedence over `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS`. Use `browser.state.save(path)` and `browser.state.load(path)` when the workflow owns the state file directly.
+An explicit `autosave_interval_ms` takes precedence over `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS`. `close()` raises `RestoreSaveError` after cleanup when persistence fails. Use `browser.state.save(path)` and `browser.state.load(path)` when the workflow owns the state file directly.
 
 ## Restrict domains and confirm actions
 

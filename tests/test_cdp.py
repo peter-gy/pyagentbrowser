@@ -205,6 +205,12 @@ class PublicPathNative:
             data = {"cdpUrl": "ws://cdp"}
         elif command["action"] == "url":
             data = {"url": "https://example.com"}
+        elif command["action"] == "__agent_browser_internal_shutdown":
+            data = {
+                "closed": True,
+                "restoreStatus": "not_configured",
+                "saveStatus": "not_configured",
+            }
         else:
             data = {}
         return json.dumps({"id": command["id"], "success": True, "data": data})

@@ -24,9 +24,20 @@ from agentbrowser import Browser, SessionOptions, Snapshot, Wait
 
 ### Lifecycle
 
-`Browser.close()` is idempotent and terminal. `browser.closed` reports terminal state. `browser.is_launched` reports the native browser lifecycle observed by this controller. Commands after close raise `RuntimeError`.
+`Browser.close() -> CloseResult` is idempotent and terminal. Repeated calls return
+the same result. `CloseResult` reports `restore_status`, `save_status`, the
+optional `state_path`, and the raw native close data. A restore persistence
+failure completes cleanup, then raises `RestoreSaveError` with the terminal
+result on `error.result`.
 
-`AsyncBrowser.close(*, timeout=5.0)` is idempotent. Queued calls receive `RuntimeError`. A browser shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`.
+`browser.closed` reports terminal state. `browser.is_launched` reports the
+native browser lifecycle observed by this controller. Commands after close
+raise `RuntimeError`.
+
+`AsyncBrowser.close(*, timeout=5.0) -> CloseResult` is single-flight. Concurrent
+and repeated callers observe the same result or terminal error. Queued calls
+receive `RuntimeError`. A browser shutdown timeout raises `TimeoutError`. A
+worker that remains alive after the join raises `RuntimeError`.
 
 Both browser types support context managers.
 
@@ -110,7 +121,7 @@ Empty domain and action entries raise `ValueError`. Scalar strings raise `TypeEr
 
 `RestoreOptions(key, save=None, autosave_interval_ms=None, check_url=None, check_text=None, check_fn=None)` configures restore identity, save policy, persistence cadence, and optional restore validation.
 
-`key` accepts letters, numbers, hyphens, and underscores. `save` accepts `"auto"`, `"always"`, or `"never"`. `autosave_interval_ms` must be non-negative.
+`key` accepts letters, numbers, hyphens, and underscores. `save` accepts `"auto"`, `"always"`, or `"never"`. `autosave_interval_ms` accepts non-boolean integers from `0` through `18446744073709551615`.
 
 ### `DashboardOptions`
 
@@ -226,6 +237,23 @@ The root browser methods cover the common active-page operations. `browser.page.
 `Screenshot` exposes `path`, `format`, `annotations`, `raw`, `bytes()`, `save(path)`, and Pillow or notebook display helpers. Pillow-backed members require the `images` extra.
 
 ## Browser-state namespaces
+
+### `browser.session`
+
+`browser.session.status() -> SessionStatus` returns the current native session,
+browser, restore, and persistence state. The async method returns the same model.
+It can inspect a lazy session before Chrome launches.
+
+| Field | Contract |
+| --- | --- |
+| `session_id`, `namespace`, `socket_dir`, `background_pid` | Identify the native session and its control boundary. |
+| `browser_launched`, `page_count`, `engine`, `launch_hash` | Report the effective browser process and launch state. |
+| `compatibility_status` | Reports native launch compatibility. |
+| `restore_key`, `restore_status`, `restore_status_detail` | Report restore configuration and load outcome. |
+| `restore_loaded_path`, `restore_validation_pending` | Report loaded state and pending validation. |
+| `restore_save`, `save_status`, `restore_saved_path` | Report persistence policy and the latest save outcome. |
+| `restore_check_url`, `restore_check_text`, `restore_check_fn` | Report configured restore validation. |
+| `raw` | Preserves the complete native response mapping. |
 
 ### `browser.tabs`
 
@@ -349,6 +377,7 @@ Typed operations raise `ConfirmationRequired` when the native policy pauses an a
 | Model | Contract |
 | --- | --- |
 | `BrowserResponse` | Complete native response envelope. |
+| `CloseResult` | Terminal browser close and restore-save result. |
 | `ReadResult` | URL, final URL, status, content type, source, truncation state, content, and raw data. |
 | `Screenshot` | Screenshot path, format, annotations, and image helpers. |
 | `SnapshotDiff` | Text diff, line counts for additions, removals, and unchanged content, plus a changed flag. |
@@ -360,6 +389,7 @@ Typed operations raise `ConfirmationRequired` when the native policy pauses an a
 | `ProxyConfig` | Proxy server, bypass rules, and optional credentials. |
 | `RouteResponse` | Static response registered by `browser.network.route()`. |
 | `SessionId` | Stable filesystem-derived session identity. |
+| `SessionStatus` | Current browser, launch, restore, and restore-save lifecycle state. |
 
 ## Errors
 
@@ -373,6 +403,7 @@ Typed operations raise `ConfirmationRequired` when the native policy pauses an a
 | `ActionTransitionError` | Mutation succeeded, then its wait or evidence stage failed. |
 | `NativeParseError` | A typed native payload missed a required field or shape. |
 | `BrowserInstallError` | Browser discovery or installation failed. |
+| `RestoreSaveError` | Browser cleanup completed, but restore persistence failed. Exposes the terminal `result`. |
 
 CDP protocol, timeout, closed, stale-object, frame, context, target, and evaluation errors live in `agentbrowser.cdp`.
 

@@ -85,7 +85,11 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
-`AsyncBrowser.close(*, timeout=5.0)` is idempotent. It rejects queued calls with `RuntimeError` and waits up to the timeout for active native shutdown. A shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`.
+`AsyncBrowser.close(*, timeout=5.0)` is idempotent and returns `CloseResult`.
+Concurrent callers share the same shutdown. It rejects queued calls with
+`RuntimeError` and waits up to the timeout for active native shutdown. A
+shutdown timeout raises `TimeoutError`. A worker that remains alive after the
+join raises `RuntimeError`.
 
 ## Attach to Chrome
 

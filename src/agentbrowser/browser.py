@@ -45,6 +45,7 @@ from agentbrowser.domains import (
     Network,
     Page,
     Scripts,
+    Session,
     State,
     Storage,
     Tabs,
@@ -60,15 +61,18 @@ from agentbrowser.launch import (
 from agentbrowser.models import (
     OMIT,
     BrowserResponse,
+    CloseResult,
     ConfirmationRequired,
     JSONMapping,
     JSONValue,
     LoadState,
     ReadMode,
     ReadResult,
+    RestoreSaveError,
     SnapshotData,
     SnapshotDiff,
     SnapshotSpec,
+    close_result_from_data,
     path_value,
     snapshot_from_data,
 )
@@ -437,6 +441,8 @@ class Browser:
         self._install_prepared = False
         self._launched = False
         self._closed = False
+        self._close_result: CloseResult | None = None
+        self._close_error: BaseException | None = None
         self._cdp_controller: CDPController | None = None
 
         command_target = cast(CommandTarget, weak_proxy(self))
@@ -459,6 +465,7 @@ class Browser:
         self.network = Network(command_target)
         self.page = Page(browser_proxy)
         self.scripts = Scripts(command_target)
+        self.session = Session(command_target)
         self.state = State(command_target)
         self.storage = Storage(command_target)
         self.tabs = Tabs(command_target)
@@ -838,10 +845,14 @@ class Browser:
         launch_params["executablePath"] = str(result.executable_path)
         self._install_prepared = True
 
-    def close(self) -> None:
-        """Close the native browser session and any active CDP connection."""
+    def close(self) -> CloseResult:
+        """Close the browser and return terminal restore-save state."""
         if self._closed:
-            return
+            if self._close_error is not None:
+                raise self._close_error
+            result = self._close_result or CloseResult(closed=True)
+            return result
+        result = CloseResult(closed=True)
         if self._cdp_controller is not None:
             with suppress(Exception):
                 self._cdp_controller.close()
@@ -851,10 +862,22 @@ class Browser:
                 response = self._session.execute(INTERNAL_SHUTDOWN_ACTION)
                 checked = _checked_response("close", replace(response, action="close"))
                 self._record_successful_action(checked)
+                result = close_result_from_data(
+                    _require_response_data_mapping(checked, action="close")
+                )
+        except BaseException as error:
+            self._close_error = error
+            raise
         finally:
             self._session.discard_pending_confirmations()
             self._launched = False
             self._closed = True
+            self._close_result = result
+        if result.save_error is not None:
+            error = RestoreSaveError(result)
+            self._close_error = error
+            raise error
+        return result
 
     def _ensure_open(self) -> None:
         if self._closed:

@@ -20,7 +20,7 @@ page = browser.observe()
 print(page.text)
 ```
 
-`Browser` starts lazily and stays active until `browser.close()` is called. Keep the same object across notebook cells or interactive Python commands. Screenshots returned by `browser.capture.screenshot()` render inline in notebook frontends.
+`Browser` starts lazily and stays active until `browser.close()` is called. Keep the same object across notebook cells or interactive Python commands. `browser.session.status()` reports browser and restore lifecycle state. `close()` returns the terminal save result. Screenshots returned by `browser.capture.screenshot()` render inline in notebook frontends.
 
 `Snapshot` binds accessibility refs to the page state that produced them. Ref actions return an `ActionResult` containing the original snapshot, the resulting snapshot, and their diff.
 

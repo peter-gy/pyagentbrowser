@@ -101,7 +101,6 @@ def test_native_constructor_receives_session_options_once(
 @pytest.mark.parametrize(
     "factory,match",
     [
-        (lambda: RestoreOptions("state", autosave_interval_ms=-1), "non-negative"),
         (lambda: DashboardOptions(port=65536), "between"),
         (lambda: DashboardOptions(cli_version=" "), "empty"),
     ],
@@ -109,6 +108,24 @@ def test_native_constructor_receives_session_options_once(
 def test_option_models_reject_invalid_values(factory: Any, match: str) -> None:
     with pytest.raises(ValueError, match=match):
         factory()
+
+
+@pytest.mark.parametrize(
+    "value,error,match",
+    [
+        (-1, ValueError, "between"),
+        (2**64, ValueError, "between"),
+        (1.5, TypeError, "integer"),
+        (True, TypeError, "integer"),
+    ],
+)
+def test_restore_options_validate_native_autosave_range(
+    value: object,
+    error: type[Exception],
+    match: str,
+) -> None:
+    with pytest.raises(error, match=match):
+        RestoreOptions("state", autosave_interval_ms=cast(Any, value))
 
 
 def test_execute_preserves_failed_and_warning_envelopes() -> None:

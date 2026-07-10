@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from difflib import SequenceMatcher, unified_diff
 from pathlib import Path
 from shutil import copyfile
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, TypeVar, cast, get_args
 
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
@@ -26,6 +26,26 @@ LlmsMode = Literal["index", "full"]
 MouseButton = Literal["left", "right", "middle"]
 MouseEventType = Literal["mouseMoved", "mousePressed", "mouseReleased", "mouseWheel"]
 RestoreSave = Literal["auto", "always", "never"]
+RestoreStatus = Literal[
+    "load_failed",
+    "loaded",
+    "loaded_but_invalid",
+    "missing",
+    "not_configured",
+    "pending",
+]
+RestoreSaveStatus = Literal[
+    "disabled",
+    "error",
+    "invalid_policy",
+    "no_browser",
+    "not_attempted",
+    "not_configured",
+    "saved",
+    "skipped_restore_failed",
+]
+_RESTORE_STATUSES = frozenset(get_args(RestoreStatus))
+_RESTORE_SAVE_STATUSES = frozenset(get_args(RestoreSaveStatus))
 SameSite = Literal["Strict", "Lax", "None"]
 SessionIdScope = Literal["worktree", "cwd", "git-root"]
 StorageArea = Literal["local", "session"]
@@ -34,6 +54,7 @@ ColorScheme = Literal["dark", "light", "no-preference"]
 T = TypeVar("T")
 RefT = TypeVar("RefT")
 SnapshotT = TypeVar("SnapshotT")
+_MAX_U64 = (1 << 64) - 1
 
 
 @dataclass(frozen=True, slots=True)
@@ -55,8 +76,52 @@ class RestoreOptions:
             )
         if self.save is not None and self.save not in {"auto", "always", "never"}:
             raise ValueError("save must be 'auto', 'always', or 'never'")
-        if self.autosave_interval_ms is not None and self.autosave_interval_ms < 0:
-            raise ValueError("autosave_interval_ms must be non-negative")
+        if self.autosave_interval_ms is not None:
+            if isinstance(self.autosave_interval_ms, bool) or not isinstance(
+                self.autosave_interval_ms, int
+            ):
+                raise TypeError("autosave_interval_ms must be an integer")
+            if not 0 <= self.autosave_interval_ms <= _MAX_U64:
+                raise ValueError(f"autosave_interval_ms must be between 0 and {_MAX_U64}")
+
+
+@dataclass(frozen=True, slots=True)
+class SessionStatus:
+    """Current native session, browser, and restore lifecycle state."""
+
+    session_id: str
+    namespace: str | None
+    socket_dir: Path
+    background_pid: int
+    browser_launched: bool
+    page_count: int
+    engine: str
+    launch_hash: int | None
+    compatibility_status: str
+    restore_key: str | None
+    restore_status: RestoreStatus
+    restore_status_detail: str | None
+    restore_loaded_path: Path | None
+    restore_validation_pending: bool
+    restore_save: RestoreSave
+    save_status: RestoreSaveStatus
+    restore_saved_path: Path | None
+    restore_check_url: str | None
+    restore_check_text: str | None
+    restore_check_fn: str | None
+    raw: Mapping[str, Any]
+
+
+@dataclass(frozen=True, slots=True)
+class CloseResult:
+    """Terminal browser state returned by `Browser.close()`."""
+
+    closed: bool
+    restore_status: RestoreStatus | None = None
+    save_status: RestoreSaveStatus | None = None
+    state_path: Path | None = None
+    save_error: str | None = None
+    raw: Mapping[str, Any] = field(default_factory=dict)
 
 
 def _is_valid_session_component(value: str) -> bool:
@@ -75,6 +140,15 @@ OMIT = _OmitType()
 
 class AgentBrowserError(RuntimeError):
     """Common catchable base for Python SDK errors."""
+
+
+class RestoreSaveError(AgentBrowserError):
+    """Raised after browser cleanup when restore-state persistence fails."""
+
+    def __init__(self, result: CloseResult) -> None:
+        self.result = result
+        detail = result.save_error or "unknown restore-state save failure"
+        super().__init__(f"browser closed with a restore-state save error: {detail}")
 
 
 class NativeParseError(AgentBrowserError, ValueError):
@@ -147,6 +221,136 @@ class BrowserResponse:
     data: JSONValue
     raw: JSONMapping
     warning: str | None = None
+
+
+def _required_model_string(data: Mapping[str, Any], field: str, *, action: str) -> str:
+    value = data.get(field)
+    if not isinstance(value, str):
+        raise NativeParseError(f"{action} field '{field}' must be a string")
+    return value
+
+
+def _optional_model_string(
+    data: Mapping[str, Any],
+    field: str,
+    *,
+    action: str,
+) -> str | None:
+    value = data.get(field)
+    if value is not None and not isinstance(value, str):
+        raise NativeParseError(f"{action} field '{field}' must be a string or null")
+    return value
+
+
+def _nullable_model_string(
+    data: Mapping[str, Any],
+    field: str,
+    *,
+    action: str,
+) -> str | None:
+    if field not in data:
+        raise NativeParseError(f"{action} field '{field}' is required")
+    return _optional_model_string(data, field, action=action)
+
+
+def _required_model_bool(data: Mapping[str, Any], field: str, *, action: str) -> bool:
+    value = data.get(field)
+    if not isinstance(value, bool):
+        raise NativeParseError(f"{action} field '{field}' must be a boolean")
+    return value
+
+
+def _required_model_int(data: Mapping[str, Any], field: str, *, action: str) -> int:
+    value = data.get(field)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise NativeParseError(f"{action} field '{field}' must be an integer")
+    return value
+
+
+def _nullable_model_int(
+    data: Mapping[str, Any],
+    field: str,
+    *,
+    action: str,
+) -> int | None:
+    if field not in data:
+        raise NativeParseError(f"{action} field '{field}' is required")
+    value = data[field]
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise NativeParseError(f"{action} field '{field}' must be an integer or null")
+    return value
+
+
+def _restore_status(data: Mapping[str, Any], *, action: str) -> RestoreStatus:
+    value = _required_model_string(data, "restoreStatus", action=action)
+    if value not in _RESTORE_STATUSES:
+        raise NativeParseError(f"{action} field 'restoreStatus' has unknown value '{value}'")
+    return cast(RestoreStatus, value)
+
+
+def _save_status(data: Mapping[str, Any], *, action: str) -> RestoreSaveStatus:
+    value = _required_model_string(data, "saveStatus", action=action)
+    if value not in _RESTORE_SAVE_STATUSES:
+        raise NativeParseError(f"{action} field 'saveStatus' has unknown value '{value}'")
+    return cast(RestoreSaveStatus, value)
+
+
+def session_status_from_data(data: Mapping[str, Any]) -> SessionStatus:
+    """Decode the native `session_info` result."""
+    action = "session_info"
+    restore_save = _required_model_string(data, "restoreSave", action=action)
+    if restore_save not in {"auto", "always", "never"}:
+        raise NativeParseError(
+            "session_info field 'restoreSave' must be 'auto', 'always', or 'never'"
+        )
+    restore_loaded_path = _nullable_model_string(data, "restoreLoadedPath", action=action)
+    restore_saved_path = _nullable_model_string(data, "restoreSavedPath", action=action)
+    return SessionStatus(
+        session_id=_required_model_string(data, "session", action=action),
+        namespace=_nullable_model_string(data, "namespace", action=action),
+        socket_dir=Path(_required_model_string(data, "socketDir", action=action)),
+        background_pid=_required_model_int(data, "backgroundPid", action=action),
+        browser_launched=_required_model_bool(data, "browserLaunched", action=action),
+        page_count=_required_model_int(data, "pageCount", action=action),
+        engine=_required_model_string(data, "engine", action=action),
+        launch_hash=_nullable_model_int(data, "launchHash", action=action),
+        compatibility_status=_required_model_string(data, "compatibilityStatus", action=action),
+        restore_key=_nullable_model_string(data, "restoreKey", action=action),
+        restore_status=_restore_status(data, action=action),
+        restore_status_detail=_nullable_model_string(data, "restoreStatusDetail", action=action),
+        restore_loaded_path=(
+            Path(restore_loaded_path) if restore_loaded_path is not None else None
+        ),
+        restore_validation_pending=_required_model_bool(
+            data, "restoreValidationPending", action=action
+        ),
+        restore_save=cast(RestoreSave, restore_save),
+        save_status=_save_status(data, action=action),
+        restore_saved_path=(Path(restore_saved_path) if restore_saved_path is not None else None),
+        restore_check_url=_nullable_model_string(data, "restoreCheckUrl", action=action),
+        restore_check_text=_nullable_model_string(data, "restoreCheckText", action=action),
+        restore_check_fn=_nullable_model_string(data, "restoreCheckFn", action=action),
+        raw=data,
+    )
+
+
+def close_result_from_data(data: Mapping[str, Any]) -> CloseResult:
+    """Decode the native close result."""
+    action = "close"
+    closed = _required_model_bool(data, "closed", action=action)
+    if not closed:
+        raise NativeParseError("close field 'closed' must be true")
+    state_path = _optional_model_string(data, "statePath", action=action)
+    return CloseResult(
+        closed=closed,
+        restore_status=_restore_status(data, action=action),
+        save_status=_save_status(data, action=action),
+        state_path=Path(state_path) if state_path is not None else None,
+        save_error=_optional_model_string(data, "saveError", action=action),
+        raw=data,
+    )
 
 
 def _error_code_from_response(response: Mapping[str, Any]) -> str | None:

@@ -47,6 +47,7 @@ from agentbrowser.models import (
     RouteResponse,
     SameSite,
     Screenshot,
+    SessionStatus,
     SnapshotDiff,
     StorageArea,
     TabInfo,
@@ -58,6 +59,7 @@ from agentbrowser.models import (
     read_result_from_data,
     request_detail_from_data,
     screenshot_from_data,
+    session_status_from_data,
     tab_from_data,
     tabs_from_data,
 )
@@ -858,6 +860,17 @@ class Mouse:
             _decode=_none,
             **mouse_params(event_type, x=x, y=y, button=button, click_count=click_count),
         )
+
+
+@dataclass(frozen=True, slots=True)
+class Session:
+    """Native session and restore lifecycle."""
+
+    browser: CommandTarget
+
+    def status(self) -> SessionStatus:
+        """Return current session, browser, restore, and save state."""
+        return self.browser._command("session_info", _decode=session_status_from_data)
 
 
 @dataclass(frozen=True, slots=True)

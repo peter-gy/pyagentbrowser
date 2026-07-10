@@ -56,7 +56,11 @@ class TransitionNative:
         elif action in {"gettext", "isvisible"}:
             data = {"text": "Submit"} if action == "gettext" else {"visible": True}
         elif action == "__agent_browser_internal_shutdown":
-            data = {}
+            data = {
+                "closed": True,
+                "restoreStatus": "not_configured",
+                "saveStatus": "not_configured",
+            }
         else:
             raise AssertionError(f"unexpected transition command: {command}")
         return json.dumps({"id": command["id"], "success": True, "data": data})
