@@ -39,6 +39,7 @@ fn main() {
         let content = fs::read_to_string(&path).unwrap_or_else(|err| {
             panic!("failed to read skill-data file {}: {err}", path.display())
         });
+        let content = content.replace("\r\n", "\n").replace('\r', "\n");
         files.push(json!({
             "path": relative,
             "content": content,
