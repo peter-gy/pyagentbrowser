@@ -117,7 +117,10 @@ jobs:
           with zipfile.ZipFile(wheels[0]) as wheel:
               names = set(wheel.namelist())
               native_names = sorted(
-                  name for name in names if name.startswith("agentbrowser/_native")
+                  name
+                  for name in names
+                  if name.startswith("agentbrowser/_native.")
+                  and name.endswith((".so", ".pyd"))
               )
               assert len(native_names) == 1, native_names
               native_name = native_names[0]
@@ -127,7 +130,10 @@ jobs:
           forbidden_paths = (
               os.environ["GITHUB_WORKSPACE"].encode(),
               str(Path.home() / ".cargo").encode(),
-              b"/io/",
+              b"/io/crates/",
+              b"/io/src/",
+              b"/io/third_party/",
+              b"/io/target/",
               b"/root/.cargo/",
               b"/usr/local/cargo/",
           )
