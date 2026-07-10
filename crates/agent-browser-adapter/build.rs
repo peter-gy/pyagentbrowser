@@ -206,10 +206,15 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
     native_module
 }
 
+fn read_rewrite_source(source: &Path, module: &str) -> String {
+    fs::read_to_string(source)
+        .unwrap_or_else(|err| panic!("failed to read upstream {module}: {err}"))
+        .replace("\r\n", "\n")
+}
+
 fn rewrite_browser_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_browser.rs");
-    let contents = fs::read_to_string(source)
-        .unwrap_or_else(|err| panic!("failed to read upstream browser file: {err}"));
+    let contents = read_rewrite_source(source, "browser file");
     let contents = rewrite_tab_list_target_id(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated browser file");
     destination
@@ -217,8 +222,7 @@ fn rewrite_browser_module(out_dir: &Path, source: &Path) -> PathBuf {
 
 fn rewrite_connection_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_connection.rs");
-    let contents = fs::read_to_string(source)
-        .unwrap_or_else(|err| panic!("failed to read upstream connection file: {err}"));
+    let contents = read_rewrite_source(source, "connection file");
     let contents = rewrite_connection_namespace(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated connection file");
     destination
@@ -350,8 +354,7 @@ fn rewrite_tab_list_target_id(contents: String) -> String {
 
 fn rewrite_actions_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_actions.rs");
-    let contents = fs::read_to_string(source)
-        .unwrap_or_else(|err| panic!("failed to read upstream actions file: {err}"));
+    let contents = read_rewrite_source(source, "actions file");
     let contents = rewrite_confirmation_handling(contents);
     let contents = rewrite_actions_namespace(contents);
     let contents = rewrite_dashboard_streaming(contents);
@@ -906,8 +909,7 @@ fn rewrite_stream_result_success(contents: String) -> String {
 
 fn rewrite_state_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_state.rs");
-    let contents = fs::read_to_string(source)
-        .unwrap_or_else(|err| panic!("failed to read upstream state file: {err}"));
+    let contents = read_rewrite_source(source, "state file");
     let contents = rewrite_state_namespace(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated state file");
     destination
@@ -1198,8 +1200,7 @@ fn rewrite_stream_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_stream.rs");
     let stream_dir = source.parent().expect("stream module must have a parent");
     let http_path = rewrite_stream_http_module(out_dir, &stream_dir.join("http.rs"));
-    let mut contents = fs::read_to_string(source)
-        .unwrap_or_else(|err| panic!("failed to read upstream stream module: {err}"));
+    let mut contents = read_rewrite_source(source, "stream module");
 
     contents = replace_once_named(
         contents,
@@ -1257,8 +1258,7 @@ fn rewrite_stream_module(out_dir: &Path, source: &Path) -> PathBuf {
 
 fn rewrite_stream_http_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_stream_http.rs");
-    let contents = fs::read_to_string(source)
-        .unwrap_or_else(|err| panic!("failed to read upstream stream http module: {err}"));
+    let contents = read_rewrite_source(source, "stream http module");
     let contents = replace_once_named(
         contents,
         "rust_embed import",
