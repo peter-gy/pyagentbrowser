@@ -16,33 +16,53 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release-gate:
-    name: Run release gate
-    uses: ./.github/workflows/check-release.yml
-
-  check-release-tag:
-    name: Check release tag
+  release-ready:
+    name: Verify release commit and tag
     runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - name: Find successful main release check
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_url=$(
+            gh api --method GET \
+              "repos/${GITHUB_REPOSITORY}/actions/workflows/check-release.yml/runs" \
+              -f branch="$DEFAULT_BRANCH" \
+              -f event=push \
+              -f head_sha="$GITHUB_SHA" \
+              -f status=success \
+              -f per_page=1 \
+              --jq '.workflow_runs[0].html_url // empty'
+          )
+          if [ -z "$run_url" ]; then
+            echo "No successful Release Check push run on $DEFAULT_BRANCH for $GITHUB_SHA" >&2
+            exit 1
+          fi
+          echo "Using release evidence: $run_url"
+
+      - uses: actions/checkout@v6
         with:
           submodules: recursive
 
-      - name: Set up Python
-        uses: actions/setup-python@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.14"
 
-      - name: Check package version
-        run: ./scripts/release.sh check-version "${{ github.ref_name }}"
-
-      - name: Check upstream release metadata
-        run: python scripts/prepare_prerelease.py --check
+      - name: Check release metadata
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          ./scripts/release.sh check-version "$RELEASE_TAG"
+          python scripts/prepare_prerelease.py --check
+          python scripts/update_upstream.py --check
 
   build:
     name: Build ${{ matrix.artifact }}
-    needs: [release-gate, check-release-tag]
+    needs: release-ready
     uses: ./.github/workflows/build-wheel.yml
     strategy:
       fail-fast: false
@@ -75,54 +95,58 @@ jobs:
       artifact: wheels-${{ matrix.artifact }}
       sdist: ${{ matrix.sdist || false }}
 
+  verify-linux-aarch64:
+    name: Test Linux aarch64 wheel
+    needs: build
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.11"
+      - uses: actions/download-artifact@v4
+        with:
+          name: wheels-linux-aarch64-abi3
+          path: dist
+      - name: Test ABI3 endpoints
+        env:
+          PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.14"
+        run: python scripts/verify-install-artifacts.py dist
+
   publish-pypi:
     name: Publish to PyPI
-    needs: build
+    needs: [build, verify-linux-aarch64]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
       contents: read
       id-token: write
     steps:
-      - name: Set up uv
-        uses: astral-sh/setup-uv@v8.2.0
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
           python-version: "3.14"
           enable-cache: false
-          cache-dependency-glob: uv.lock
-
-      - name: Check PyPI state
-        id: pypi
-        env:
-          PACKAGE: pyagentbrowser
-          VERSION: ${{ github.ref_name }}
-        run: |
-          version="${VERSION#v}"
-          status=$(curl -s -o /dev/null -I -w "%{http_code}" "https://pypi.org/pypi/${PACKAGE}/${version}/json")
-          if [ "$status" = "200" ]; then
-            echo "already_published=true" >> "$GITHUB_OUTPUT"
-            echo "${PACKAGE} ${version} is already on PyPI"
-          else
-            echo "already_published=false" >> "$GITHUB_OUTPUT"
-          fi
 
       - name: Download distributions
-        if: steps.pypi.outputs.already_published != 'true'
         uses: actions/download-artifact@v4
         with:
           pattern: wheels-*
           merge-multiple: true
           path: dist
 
-      - name: Publish distributions
-        if: steps.pypi.outputs.already_published != 'true'
+      - name: Validate release artifacts
         run: |
-          for wheel in dist/*.whl
-          do
-            unzip -qt "$wheel"
-          done
+          python scripts/package_smoke.py --release dist
           uvx twine check --strict dist/*
-          uv publish --trusted-publishing always dist/*
+
+      - name: Publish distributions
+        run: >-
+          uv publish
+          --check-url https://pypi.org/simple/
+          --trusted-publishing always
+          dist/*
 
   release-notes:
     name: Update release notes
@@ -131,13 +155,11 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Checkout
-        uses: actions/checkout@v6
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Set up Node.js
-        uses: actions/setup-node@v6
+      - uses: actions/setup-node@v6
         with:
           node-version: "24"
 
@@ -145,3 +167,96 @@ jobs:
         run: npx --yes changelogithub@14.0.0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  verify-release:
+    name: Verify published release
+    needs: [publish-pypi, release-notes]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Verify PyPI artifact set
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.error import HTTPError
+          from urllib.request import urlopen
+
+          from scripts.package_smoke import expected_release_artifact_names
+
+          version = os.environ["VERSION"].removeprefix("v")
+          url = f"https://pypi.org/pypi/pyagentbrowser/{version}/json"
+          for attempt in range(12):
+              try:
+                  with urlopen(url, timeout=10) as response:
+                      payload = json.load(response)
+                  break
+              except HTTPError as error:
+                  if error.code != 404 or attempt == 11:
+                      raise
+                  time.sleep(5)
+          actual = {item["filename"] for item in payload["urls"]}
+          expected = expected_release_artifact_names(version)
+          assert actual == expected, {
+              "missing": sorted(expected - actual),
+              "unexpected": sorted(actual - expected),
+          }
+          PY
+
+      - name: Install from PyPI
+        env:
+          VERSION: ${{ github.ref_name }}
+        run: |
+          version="${VERSION#v}"
+          uv venv --python 3.14 release-venv
+          for attempt in {1..12}; do
+            if uv pip install \
+              --python release-venv/bin/python \
+              --no-cache \
+              --index-url https://pypi.org/simple \
+              "pyagentbrowser==$version"
+            then
+              break
+            fi
+            if [ "$attempt" = 12 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+          EXPECTED_VERSION="$version" release-venv/bin/python - <<'PY'
+          from importlib.metadata import version
+          import os
+
+          from agentbrowser import Browser
+          import agentbrowser._native as native
+
+          assert version("pyagentbrowser") == os.environ["EXPECTED_VERSION"]
+          assert Browser
+          assert native.__agent_browser_version__
+          PY
+
+      - name: Verify GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ github.ref_name }}
+        run: |
+          version="${VERSION#v}"
+          expected_prerelease=false
+          if [[ "$version" =~ (a|b|rc)[0-9]+$ ]]; then
+            expected_prerelease=true
+          fi
+          actual_prerelease=$(gh release view "$VERSION" --json isDraft,isPrerelease --jq '.isPrerelease')
+          is_draft=$(gh release view "$VERSION" --json isDraft --jq '.isDraft')
+          test "$actual_prerelease" = "$expected_prerelease"
+          test "$is_draft" = false

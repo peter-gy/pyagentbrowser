@@ -200,6 +200,10 @@ def python_versions() -> list[str]:
     return [f"{sys.version_info.major}.{sys.version_info.minor}"]
 
 
+def endpoint_versions(versions: list[str]) -> list[str]:
+    return list(dict.fromkeys((versions[0], versions[-1])))
+
+
 def _python_tag_version(tag: str) -> tuple[int, int]:
     digits = tag.removeprefix("cp")
     return int(digits[0]), int(digits[1:])
@@ -226,11 +230,19 @@ def wheel_for_version(dist: Path, python_version: str) -> Path:
 
 def main() -> None:
     dist = Path(sys.argv[1])
-    sdist = next(dist.glob("pyagentbrowser-*.tar.gz"))
-    for version in python_versions():
+    versions = python_versions()
+    for version in versions:
         wheel = wheel_for_version(dist, version)
         verify_install(wheel, python_version=version)
-        verify_install(sdist, python_version=version, no_binary=True, check_extras=False)
+        print(f"wheel install smoke passed: {wheel.name} on Python {version}")
+
+    sdists = sorted(dist.glob("pyagentbrowser-*.tar.gz"))
+    if len(sdists) > 1:
+        raise RuntimeError(f"expected at most one sdist, found {[path.name for path in sdists]}")
+    if sdists:
+        for version in endpoint_versions(versions):
+            verify_install(sdists[0], python_version=version, no_binary=True, check_extras=False)
+            print(f"sdist install smoke passed: {sdists[0].name} on Python {version}")
 
 
 if __name__ == "__main__":

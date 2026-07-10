@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import os
 import re
 import sys
@@ -18,6 +19,14 @@ class PackageSmokeError(AssertionError):
 
 
 ROOT = Path(__file__).resolve().parents[1]
+CONTAINER_BUILD_PATHS = (
+    b"/io/crates/",
+    b"/io/src/",
+    b"/io/third_party/",
+    b"/io/target/",
+    b"/root/.cargo/",
+    b"/usr/local/cargo/",
+)
 
 
 WHEEL_REQUIRED_FILES = frozenset(
@@ -238,13 +247,13 @@ def assert_wheel_excludes_source_and_junk(names: set[str]) -> None:
 
 def assert_native_extension_excludes_local_build_paths(path: Path) -> None:
     cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo"))
-    forbidden_paths = (ROOT, cargo_home)
+    forbidden_paths = (os.fsencode(ROOT), os.fsencode(cargo_home), *CONTAINER_BUILD_PATHS)
     with zipfile.ZipFile(path) as archive:
         native_extensions = _native_extensions(set(archive.namelist()))
         if len(native_extensions) != 1:
             _fail(f"wheel contains unexpected native extensions: {native_extensions}")
         native = archive.read(native_extensions[0])
-    leaked = [build_path for build_path in forbidden_paths if os.fsencode(build_path) in native]
+    leaked = [build_path for build_path in forbidden_paths if build_path in native]
     if leaked:
         _fail(f"wheel native extension contains local build paths: {leaked}")
 
@@ -352,11 +361,11 @@ def _project_url_pairs(metadata: Message) -> set[tuple[str, str]]:
     return pairs
 
 
-def _assert_prerelease_version(version: str, artifact_name: str) -> None:
+def _assert_release_version(version: str, artifact_name: str) -> None:
     if "+" in version:
         _fail(f"{artifact_name} uses a local version label: {version}")
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:a|b|rc)\d+", version):
-        _fail(f"{artifact_name} is not a prerelease: {version}")
+    if not re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", version):
+        _fail(f"{artifact_name} has an unsupported release version: {version}")
 
 
 def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:
@@ -364,7 +373,7 @@ def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:
     if metadata["Name"] != "pyagentbrowser":
         _fail(f"{artifact_name} metadata has wrong Name: {metadata['Name']}")
     project_version = str(project["version"])
-    _assert_prerelease_version(project_version, artifact_name)
+    _assert_release_version(project_version, artifact_name)
     artifact_version = _artifact_version(artifact_name)
     if metadata["Version"] != project_version:
         _fail(
@@ -492,10 +501,41 @@ def check_dist(dist: Path) -> None:
     print(f"sdist artifact smoke passed: {sdist}")
 
 
+def expected_release_artifact_names(version: str) -> set[str]:
+    wheel = f"pyagentbrowser-{version}-cp311-abi3"
+    return {
+        f"{wheel}-macosx_10_12_x86_64.whl",
+        f"{wheel}-macosx_11_0_arm64.whl",
+        f"{wheel}-manylinux_2_28_aarch64.whl",
+        f"{wheel}-manylinux_2_28_x86_64.whl",
+        f"pyagentbrowser-{version}.tar.gz",
+    }
+
+
+def assert_release_artifact_set(dist: Path) -> None:
+    version = str(project_metadata()["version"])
+    expected = expected_release_artifact_names(version)
+    actual = {path.name for path in dist.iterdir() if path.is_file()}
+    if actual != expected:
+        _fail(
+            "release artifact set does not match the supported platforms: "
+            f"missing={sorted(expected - actual)}, unexpected={sorted(actual - expected)}"
+        )
+
+
 def main() -> int:
-    dist = Path(sys.argv[1]) if len(sys.argv) > 1 else Path("target/wheels")
+    parser = argparse.ArgumentParser(description="Validate pyagentbrowser distributions.")
+    parser.add_argument("dist", nargs="?", type=Path, default=Path("target/wheels"))
+    parser.add_argument(
+        "--release",
+        action="store_true",
+        help="require the complete four-wheel and source-distribution release set",
+    )
+    args = parser.parse_args()
     try:
-        check_dist(dist)
+        check_dist(args.dist)
+        if args.release:
+            assert_release_artifact_set(args.dist)
     except PackageSmokeError as exc:
         print(exc, file=sys.stderr)
         return 1

@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+import agentbrowser.skills as skills
 from agentbrowser import (
     Browser,
     ConfirmationRequired,
@@ -40,6 +41,25 @@ def _sidecars(socket_dir: Path, session: str) -> list[Path]:
 
 def test_native_extension_reports_exact_upstream_provenance() -> None:
     assert __agent_browser_version__ == UPSTREAM_VERSION
+
+
+def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
+    root = Path(__file__).resolve().parents[1]
+    upstream = root / "third_party" / "agent-browser" / "skill-data"
+    assert upstream.is_dir()
+
+    upstream_files = {
+        path.relative_to(upstream): path.read_text()
+        for path in upstream.rglob("*")
+        if path.is_file()
+    }
+    public_files: dict[Path, str] = {}
+    for skill in skills.list(include_hidden=True, full=True):
+        public_files[Path(skill.name) / "SKILL.md"] = skills.read(skill.name)
+        for file in skill.files:
+            public_files[Path(skill.name) / file.path] = skills.read(skill.name, file.path)
+
+    assert public_files == upstream_files
 
 
 @pytest.mark.parametrize(
@@ -148,7 +168,6 @@ def test_dashboard_close_does_not_wait_for_partial_control_clients() -> None:
         session = "py-dashboard-partial"
         env = os.environ.copy()
         env["AGENT_BROWSER_SOCKET_DIR"] = str(socket_dir)
-        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
         script = f"""
 import socket
 from pathlib import Path
@@ -183,7 +202,6 @@ def test_dashboard_watchdog_removes_sidecars_after_parent_exit() -> None:
         session = "py-dashboard-crash"
         env = os.environ.copy()
         env["AGENT_BROWSER_SOCKET_DIR"] = str(socket_dir)
-        env["PYTHONPATH"] = str(Path(__file__).resolve().parents[1] / "src")
         script = f"""
 import os
 from agentbrowser import Browser, DashboardOptions, SessionOptions

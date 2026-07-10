@@ -44,6 +44,7 @@ def test_wheel_payload_checks_runtime_anchors_and_one_native_extension() -> None
         "agentbrowser/_upstream.json",
         "agentbrowser/py.typed",
         "agentbrowser/_native.abi3.so",
+        "agentbrowser/_native.pyi",
     }
     sizes = {name: 1 for name in names}
 
@@ -103,13 +104,31 @@ def test_wheel_rejects_empty_python_modules() -> None:
         )
 
 
-def test_native_artifact_scan_rejects_local_checkout_paths(tmp_path: Path) -> None:
+@pytest.mark.parametrize(
+    "leaked_path",
+    [str(ROOT).encode(), b"/io/crates/pyagentbrowser/src/lib.rs"],
+)
+def test_native_artifact_scan_rejects_build_paths(
+    tmp_path: Path,
+    leaked_path: bytes,
+) -> None:
     wheel = tmp_path / "pyagentbrowser-1.0.0-cp311-abi3-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
-        archive.writestr("agentbrowser/_native.abi3.so", str(ROOT).encode())
+        archive.writestr("agentbrowser/_native.abi3.so", leaked_path)
 
     with pytest.raises(package_smoke.PackageSmokeError, match="local build paths"):
         package_smoke.assert_native_extension_excludes_local_build_paths(wheel)
+
+
+def test_native_artifact_scan_allows_dependency_io_modules(tmp_path: Path) -> None:
+    wheel = tmp_path / "pyagentbrowser-1.0.0-cp311-abi3-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr(
+            "agentbrowser/_native.abi3.so",
+            b"/cargo/registry/src/tokio/src/io/registration.rs",
+        )
+
+    package_smoke.assert_native_extension_excludes_local_build_paths(wheel)
 
 
 def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:
@@ -121,6 +140,6 @@ def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:
             package_smoke.assert_sdist_excludes_junk_and_dashboard_payload({forbidden})
 
 
-@pytest.mark.parametrize("version", ["0.32.0a1", "0.32.0b1", "0.32.0rc1"])
-def test_package_gate_accepts_standard_prerelease_phases(version: str) -> None:
-    package_smoke._assert_prerelease_version(version, "artifact")
+@pytest.mark.parametrize("version", ["0.32.0", "0.32.0a1", "0.32.0b1", "0.32.0rc1"])
+def test_package_gate_accepts_supported_release_versions(version: str) -> None:
+    package_smoke._assert_release_version(version, "artifact")

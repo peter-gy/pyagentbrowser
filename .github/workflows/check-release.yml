@@ -3,43 +3,127 @@ name: Release Check
 on:
   pull_request:
   push:
-    branches:
-      - "**"
+    branches: [main]
   workflow_dispatch:
-  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-check-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  python-matrix:
-    name: Python ${{ matrix.python }} on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
+  build-linux:
+    name: Build Linux distributions
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: ubuntu-latest
+      python: "3.11"
+      target: x86_64
+      manylinux: "2_28"
+      artifact: check-linux-x86_64-abi3
+      sdist: true
+
+  build-macos:
+    name: Build macOS distribution
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: macos-14
+      python: "3.11"
+      target: aarch64
+      artifact: check-macos-aarch64-abi3
+
+  quality:
+    name: Quality and owned contracts
+    runs-on: ubuntu-latest
+    env:
+      BUILD_PYTHON: "3.14"
+      RUST_TOOLCHAIN: 1.97.0
+      UV_PYTHON: "3.14"
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          submodules: recursive
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+      - uses: dtolnay/rust-toolchain@1.97.0
+        with:
+          components: clippy, rustfmt
+      - name: Install quality dependencies
+        run: uv sync --locked --no-install-project --extra cdp --python 3.14
+      - name: Check release metadata, Python, and Rust
+        run: make prerelease-version-check lint typecheck rust-check rust-test
+      - name: Test packaging contracts
+        run: >-
+          uv run --no-sync pytest -q
+          tests/test_package_smoke.py
+          tests/test_release_tag.py
+          tests/test_upstream_contract.py
+
+  sdk:
+    name: SDK on Python ${{ matrix.python }}
+    needs: build-linux
+    runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
         python: ["3.11", "3.12", "3.13", "3.14"]
     steps:
       - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
         with:
-          submodules: recursive
-      - uses: astral-sh/setup-uv@v8.1.0
-      - uses: dtolnay/rust-toolchain@stable
-      - run: uv sync --locked --python ${{ matrix.python }}
-      - run: uv run --python ${{ matrix.python }} maturin develop --locked
-      - run: uv run --python ${{ matrix.python }} pytest -q
+          python-version: ${{ matrix.python }}
+      - name: Install test dependencies
+        run: uv sync --locked --no-install-project --python ${{ matrix.python }}
+      - name: Download Linux wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: check-linux-x86_64-abi3
+          path: dist
+      - name: Install Linux wheel
+        run: |
+          wheel=$(find dist -name '*.whl' -print -quit)
+          uv pip install --python .venv/bin/python "$wheel"
+      - name: Test SDK contracts
+        run: uv run --no-sync --python ${{ matrix.python }} pytest -q -m sdk_dx
 
-  package:
-    name: Package on ${{ matrix.os }}
+  native:
+    name: Native and browser seams on ${{ matrix.os }}
+    needs: [build-linux, build-macos]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        include:
+          - os: ubuntu-latest
+            artifact: check-linux-x86_64-abi3
+          - os: macos-14
+            artifact: check-macos-aarch64-abi3
     steps:
       - uses: actions/checkout@v6
         with:
           submodules: recursive
-      - uses: astral-sh/setup-uv@v8.1.0
-      - uses: dtolnay/rust-toolchain@stable
-      - run: make check-release
-        env:
-          PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.12 3.13 3.14"
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+      - name: Install test dependencies
+        run: uv sync --locked --no-install-project --python 3.14
+      - name: Download native wheel
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: dist
+      - name: Install native wheel
+        run: |
+          wheel=$(find dist -name '*.whl' -print -quit)
+          uv pip install --python .venv/bin/python "$wheel" "websockets>=15.0"
+      - name: Test native boundary
+        run: uv run --no-sync --python 3.14 pytest -q -m native_smoke
+      - name: Test real-browser seams
+        run: |
+          chrome_path=$(uv run --no-sync --python 3.14 python scripts/check_chrome.py)
+          PYAGENTBROWSER_CHROME="$chrome_path" \
+          PYAGENTBROWSER_FAIL_ON_SKIP=1 \
+          uv run --no-sync --python 3.14 pytest -q -m integration

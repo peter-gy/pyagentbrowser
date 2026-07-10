@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 import agentbrowser.skills as skills
 from agentbrowser.skills import Skill, SkillFile, SkillPart
 
-ROOT = Path(__file__).resolve().parents[1]
 pytestmark = pytest.mark.sdk_dx
 
 
@@ -107,21 +104,3 @@ def test_skills_read_rejects_invalid_part_path() -> None:
 def test_skills_get_missing_name_raises_key_error() -> None:
     with pytest.raises(KeyError, match="skill not found"):
         skills.get("missing")
-
-
-def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
-    upstream = ROOT / "third_party" / "agent-browser" / "skill-data"
-    assert upstream.is_dir()
-
-    upstream_files = {
-        path.relative_to(upstream): path.read_text()
-        for path in upstream.rglob("*")
-        if path.is_file()
-    }
-    public_files: dict[Path, str] = {}
-    for skill in skills.list(include_hidden=True, full=True):
-        public_files[Path(skill.name) / "SKILL.md"] = skills.read(skill.name)
-        for file in skill.files:
-            public_files[Path(skill.name) / file.path] = skills.read(skill.name, file.path)
-
-    assert public_files == upstream_files

@@ -48,7 +48,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ inputs.python }}
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: dtolnay/rust-toolchain@1.97.0
 
       - name: Set reproducible build inputs
         run: |
@@ -65,8 +66,10 @@ jobs:
           CFLAGS_aarch64_unknown_linux_gnu: "-D__ARM_ARCH=8"
         with:
           maturin-version: v1.14.1
+          rust-toolchain: 1.97.0
           target: ${{ inputs.target }}
           manylinux: ${{ inputs.manylinux }}
+          sccache: true
           docker-options: >-
             -e CARGO_HTTP_MULTIPLEXING
             -e CARGO_NET_RETRY
@@ -86,7 +89,9 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           maturin-version: v1.14.1
+          rust-toolchain: 1.97.0
           target: ${{ inputs.target }}
+          sccache: true
           args: >-
             --release
             --locked
@@ -105,85 +110,36 @@ jobs:
             -e SOURCE_DATE_EPOCH
           args: --out dist
 
-      - name: Check built wheel payload
+      - name: Check built distributions
+        env:
+          EXPECT_SDIST: ${{ inputs.sdist }}
         run: |
           python - <<'PY'
           import os
           from pathlib import Path
-          import zipfile
+
+          from scripts.package_smoke import check_sdist, check_wheel
 
           wheels = sorted(Path("dist").glob("*.whl"))
           assert len(wheels) == 1, wheels
-          with zipfile.ZipFile(wheels[0]) as wheel:
-              names = set(wheel.namelist())
-              native_names = sorted(
-                  name
-                  for name in names
-                  if name.startswith("agentbrowser/_native.")
-                  and name.endswith((".so", ".pyd"))
-              )
-              assert len(native_names) == 1, native_names
-              native_name = native_names[0]
-              native = wheel.read(native_name)
-          assert any(name.endswith(".dist-info/METADATA") for name in names)
-          assert any(name.startswith("agentbrowser/") for name in names)
-          forbidden_paths = (
-              os.environ["GITHUB_WORKSPACE"].encode(),
-              str(Path.home() / ".cargo").encode(),
-              b"/io/crates/",
-              b"/io/src/",
-              b"/io/third_party/",
-              b"/io/target/",
-              b"/root/.cargo/",
-              b"/usr/local/cargo/",
-          )
-          assert all(path not in native for path in forbidden_paths)
+          check_wheel(wheels[0])
+
+          sdists = sorted(Path("dist").glob("*.tar.gz"))
+          expected_sdists = 1 if os.environ["EXPECT_SDIST"] == "true" else 0
+          assert len(sdists) == expected_sdists, sdists
+          if sdists:
+              check_sdist(sdists[0])
           PY
 
-      - name: Test built wheel
+      - name: Test built distributions
         if: >-
-          (runner.os == 'Linux' && inputs.target == 'x86_64') ||
+          (runner.os == 'Linux' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
+          (runner.os == 'Linux' && runner.arch == 'ARM64' && startsWith(inputs.target, 'aarch64')) ||
           (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
           (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
-        run: |
-          python -m venv wheel-test
-          source wheel-test/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install dist/*.whl
-          python - <<'PY'
-          from agentbrowser import Browser
-          import agentbrowser._native as native
-
-          assert Browser
-          assert native.__agent_browser_version__
-          PY
-
-      - name: Set up Python 3.14 for ABI3 smoke
-        if: >-
-          (runner.os == 'Linux' && inputs.target == 'x86_64') ||
-          (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
-          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
-        uses: actions/setup-python@v6
-        with:
-          python-version: "3.14"
-
-      - name: Test ABI3 wheel on Python 3.14
-        if: >-
-          (runner.os == 'Linux' && inputs.target == 'x86_64') ||
-          (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
-          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
-        run: |
-          python -m venv abi3-wheel-test
-          source abi3-wheel-test/bin/activate
-          python -m pip install --upgrade pip
-          python -m pip install dist/*.whl
-          python - <<'PY'
-          from agentbrowser import Browser
-          import agentbrowser._native as native
-
-          assert Browser
-          assert native.__agent_browser_version__
-          PY
+        env:
+          PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.14"
+        run: python scripts/verify-install-artifacts.py dist
 
       - uses: actions/upload-artifact@v4
         with:
