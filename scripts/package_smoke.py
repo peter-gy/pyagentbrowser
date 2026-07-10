@@ -508,6 +508,7 @@ def expected_release_artifact_names(version: str) -> set[str]:
         f"{wheel}-macosx_11_0_arm64.whl",
         f"{wheel}-manylinux_2_28_aarch64.whl",
         f"{wheel}-manylinux_2_28_x86_64.whl",
+        f"{wheel}-win_amd64.whl",
         f"pyagentbrowser-{version}.tar.gz",
     }
 
@@ -529,7 +530,7 @@ def main() -> int:
     parser.add_argument(
         "--release",
         action="store_true",
-        help="require the complete four-wheel and source-distribution release set",
+        help="require the complete five-wheel and source-distribution release set",
     )
     args = parser.parse_args()
     try:

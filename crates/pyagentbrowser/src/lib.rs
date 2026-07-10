@@ -1,5 +1,7 @@
+#[cfg(windows)]
+use std::net::{SocketAddr, TcpListener, TcpStream};
 #[cfg(unix)]
-use std::os::unix::net::UnixListener;
+use std::os::unix::net::{UnixListener, UnixStream};
 use std::{
     collections::HashSet,
     env, fs,
@@ -475,6 +477,22 @@ socket_dir = sys.argv[2]
 session_id = sys.argv[3]
 extensions = ("pid", "stream", "engine", "provider", "extensions", "version", "metadata", "port", "sock")
 
+parent_handle = None
+if os.name == "nt":
+    import ctypes
+    from ctypes import wintypes
+
+    SYNCHRONIZE = 0x00100000
+    WAIT_TIMEOUT = 0x00000102
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    kernel32.OpenProcess.argtypes = [wintypes.DWORD, wintypes.BOOL, wintypes.DWORD]
+    kernel32.OpenProcess.restype = wintypes.HANDLE
+    kernel32.WaitForSingleObject.argtypes = [wintypes.HANDLE, wintypes.DWORD]
+    kernel32.WaitForSingleObject.restype = wintypes.DWORD
+    kernel32.CloseHandle.argtypes = [wintypes.HANDLE]
+    kernel32.CloseHandle.restype = wintypes.BOOL
+    parent_handle = kernel32.OpenProcess(SYNCHRONIZE, False, parent_pid)
+
 def cleanup():
     for extension in extensions:
         try:
@@ -484,16 +502,24 @@ def cleanup():
         except OSError:
             pass
 
-while True:
+def parent_alive():
+    if os.name == "nt":
+        return bool(parent_handle) and kernel32.WaitForSingleObject(parent_handle, 0) == WAIT_TIMEOUT
     if os.getppid() != parent_pid:
-        cleanup()
-        break
+        return False
     try:
         os.kill(parent_pid, 0)
     except OSError:
-        cleanup()
-        break
-    time.sleep(0.25)
+        return False
+    return True
+
+try:
+    while parent_alive():
+        time.sleep(0.25)
+finally:
+    if parent_handle:
+        kernel32.CloseHandle(parent_handle)
+    cleanup()
 "#,
         )
         .arg(parent_pid)
@@ -561,7 +587,10 @@ const CONTROL_BRIDGE_MAX_REQUEST_BYTES: u64 = 16 * 1024;
 
 #[derive(Clone)]
 enum ControlWake {
+    #[cfg(unix)]
     Unix(PathBuf),
+    #[cfg(windows)]
+    Tcp(SocketAddr),
 }
 
 impl Drop for ControlBridge {
@@ -581,10 +610,11 @@ impl Drop for ControlBridge {
     }
 }
 
+#[cfg(unix)]
 fn start_control_bridge(dir: &Path, session_id: &str) -> PyResult<ControlBridge> {
     let socket_path = dir.join(format!("{session_id}.sock"));
     if socket_path.exists() {
-        if std::os::unix::net::UnixStream::connect(&socket_path).is_ok() {
+        if UnixStream::connect(&socket_path).is_ok() {
             return Err(PyRuntimeError::new_err(format!(
                 "session '{session_id}' already has an active agent-browser control socket"
             )));
@@ -607,8 +637,9 @@ fn start_control_bridge(dir: &Path, session_id: &str) -> PyResult<ControlBridge>
     let thread_shutdown = Arc::clone(&shutdown);
     let thread_done = Arc::clone(&done);
     let thread_session = session_id.to_string();
+    let thread_dir = dir.to_path_buf();
     let handle = thread::spawn(move || {
-        run_control_loop(listener, thread_shutdown, thread_session);
+        run_control_loop(listener, thread_shutdown, thread_session, thread_dir);
         thread_done.store(true, Ordering::SeqCst);
     });
     Ok(ControlBridge {
@@ -619,12 +650,55 @@ fn start_control_bridge(dir: &Path, session_id: &str) -> PyResult<ControlBridge>
     })
 }
 
-fn run_control_loop<L, S>(listener: L, shutdown: Arc<AtomicBool>, session_id: String)
-where
+#[cfg(windows)]
+fn start_control_bridge(dir: &Path, session_id: &str) -> PyResult<ControlBridge> {
+    let port_path = dir.join(format!("{session_id}.port"));
+    if let Ok(port) = fs::read_to_string(&port_path)
+        && let Ok(port) = port.trim().parse::<u16>()
+        && TcpStream::connect(("127.0.0.1", port)).is_ok()
+    {
+        return Err(PyRuntimeError::new_err(format!(
+            "session '{session_id}' already has an active agent-browser control port"
+        )));
+    }
+    let _ = fs::remove_file(&port_path);
+    let listener = TcpListener::bind(("127.0.0.1", 0)).map_err(|err| {
+        PyRuntimeError::new_err(format!("failed to bind dashboard control port: {err}"))
+    })?;
+    listener.set_nonblocking(true).map_err(|err| {
+        PyRuntimeError::new_err(format!("failed to configure dashboard control port: {err}"))
+    })?;
+    let address = listener.local_addr().map_err(|err| {
+        PyRuntimeError::new_err(format!("failed to resolve dashboard control port: {err}"))
+    })?;
+    write_dashboard_text_file(dir, session_id, "port", &address.port().to_string())?;
+    let shutdown = Arc::new(AtomicBool::new(false));
+    let done = Arc::new(AtomicBool::new(false));
+    let thread_shutdown = Arc::clone(&shutdown);
+    let thread_done = Arc::clone(&done);
+    let thread_session = session_id.to_string();
+    let thread_dir = dir.to_path_buf();
+    let handle = thread::spawn(move || {
+        run_control_loop(listener, thread_shutdown, thread_session, thread_dir);
+        thread_done.store(true, Ordering::SeqCst);
+    });
+    Ok(ControlBridge {
+        shutdown,
+        done,
+        handle: Some(handle),
+        wake: ControlWake::Tcp(address),
+    })
+}
+
+fn run_control_loop<L, S>(
+    listener: L,
+    shutdown: Arc<AtomicBool>,
+    session_id: String,
+    socket_dir: PathBuf,
+) where
     L: ControlListener<Stream = S>,
     S: ControlStream,
 {
-    let socket_dir = agent_browser::socket_dir();
     while !shutdown.load(Ordering::SeqCst) {
         match listener.accept_control() {
             Ok(stream) => handle_control_stream(stream, &socket_dir, &session_id),
@@ -646,15 +720,34 @@ trait ControlStream: Read + Write {
     fn set_control_timeouts(&self) -> std::io::Result<()>;
 }
 
+#[cfg(unix)]
 impl ControlListener for UnixListener {
-    type Stream = std::os::unix::net::UnixStream;
+    type Stream = UnixStream;
 
     fn accept_control(&self) -> std::io::Result<Self::Stream> {
         self.accept().map(|(stream, _)| stream)
     }
 }
 
-impl ControlStream for std::os::unix::net::UnixStream {
+#[cfg(unix)]
+impl ControlStream for UnixStream {
+    fn set_control_timeouts(&self) -> std::io::Result<()> {
+        self.set_read_timeout(Some(CONTROL_BRIDGE_READ_TIMEOUT))?;
+        self.set_write_timeout(Some(CONTROL_BRIDGE_WRITE_TIMEOUT))
+    }
+}
+
+#[cfg(windows)]
+impl ControlListener for TcpListener {
+    type Stream = TcpStream;
+
+    fn accept_control(&self) -> std::io::Result<Self::Stream> {
+        self.accept().map(|(stream, _)| stream)
+    }
+}
+
+#[cfg(windows)]
+impl ControlStream for TcpStream {
     fn set_control_timeouts(&self) -> std::io::Result<()> {
         self.set_read_timeout(Some(CONTROL_BRIDGE_READ_TIMEOUT))?;
         self.set_write_timeout(Some(CONTROL_BRIDGE_WRITE_TIMEOUT))
@@ -730,8 +823,13 @@ fn cleanup_dashboard_sidecar_files(socket_dir: &Path, session_id: &str) {
 
 fn wake_control_bridge(wake: &ControlWake) {
     match wake {
+        #[cfg(unix)]
         ControlWake::Unix(path) => {
-            let _ = std::os::unix::net::UnixStream::connect(path);
+            let _ = UnixStream::connect(path);
+        }
+        #[cfg(windows)]
+        ControlWake::Tcp(address) => {
+            let _ = TcpStream::connect(address);
         }
     }
 }

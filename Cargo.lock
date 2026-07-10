@@ -71,6 +71,7 @@ dependencies = [
  "url",
  "urlencoding",
  "uuid",
+ "windows-sys 0.52.0",
  "zip",
 ]
 

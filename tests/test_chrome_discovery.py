@@ -59,6 +59,23 @@ def test_chrome_discovery_checks_agent_browser_browser_cache(tmp_path: Path) -> 
     )
 
 
+def test_chrome_discovery_checks_windows_install_roots(tmp_path: Path) -> None:
+    program_files = tmp_path / "Program Files"
+    chrome = program_files / "Google" / "Chrome" / "Application" / "chrome.exe"
+    chrome.parent.mkdir(parents=True)
+    chrome.write_text("")
+
+    assert (
+        check_chrome.chrome_executable(
+            environ={"PROGRAMFILES": str(program_files)},
+            home=tmp_path,
+            which=lambda _command: None,
+            exists=lambda path: path == chrome,
+        )
+        == chrome
+    )
+
+
 def test_chrome_discovery_checks_path_commands(tmp_path: Path) -> None:
     path_chrome = tmp_path / "bin" / "chromium"
     path_chrome.parent.mkdir()

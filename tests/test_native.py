@@ -39,6 +39,15 @@ def _sidecars(socket_dir: Path, session: str) -> list[Path]:
     return list(socket_dir.glob(f"{session}.*"))
 
 
+def _dashboard_control_client(socket_dir: Path, session: str) -> socket.socket:
+    if os.name == "nt":
+        port = int((socket_dir / f"{session}.port").read_text())
+        return socket.create_connection(("127.0.0.1", port))
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(str(socket_dir / f"{session}.sock"))
+    return client
+
+
 def test_native_extension_reports_exact_upstream_provenance() -> None:
     assert __agent_browser_version__ == UPSTREAM_VERSION
 
@@ -119,7 +128,7 @@ def test_restore_and_namespace_options_reach_generated_adapter(
 def test_dashboard_sidecars_control_boundary_and_teardown(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as raw_dir:
+    with tempfile.TemporaryDirectory(prefix="pab-") as raw_dir:
         socket_dir = Path(raw_dir)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
         session = "py-dashboard"
@@ -127,28 +136,58 @@ def test_dashboard_sidecars_control_boundary_and_teardown(
 
         assert _sidecars(socket_dir, session) == []
         browser.dashboard.status()
-        socket_path = socket_dir / f"{session}.sock"
+        control_sidecar = socket_dir / f"{session}.{'port' if os.name == 'nt' else 'sock'}"
+        assert control_sidecar.exists()
         assert int((socket_dir / f"{session}.stream").read_text()) > 0
         assert (socket_dir / f"{session}.version").read_text() == UPSTREAM_VERSION
 
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.connect(str(socket_path))
+        with _dashboard_control_client(socket_dir, session) as client:
             client.sendall(b'{"id":"control","action":"navigate"}\n')
-            denied = json.loads(client.recv(4096).decode())
+            with client.makefile("rb") as responses:
+                denied = json.loads(responses.readline())
         assert denied["success"] is False
 
-        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
-            client.connect(str(socket_path))
+        with _dashboard_control_client(socket_dir, session) as client:
             client.sendall(b'{"id":"detach","action":"close"}\n')
-            detached = json.loads(client.recv(4096).decode())
+            with client.makefile("rb") as responses:
+                detached = json.loads(responses.readline())
         assert detached["data"]["observable_only"] is True
 
         browser.close()
         assert _sidecars(socket_dir, session) == []
 
 
+def test_dashboard_control_close_cleans_namespaced_sidecars(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with tempfile.TemporaryDirectory(prefix="pab-") as raw_dir:
+        root = Path(raw_dir)
+        socket_dir = root / "namespaces" / "w" / "run"
+        monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(root))
+        session = "n"
+        browser = Browser(
+            session=SessionOptions(
+                session_id=session,
+                namespace="W",
+                dashboard=DashboardOptions(),
+            )
+        )
+
+        browser.dashboard.status()
+        assert _sidecars(socket_dir, session)
+
+        with _dashboard_control_client(socket_dir, session) as client:
+            client.sendall(b'{"id":"detach","action":"close"}\n')
+            with client.makefile("rb") as responses:
+                detached = json.loads(responses.readline())
+
+        assert detached["data"]["observable_only"] is True
+        assert _sidecars(socket_dir, session) == []
+        browser.close()
+
+
 def test_dashboard_stop_removes_stream_sidecars(monkeypatch: pytest.MonkeyPatch) -> None:
-    with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as raw_dir:
+    with tempfile.TemporaryDirectory(prefix="pab-") as raw_dir:
         socket_dir = Path(raw_dir)
         monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
         session = "py-dashboard-stop"
@@ -162,7 +201,7 @@ def test_dashboard_stop_removes_stream_sidecars(monkeypatch: pytest.MonkeyPatch)
 
 
 def test_dashboard_close_does_not_wait_for_partial_control_clients() -> None:
-    with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as raw_dir:
+    with tempfile.TemporaryDirectory(prefix="pab-") as raw_dir:
         socket_dir = Path(raw_dir)
         marker = socket_dir / "closed"
         session = "py-dashboard-partial"
@@ -170,6 +209,7 @@ def test_dashboard_close_does_not_wait_for_partial_control_clients() -> None:
         env["AGENT_BROWSER_SOCKET_DIR"] = str(socket_dir)
         script = f"""
 import socket
+import os
 from pathlib import Path
 from agentbrowser import Browser, DashboardOptions, SessionOptions
 
@@ -178,8 +218,12 @@ browser = Browser(
     session=SessionOptions(session_id={session!r}, dashboard=DashboardOptions())
 )
 browser.dashboard.status()
-client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-client.connect(str(socket_dir / {f"{session}.sock"!r}))
+if os.name == "nt":
+    port = int((socket_dir / {f"{session}.port"!r}).read_text())
+    client = socket.create_connection(("127.0.0.1", port))
+else:
+    client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    client.connect(str(socket_dir / {f"{session}.sock"!r}))
 client.sendall(b'{{"id":"partial","action":"close"}}')
 browser.close()
 Path({str(marker)!r}).write_text("closed")
@@ -197,7 +241,7 @@ client.close()
 
 
 def test_dashboard_watchdog_removes_sidecars_after_parent_exit() -> None:
-    with tempfile.TemporaryDirectory(prefix="pab-", dir="/tmp") as raw_dir:
+    with tempfile.TemporaryDirectory(prefix="pab-") as raw_dir:
         socket_dir = Path(raw_dir)
         session = "py-dashboard-crash"
         env = os.environ.copy()

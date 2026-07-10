@@ -14,7 +14,7 @@ uv add pyagentbrowser
 python -m pip install pyagentbrowser
 ```
 
-The package supports Python 3.11 through 3.14 on macOS and Linux.
+The package supports Python 3.11 through 3.14 on macOS, Linux, and x86-64 Windows.
 
 ## Open a page
 

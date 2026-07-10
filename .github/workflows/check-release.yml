@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+defaults:
+  run:
+    shell: bash
+
 concurrency:
   group: release-check-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
@@ -33,6 +37,15 @@ jobs:
       python: "3.11"
       target: aarch64
       artifact: check-macos-aarch64-abi3
+
+  build-windows:
+    name: Build Windows distribution
+    uses: ./.github/workflows/build-wheel.yml
+    with:
+      os: windows-latest
+      python: "3.11"
+      target: x64
+      artifact: check-windows-x86_64-abi3
 
   quality:
     name: Quality and owned contracts
@@ -91,7 +104,7 @@ jobs:
 
   native:
     name: Native and browser seams on ${{ matrix.os }}
-    needs: [build-linux, build-macos]
+    needs: [build-linux, build-macos, build-windows]
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -101,6 +114,8 @@ jobs:
             artifact: check-linux-x86_64-abi3
           - os: macos-14
             artifact: check-macos-aarch64-abi3
+          - os: windows-latest
+            artifact: check-windows-x86_64-abi3
     steps:
       - uses: actions/checkout@v6
         with:
@@ -118,12 +133,18 @@ jobs:
       - name: Install native wheel
         run: |
           wheel=$(find dist -name '*.whl' -print -quit)
-          uv pip install --python .venv/bin/python "$wheel" "websockets>=15.0"
+          uv pip install --python .venv "$wheel" "websockets>=15.0"
       - name: Test native boundary
-        run: uv run --no-sync --python 3.14 pytest -q -m native_smoke
+        run: |
+          marker=native_smoke
+          if [ "$RUNNER_OS" = Windows ]; then
+            marker="native_smoke or sdk_dx"
+          fi
+          uv run --no-sync --python 3.14 pytest -q -m "$marker"
       - name: Test real-browser seams
         run: |
           chrome_path=$(uv run --no-sync --python 3.14 python scripts/check_chrome.py)
+          chrome_path=${chrome_path%$'\r'}
           PYAGENTBROWSER_CHROME="$chrome_path" \
           PYAGENTBROWSER_FAIL_ON_SKIP=1 \
           uv run --no-sync --python 3.14 pytest -q -m integration

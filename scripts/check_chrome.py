@@ -11,9 +11,22 @@ MACOS_APP_CANDIDATES = (
     Path("/Applications/Google Chrome Canary.app/Contents/MacOS/Google Chrome Canary"),
     Path("/Applications/Chromium.app/Contents/MacOS/Chromium"),
 )
-PATH_COMMANDS = ("google-chrome", "google-chrome-stable", "chromium", "chromium-browser")
-BROWSER_CACHE_PATTERN = (
-    "chrome-*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing"
+WINDOWS_INSTALL_SUFFIX = Path("Google") / "Chrome" / "Application" / "chrome.exe"
+WINDOWS_INSTALL_ROOTS = ("PROGRAMFILES", "PROGRAMFILES(X86)", "LOCALAPPDATA")
+PATH_COMMANDS = (
+    "google-chrome",
+    "google-chrome-stable",
+    "chromium",
+    "chromium-browser",
+    "chrome",
+    "chrome.exe",
+    "chromium.exe",
+)
+BROWSER_CACHE_PATTERNS = (
+    "chrome-*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+    "chrome-*/chrome-linux64/chrome",
+    "chrome-*/chrome-win64/chrome.exe",
+    "chrome-*/chrome.exe",
 )
 
 
@@ -29,12 +42,12 @@ def chrome_candidates(
 
     home = Path.home() if home is None else home
     candidates = list(MACOS_APP_CANDIDATES)
-    candidates.extend(
-        sorted(
-            (home / ".agent-browser" / "browsers").glob(BROWSER_CACHE_PATTERN),
-            reverse=True,
-        )
-    )
+    for variable in WINDOWS_INSTALL_ROOTS:
+        if root := environ.get(variable):
+            candidates.append(Path(root) / WINDOWS_INSTALL_SUFFIX)
+    browser_cache = home / ".agent-browser" / "browsers"
+    for pattern in BROWSER_CACHE_PATTERNS:
+        candidates.extend(sorted(browser_cache.glob(pattern), reverse=True))
     for command in PATH_COMMANDS:
         if resolved := which(command):
             candidates.append(Path(resolved))

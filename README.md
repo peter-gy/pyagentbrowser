@@ -35,7 +35,7 @@ Use `browser.find` for live CSS, XPath, and semantic queries. Namespaces such as
 
 ## Installation options
 
-The distribution is named `pyagentbrowser`. Python imports it as `agentbrowser`. Wheels support Python 3.11 through 3.14 on macOS and Linux.
+The distribution is named `pyagentbrowser`. Python imports it as `agentbrowser`. Wheels support Python 3.11 through 3.14 on macOS, Linux, and x86-64 Windows.
 
 ```bash
 uv add "pyagentbrowser[images]"  # Pillow-backed screenshot helpers

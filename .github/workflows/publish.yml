@@ -87,6 +87,10 @@ jobs:
             python: "3.11"
             target: aarch64
             artifact: macos-aarch64-abi3
+          - os: windows-latest
+            python: "3.11"
+            target: x64
+            artifact: windows-x86_64-abi3
     with:
       os: ${{ matrix.os }}
       python: ${{ matrix.python }}
@@ -169,9 +173,70 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+  verify-install:
+    name: Install published wheel on ${{ matrix.os }}
+    needs: publish-pypi
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            python: release-venv/bin/python
+          - os: windows-latest
+            python: release-venv/Scripts/python.exe
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: astral-sh/setup-uv@v8.2.0
+        with:
+          python-version: "3.14"
+          enable-cache: false
+
+      - name: Install from PyPI
+        env:
+          VERSION: ${{ github.ref_name }}
+          VENV_PYTHON: ${{ matrix.python }}
+        run: |
+          version="${VERSION#v}"
+          uv venv --python 3.14 release-venv
+          for attempt in {1..12}; do
+            if uv pip install \
+              --python "$VENV_PYTHON" \
+              --no-cache \
+              --only-binary pyagentbrowser \
+              --index-url https://pypi.org/simple \
+              "pyagentbrowser==$version"
+            then
+              break
+            fi
+            if [ "$attempt" = 12 ]; then
+              exit 1
+            fi
+            sleep 5
+          done
+          EXPECTED_VERSION="$version" "$VENV_PYTHON" - <<'PY'
+          from importlib.metadata import version
+          import os
+
+          from agentbrowser import Browser
+          import agentbrowser._native as native
+
+          assert version("pyagentbrowser") == os.environ["EXPECTED_VERSION"]
+          assert native.__agent_browser_version__
+          browser = Browser()
+          try:
+              assert browser.native.data("stream_status")["enabled"] is False
+          finally:
+              browser.close()
+          PY
+
   verify-release:
     name: Verify published release
-    needs: [publish-pypi, release-notes]
+    needs: [publish-pypi, release-notes, verify-install]
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -213,38 +278,6 @@ jobs:
               "missing": sorted(expected - actual),
               "unexpected": sorted(actual - expected),
           }
-          PY
-
-      - name: Install from PyPI
-        env:
-          VERSION: ${{ github.ref_name }}
-        run: |
-          version="${VERSION#v}"
-          uv venv --python 3.14 release-venv
-          for attempt in {1..12}; do
-            if uv pip install \
-              --python release-venv/bin/python \
-              --no-cache \
-              --index-url https://pypi.org/simple \
-              "pyagentbrowser==$version"
-            then
-              break
-            fi
-            if [ "$attempt" = 12 ]; then
-              exit 1
-            fi
-            sleep 5
-          done
-          EXPECTED_VERSION="$version" release-venv/bin/python - <<'PY'
-          from importlib.metadata import version
-          import os
-
-          from agentbrowser import Browser
-          import agentbrowser._native as native
-
-          assert version("pyagentbrowser") == os.environ["EXPECTED_VERSION"]
-          assert Browser
-          assert native.__agent_browser_version__
           PY
 
       - name: Verify GitHub release

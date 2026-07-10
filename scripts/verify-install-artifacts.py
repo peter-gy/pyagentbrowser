@@ -105,6 +105,8 @@ assert image.size == (1, 1)
 
 
 def venv_python(root: Path) -> Path:
+    if os.name == "nt":
+        return root / "Scripts" / "python.exe"
     return root / "bin" / "python"
 
 

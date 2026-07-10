@@ -38,12 +38,25 @@ def test_install_verifier_rejects_abi3_below_its_python_floor(tmp_path: Path) ->
         verifier.wheel_for_version(tmp_path, "3.11")
 
 
-def test_wheel_payload_checks_runtime_anchors_and_one_native_extension() -> None:
+@pytest.mark.parametrize(
+    ("native_extension", "artifact_name"),
+    [
+        (
+            "agentbrowser/_native.abi3.so",
+            "pyagentbrowser-1.0.0-cp311-abi3-macosx_11_0_arm64.whl",
+        ),
+        ("agentbrowser/_native.pyd", "pyagentbrowser-1.0.0-cp311-abi3-win_amd64.whl"),
+    ],
+)
+def test_wheel_payload_checks_runtime_anchors_and_one_native_extension(
+    native_extension: str,
+    artifact_name: str,
+) -> None:
     names = {
         "agentbrowser/__init__.py",
         "agentbrowser/_upstream.json",
         "agentbrowser/py.typed",
-        "agentbrowser/_native.abi3.so",
+        native_extension,
         "agentbrowser/_native.pyi",
     }
     sizes = {name: 1 for name in names}
@@ -51,7 +64,7 @@ def test_wheel_payload_checks_runtime_anchors_and_one_native_extension() -> None
     package_smoke.assert_wheel_runtime_payload(
         names,
         sizes,
-        "pyagentbrowser-1.0.0-cp311-abi3-macosx_11_0_arm64.whl",
+        artifact_name,
     )
 
 

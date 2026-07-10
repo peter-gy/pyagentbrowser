@@ -58,8 +58,25 @@ jobs:
 
       - name: Set reproducible build inputs
         run: |
-          echo "SOURCE_DATE_EPOCH=$(git log -1 --format=%ct)" >> "$GITHUB_ENV"
-          echo "RUSTFLAGS=--remap-path-prefix=${GITHUB_WORKSPACE}=/src/pyagentbrowser --remap-path-prefix=/io=/src/pyagentbrowser --remap-path-prefix=${HOME}/.cargo=/cargo --remap-path-prefix=/root/.cargo=/cargo --remap-path-prefix=/usr/local/cargo=/cargo" >> "$GITHUB_ENV"
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) python - <<'PY'
+          import os
+          from pathlib import Path
+
+          workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
+          cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")).resolve()
+          rustflags = " ".join(
+              (
+                  f"--remap-path-prefix={workspace}=/src/pyagentbrowser",
+                  "--remap-path-prefix=/io=/src/pyagentbrowser",
+                  f"--remap-path-prefix={cargo_home}=/cargo",
+                  "--remap-path-prefix=/root/.cargo=/cargo",
+                  "--remap-path-prefix=/usr/local/cargo=/cargo",
+              )
+          )
+          with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
+              print(f"SOURCE_DATE_EPOCH={os.environ['SOURCE_DATE_EPOCH']}", file=env_file)
+              print(f"RUSTFLAGS={rustflags}", file=env_file)
+          PY
 
       - name: Build source distribution
         if: inputs.sdist
@@ -134,7 +151,8 @@ jobs:
           (runner.os == 'Linux' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
           (runner.os == 'Linux' && runner.arch == 'ARM64' && startsWith(inputs.target, 'aarch64')) ||
           (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
-          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
+          (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64') ||
+          (runner.os == 'Windows' && runner.arch == 'X64' && inputs.target == 'x64')
         env:
           CARGO_TARGET_DIR: ${{ runner.temp }}/pyagentbrowser-artifact-target
           PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.14"
