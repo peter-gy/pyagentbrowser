@@ -11,19 +11,18 @@ uv add pyagentbrowser
 ```
 
 ```python
-from agentbrowser import Browser, Wait
+from agentbrowser import Browser
 
-with Browser.launch() as browser:
-    browser.open("https://example.com")
-    page = browser.observe()
-    result = page.one(role="link", name="Learn more").click(
-        wait=Wait.url("*://www.iana.org/*")
-    )
+browser = Browser()
+browser.open("https://example.com")
+page = browser.observe()
 
-    print(result.after.text)
+print(page.text)
 ```
 
-`Browser` owns the native session. `Snapshot` binds accessibility refs to the page state that produced them. Ref actions return an `ActionResult` containing the original snapshot, the resulting snapshot, and their diff.
+`Browser` starts lazily and stays active until `browser.close()` is called. Keep the same object across notebook cells or interactive Python commands. Screenshots returned by `browser.capture.screenshot()` render inline in notebook frontends.
+
+`Snapshot` binds accessibility refs to the page state that produced them. Ref actions return an `ActionResult` containing the original snapshot, the resulting snapshot, and their diff.
 
 Use `browser.find` for live CSS, XPath, and semantic queries. Namespaces such as `browser.capture`, `browser.tabs`, `browser.network`, and `browser.cdp` expose focused browser capabilities. Every action in the pinned native engine remains available through `browser.native`.
 
