@@ -3,14 +3,30 @@
 PYTHON_SOURCES = src tests scripts examples
 BUILD_PYTHON ?= 3.11
 RUST_TOOLCHAIN ?= 1.97.0
-RUST_CARGO = rustup run $(RUST_TOOLCHAIN) cargo
+UPSTREAM_REF ?= origin/main
+ALLOW_NON_FAST_FORWARD ?= 0
+UPSTREAM_UPDATE_FLAGS = $(if $(filter 1,$(ALLOW_NON_FAST_FORWARD)),--allow-non-fast-forward)
 RUST_ENV = cargo_path="$$(rustup which --toolchain $(RUST_TOOLCHAIN) cargo)" && rust_bin="$$(dirname "$$cargo_path")" && PATH="$$rust_bin:$$PATH"
+RUST_CARGO = $(RUST_ENV) cargo
 UV_RUN = uv run --no-sync
 PYTHON_RUN = uv run --no-project --python $(BUILD_PYTHON) python
 DIST_DIR = target/wheels
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '315532800')
 CARGO_HOME ?= $(HOME)/.cargo
 REPRODUCIBLE_RUSTFLAGS = --remap-path-prefix=$(CURDIR)=/src/pyagentbrowser --remap-path-prefix=$(CARGO_HOME)=/cargo
+
+.PHONY: help
+help:
+	@printf '%s\n' \
+		'make install           Bootstrap dependencies and build the native extension' \
+		'make update-upstream   Pin upstream origin/main and synchronize metadata' \
+		'make test-sdk          Run Python SDK contract tests' \
+		'make test-native       Run PyO3 and generated-adapter boundary tests' \
+		'make test-package      Run wheel, sdist, version, and provenance contracts' \
+		'make test-integration  Run curated real-Chrome seams' \
+		'make check             Run the normal handoff gate' \
+		'make package           Build and clean-install the wheel and sdist' \
+		'make check-release     Run the full release gate'
 
 .PHONY: submodule-init
 submodule-init:
@@ -27,6 +43,10 @@ native-dev: submodule-init sync
 
 .PHONY: install
 install: native-dev
+
+.PHONY: update-upstream
+update-upstream:
+	uv run --no-project --with "tomlkit>=0.13.3" python scripts/update_upstream.py --ref "$(UPSTREAM_REF)" $(UPSTREAM_UPDATE_FLAGS)
 
 .PHONY: clean
 clean:
@@ -57,6 +77,18 @@ typecheck: sync
 test: native-dev
 	$(UV_RUN) pytest -q -m "not integration"
 
+.PHONY: test-sdk
+test-sdk: native-dev
+	$(UV_RUN) pytest -q -m sdk_dx
+
+.PHONY: test-native
+test-native: native-dev
+	$(UV_RUN) pytest -q -m native_smoke
+
+.PHONY: test-package
+test-package: submodule-init sync
+	$(UV_RUN) pytest -q tests/packaging
+
 .PHONY: test-integration
 test-integration: native-dev
 	chrome_path="$$($(UV_RUN) python scripts/check_chrome.py)" && \
@@ -65,14 +97,14 @@ test-integration: native-dev
 	$(UV_RUN) pytest -q -m integration
 
 .PHONY: rust-check
-rust-check:
+rust-check: submodule-init
 	test ! -e crates/agent-browser-adapter/Cargo.lock
 	$(RUST_CARGO) fmt --all --manifest-path Cargo.toml --check
 	$(RUST_CARGO) clippy -p pyagentbrowser -p agent-browser --lib --all-features --locked -- -D warnings
 	$(RUST_CARGO) clippy -p agent-browser --test smoke --all-features --locked -- -D warnings
 
 .PHONY: rust-test
-rust-test:
+rust-test: submodule-init
 	$(RUST_CARGO) test -p pyagentbrowser --lib --locked
 	$(RUST_CARGO) test -p agent-browser --test smoke --locked
 
@@ -80,7 +112,7 @@ rust-test:
 package: export RUSTFLAGS := $(strip $(RUSTFLAGS) $(REPRODUCIBLE_RUSTFLAGS))
 package: export SOURCE_DATE_EPOCH := $(SOURCE_DATE_EPOCH)
 package: export UV_PROJECT_ENVIRONMENT := .venvbuild$(subst .,,$(BUILD_PYTHON))
-package:
+package: submodule-init
 	rm -rf $(DIST_DIR)
 	mkdir -p $(DIST_DIR)
 	$(RUST_ENV) uv run --no-project --python $(BUILD_PYTHON) --with "maturin>=1.11.5" maturin build --release --locked --compatibility pypi --out $(DIST_DIR)
@@ -89,12 +121,12 @@ package:
 	$(PYTHON_RUN) scripts/verify-install-artifacts.py $(DIST_DIR)
 
 .PHONY: prerelease-version-check
-prerelease-version-check:
+prerelease-version-check: submodule-init
 	$(PYTHON_RUN) scripts/prepare_prerelease.py --check
 	$(PYTHON_RUN) scripts/update_upstream.py --check
 
 .PHONY: check
-check: lint typecheck test rust-check
+check: lint typecheck test rust-check rust-test
 
 .PHONY: check-release
-check-release: prerelease-version-check check test-integration rust-test package
+check-release: prerelease-version-check check test-integration package

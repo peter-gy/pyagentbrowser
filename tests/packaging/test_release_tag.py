@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 
 
 def package_version() -> str:
@@ -16,6 +16,7 @@ def package_version() -> str:
 def run_release_tag_check(tag: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["./scripts/release.sh", "check-version", tag],
+        cwd=ROOT,
         check=False,
         text=True,
         capture_output=True,

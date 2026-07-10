@@ -38,6 +38,7 @@ WHEEL_REQUIRED_FILES = frozenset(
 )
 WHEEL_FORBIDDEN_EXACT = frozenset(
     {
+        "agentbrowser/AGENTS.md",
         "agentbrowser/cli.py",
         "agentbrowser/__main__.py",
         "agentbrowser/upstream.py",
@@ -94,13 +95,19 @@ SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
 FORBIDDEN_SUPPORT_PREFIXES = (
     ".github/",
     "crates/agent-browser-adapter/target/",
+    "development_docs/",
     "docs/figures/",
     "target/",
     "tests/",
 )
 FORBIDDEN_SUPPORT_EXACT = frozenset(
     {
+        ".gitattributes",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "crates/AGENTS.md",
         "crates/agent-browser-adapter/Cargo.lock",
+        "src/agentbrowser/AGENTS.md",
     }
 )
 FORBIDDEN_UPSTREAM_PREFIXES = (

@@ -1337,9 +1337,14 @@ fn replace_tail_named(
     start: &str,
     replacement: &str,
 ) -> String {
-    let start_index = contents.find(start).unwrap_or_else(|| {
-        panic!("generated upstream rewrite could not find start of {patch_name} block")
-    });
+    let occurrences = contents.matches(start).count();
+    assert!(
+        occurrences == 1,
+        "generated upstream rewrite expected exactly one {patch_name} block, found {occurrences}"
+    );
+    let start_index = contents
+        .find(start)
+        .expect("rewrite anchor count was checked before replacement");
     let mut rewritten = contents;
     rewritten.replace_range(start_index.., replacement);
     rewritten

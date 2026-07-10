@@ -69,11 +69,7 @@ jobs:
       - name: Check release metadata, Python, and Rust
         run: make prerelease-version-check lint typecheck rust-check rust-test
       - name: Test packaging contracts
-        run: >-
-          uv run --no-sync pytest -q
-          tests/test_package_smoke.py
-          tests/test_release_tag.py
-          tests/test_upstream_contract.py
+        run: make test-package
 
   sdk:
     name: SDK on Python ${{ matrix.python }}

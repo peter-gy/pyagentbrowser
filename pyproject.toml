@@ -61,6 +61,7 @@ dev = [
     "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
     "ruff>=0.15.12",
+    "tomlkit>=0.13.3",
     "ty>=0.0.34",
 ]
 
@@ -75,10 +76,17 @@ module-name = "agentbrowser._native"
 python-source = "src"
 manifest-path = "crates/pyagentbrowser/Cargo.toml"
 exclude = [
+    ".gitattributes",
+    ".github/**",
     ".venv*/**",
+    "AGENTS.md",
     "Cargo.toml.orig",
+    "CLAUDE.md",
+    "crates/AGENTS.md",
     "crates/agent-browser-adapter/Cargo.lock",
     "crates/agent-browser-adapter/target/**",
+    "development_docs/**",
+    "src/agentbrowser/AGENTS.md",
     "target/**",
     "tests/**",
     "third_party/agent-browser/.claude-plugin/**",

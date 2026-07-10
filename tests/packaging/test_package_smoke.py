@@ -10,7 +10,7 @@ import pytest
 from scripts import package_smoke
 
 pytestmark = pytest.mark.packaging
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 VERIFY_INSTALL = ROOT / "scripts/verify-install-artifacts.py"
 
 
