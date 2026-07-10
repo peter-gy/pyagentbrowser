@@ -68,10 +68,8 @@ test-integration: native-dev
 rust-check:
 	test ! -e crates/agent-browser-adapter/Cargo.lock
 	$(RUST_CARGO) fmt --all --manifest-path Cargo.toml --check
-	$(RUST_CARGO) clippy -p pyagentbrowser --all-features --lib --no-deps --locked -- -D warnings
-	$(RUST_CARGO) clippy -p agent-browser --lib --all-features --locked -- -D warnings
+	$(RUST_CARGO) clippy -p pyagentbrowser -p agent-browser --lib --all-features --locked -- -D warnings
 	$(RUST_CARGO) clippy -p agent-browser --test smoke --all-features --locked -- -D warnings
-	$(RUST_CARGO) check --workspace --locked
 
 .PHONY: rust-test
 rust-test:

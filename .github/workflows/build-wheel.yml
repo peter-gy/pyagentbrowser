@@ -131,6 +131,7 @@ jobs:
           (runner.os == 'macOS' && runner.arch == 'X64' && inputs.target == 'x86_64') ||
           (runner.os == 'macOS' && runner.arch == 'ARM64' && inputs.target == 'aarch64')
         env:
+          CARGO_TARGET_DIR: ${{ runner.temp }}/pyagentbrowser-artifact-target
           PYAGENTBROWSER_PYTHON_VERSIONS: "3.11 3.14"
         run: env -u RUSTC_WRAPPER python scripts/verify-install-artifacts.py dist
 
