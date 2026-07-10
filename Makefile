@@ -3,11 +3,13 @@
 PYTHON_SOURCES = src tests scripts examples
 BUILD_PYTHON ?= 3.11
 RUST_TOOLCHAIN ?= stable
-RUST_CARGO = rustup run $(RUST_TOOLCHAIN) cargo
+RUST_TOOLCHAIN_BIN := $(dir $(shell rustup which --toolchain $(RUST_TOOLCHAIN) cargo))
+RUST_CARGO = $(RUST_TOOLCHAIN_BIN)cargo
 DIST_DIR = target/wheels
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '315532800')
 CARGO_HOME ?= $(HOME)/.cargo
 REPRODUCIBLE_RUSTFLAGS = --remap-path-prefix=$(CURDIR)=/src/pyagentbrowser --remap-path-prefix=$(CARGO_HOME)=/cargo
+export PATH := $(RUST_TOOLCHAIN_BIN):$(PATH)
 
 .PHONY: submodule-init
 submodule-init:

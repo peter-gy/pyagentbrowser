@@ -189,6 +189,12 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
                 "#[allow(dead_code, clippy::new_without_default, clippy::should_implement_trait)]"
             ),
         );
+        if *name == "snapshot" {
+            line(
+                &mut output,
+                format_args!("#[allow(unknown_lints, clippy::useless_borrows_in_formatting)]"),
+            );
+        }
         line(
             &mut output,
             format_args!("#[path = \"{}\"]", path_literal(&module_path)),
