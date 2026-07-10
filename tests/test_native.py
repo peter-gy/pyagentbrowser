@@ -58,7 +58,7 @@ def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
     assert upstream.is_dir()
 
     upstream_files = {
-        path.relative_to(upstream): path.read_text()
+        path.relative_to(upstream): path.read_text(encoding="utf-8")
         for path in upstream.rglob("*")
         if path.is_file()
     }
