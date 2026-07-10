@@ -94,6 +94,7 @@ jobs:
       manylinux: ${{ matrix.manylinux || '2_28' }}
       artifact: wheels-${{ matrix.artifact }}
       sdist: ${{ matrix.sdist || false }}
+      sccache: ${{ matrix.artifact != 'macos-x86_64-abi3' }}
 
   verify-linux-aarch64:
     name: Test Linux aarch64 wheel

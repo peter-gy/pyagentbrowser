@@ -29,6 +29,11 @@ on:
         required: false
         default: false
         type: boolean
+      sccache:
+        description: Cache Rust compilation for this wheel.
+        required: false
+        default: true
+        type: boolean
 
 permissions:
   contents: read
@@ -73,7 +78,7 @@ jobs:
           rust-toolchain: 1.97.0
           target: ${{ inputs.target }}
           manylinux: ${{ inputs.manylinux }}
-          sccache: true
+          sccache: ${{ inputs.sccache }}
           docker-options: >-
             -e CARGO_HTTP_MULTIPLEXING
             -e CARGO_NET_RETRY
@@ -95,7 +100,7 @@ jobs:
           maturin-version: v1.14.1
           rust-toolchain: 1.97.0
           target: ${{ inputs.target }}
-          sccache: true
+          sccache: ${{ inputs.sccache }}
           args: >-
             --release
             --locked
