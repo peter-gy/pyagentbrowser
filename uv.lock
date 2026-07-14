@@ -148,7 +148,7 @@ wheels = [
 
 [[package]]
 name = "pyagentbrowser"
-version = "0.31.1rc6"
+version = "0.31.2rc0"
 source = { editable = "." }
 
 [package.optional-dependencies]
