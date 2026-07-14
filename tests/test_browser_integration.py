@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import socket
 import subprocess
+import sys
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
@@ -220,12 +221,16 @@ def test_webgpu_launch_preset_renders_offscreen_pixels_across_native_boundary(
     chrome_path: Path,
     local_site: LocalSite,
 ) -> None:
+    args: tuple[str, ...] = ()
+    if sys.platform == "win32":
+        # GitHub-hosted Windows runners have no hardware GPU adapter.
+        args = ("--use-webgpu-adapter=swiftshader",)
     session = SessionOptions(
         session_id=f"webgpu-{time.monotonic_ns()}",
         timeout=90.0,
     )
     with Browser.launch(
-        LaunchOptions(executable_path=chrome_path, webgpu=True),
+        LaunchOptions(executable_path=chrome_path, webgpu=True, args=args),
         session=session,
     ) as browser:
         browser.open(local_site.base_url)
