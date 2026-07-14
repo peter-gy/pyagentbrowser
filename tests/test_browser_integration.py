@@ -223,8 +223,12 @@ def test_webgpu_launch_preset_renders_offscreen_pixels_across_native_boundary(
 ) -> None:
     args: tuple[str, ...] = ()
     if sys.platform == "win32":
-        # GitHub-hosted Windows runners have no hardware GPU adapter.
-        args = ("--use-webgpu-adapter=swiftshader",)
+        # WARP gives GPU-less runners the D3D11 device Chrome needs before
+        # Dawn can discover the SwiftShader WebGPU adapter.
+        args = (
+            "--use-angle=d3d11-warp",
+            "--use-webgpu-adapter=swiftshader",
+        )
     session = SessionOptions(
         session_id=f"webgpu-{time.monotonic_ns()}",
         timeout=90.0,
