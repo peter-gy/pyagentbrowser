@@ -167,6 +167,33 @@ def test_public_configuration_rejects_ambiguous_values(
         factory()
 
 
+def test_webgpu_process_controls_require_a_local_browser(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    with pytest.raises(ValueError, match="webgpu requires a local browser launch"):
+        Browser.attach(CDPTarget(port=9222), launch=LaunchOptions(webgpu=True))
+    with pytest.raises(ValueError, match="webgpu requires a local browser launch"):
+        Browser.launch(LaunchOptions(provider="remote", webgpu=True))
+    with pytest.raises(ValueError, match="no_xvfb requires a local browser launch"):
+        Browser.attach(CDPTarget(port=9222), launch=LaunchOptions(no_xvfb=True))
+
+    monkeypatch.setenv("AGENT_BROWSER_WEBGPU", "1")
+    with pytest.raises(ValueError, match="Pass webgpu=False"):
+        Browser.attach(CDPTarget(port=9222))
+    monkeypatch.delenv("AGENT_BROWSER_WEBGPU")
+
+    async def run() -> None:
+        with pytest.raises(ValueError, match="webgpu requires a local browser launch"):
+            await AsyncBrowser.attach(
+                CDPTarget(port=9222),
+                launch=LaunchOptions(webgpu=True),
+            )
+        with pytest.raises(ValueError, match="no_xvfb requires a local browser launch"):
+            await AsyncBrowser.launch(LaunchOptions(provider="remote", no_xvfb=True))
+
+    asyncio.run(run())
+
+
 def test_session_dashboard_requires_named_options() -> None:
     with pytest.raises(TypeError, match="DashboardOptions"):
         SessionOptions(dashboard=cast(Any, True))
@@ -799,6 +826,95 @@ def test_public_options_use_named_types_and_python_units(
     assert LaunchOptions(headless=False).headless is False
     with pytest.raises(TypeError, match="LaunchOptions"):
         cast(Any, Browser.launch)({"headless": True})
+
+
+def test_launch_options_serialize_webgpu_process_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_native = ScriptedNative(default={})
+    sync_from_configuration = Browser._from_configuration
+
+    def sync_browser(
+        cls: type[Browser],
+        configuration: Any,
+        *,
+        session: SessionOptions | None = None,
+        native_session: NativeSession | None = None,
+    ) -> Browser:
+        del cls, native_session
+        return sync_from_configuration(
+            configuration,
+            session=session,
+            native_session=NativeSession(native=sync_native),
+        )
+
+    monkeypatch.setattr(Browser, "_from_configuration", classmethod(sync_browser))
+
+    with Browser.launch():
+        pass
+    with Browser.launch(LaunchOptions(webgpu=True, no_xvfb=True)):
+        pass
+    with Browser.attach(
+        CDPTarget(port=9222),
+        launch=LaunchOptions(webgpu=False, no_xvfb=False),
+    ):
+        pass
+
+    sync_default = _command_without_id(sync_native.commands[0])
+    assert "webgpu" not in sync_default
+    assert "noXvfb" not in sync_default
+    sync_launch = _command_without_id(sync_native.commands[2])
+    assert sync_launch["action"] == "launch"
+    assert sync_launch["webgpu"] is True
+    assert sync_launch["noXvfb"] is True
+    sync_attach = _command_without_id(sync_native.commands[4])
+    assert sync_attach["cdpPort"] == 9222
+    assert sync_attach["webgpu"] is False
+    assert sync_attach["noXvfb"] is False
+
+    async def run() -> None:
+        async_native = ScriptedNative(default={})
+        async_from_configuration = AsyncBrowser._from_configuration
+
+        def async_browser(
+            cls: type[AsyncBrowser],
+            configuration: Any,
+            *,
+            session: SessionOptions | None = None,
+            native_session: AsyncNativeSession | None = None,
+        ) -> AsyncBrowser:
+            del cls, native_session
+            return async_from_configuration(
+                configuration,
+                session=session,
+                native_session=AsyncNativeSession(native=async_native),
+            )
+
+        monkeypatch.setattr(AsyncBrowser, "_from_configuration", classmethod(async_browser))
+
+        async with await AsyncBrowser.launch():
+            pass
+        async with await AsyncBrowser.launch(LaunchOptions(webgpu=True, no_xvfb=True)):
+            pass
+        async with await AsyncBrowser.attach(
+            CDPTarget(port=9222),
+            launch=LaunchOptions(webgpu=False, no_xvfb=False),
+        ):
+            pass
+
+        async_default = _command_without_id(async_native.commands[0])
+        assert "webgpu" not in async_default
+        assert "noXvfb" not in async_default
+        async_launch = _command_without_id(async_native.commands[2])
+        assert async_launch["action"] == "launch"
+        assert async_launch["webgpu"] is True
+        assert async_launch["noXvfb"] is True
+        async_attach = _command_without_id(async_native.commands[4])
+        assert async_attach["cdpPort"] == 9222
+        assert async_attach["webgpu"] is False
+        assert async_attach["noXvfb"] is False
+
+    asyncio.run(run())
 
 
 def test_async_core_uses_the_same_nouns() -> None:

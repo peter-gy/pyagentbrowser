@@ -31,6 +31,59 @@ from agentbrowser import (
 
 pytestmark = pytest.mark.integration
 
+_WEBGPU_RENDER_PROBE = r"""(async () => {
+  const withTimeout = (promise, label) => Promise.race([
+    Promise.resolve(promise),
+    new Promise((_, reject) => setTimeout(
+      () => reject(new Error(label + " timed out")),
+      10000,
+    )),
+  ]);
+  try {
+    if (!window.isSecureContext) return {stage: "context"};
+    if (!navigator.gpu) return {stage: "api"};
+    let adapter = null;
+    for (let attempt = 0; attempt < 5 && !adapter; attempt++) {
+      if (attempt > 0) await new Promise(resolve => setTimeout(resolve, 1000));
+      adapter = await withTimeout(navigator.gpu.requestAdapter(), "requestAdapter");
+    }
+    if (!adapter) return {stage: "adapter"};
+    const device = await withTimeout(adapter.requestDevice(), "requestDevice");
+    const texture = device.createTexture({
+      size: [1, 1],
+      format: "rgba8unorm",
+      usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
+    });
+    const buffer = device.createBuffer({
+      size: 256,
+      usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+    });
+    const encoder = device.createCommandEncoder();
+    const pass = encoder.beginRenderPass({colorAttachments: [{
+      view: texture.createView(),
+      clearValue: {r: 1, g: 0, b: 0, a: 1},
+      loadOp: "clear",
+      storeOp: "store",
+    }]});
+    pass.end();
+    encoder.copyTextureToBuffer(
+      {texture},
+      {buffer, bytesPerRow: 256},
+      [1, 1],
+    );
+    device.queue.submit([encoder.finish()]);
+    await withTimeout(buffer.mapAsync(GPUMapMode.READ), "mapAsync");
+    const pixel = Array.from(new Uint8Array(buffer.getMappedRange()).slice(0, 4));
+    buffer.unmap();
+    buffer.destroy();
+    texture.destroy();
+    device.destroy();
+    return {stage: "pixel", pixel};
+  } catch (error) {
+    return {stage: "error", error: String(error && error.message || error)};
+  }
+})()"""
+
 
 @dataclass(frozen=True, slots=True)
 class LocalSite:
@@ -161,6 +214,24 @@ def test_cdp_frame_resolution_uses_the_active_native_target(
 
         assert frame.url == f"{local_site.base_url}/frame.html"
         assert frame.evaluate("document.title") == "Nested"
+
+
+def test_webgpu_launch_preset_renders_offscreen_pixels_across_native_boundary(
+    chrome_path: Path,
+    local_site: LocalSite,
+) -> None:
+    session = SessionOptions(
+        session_id=f"webgpu-{time.monotonic_ns()}",
+        timeout=90.0,
+    )
+    with Browser.launch(
+        LaunchOptions(executable_path=chrome_path, webgpu=True),
+        session=session,
+    ) as browser:
+        browser.open(local_site.base_url)
+        result = browser.evaluate(_WEBGPU_RENDER_PROBE)
+
+    assert result == {"stage": "pixel", "pixel": [255, 0, 0, 255]}
 
 
 def test_confirmation_completes_ref_transition_evidence(chrome_path: Path) -> None:

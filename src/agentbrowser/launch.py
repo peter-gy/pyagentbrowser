@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from pathlib import Path
@@ -31,6 +32,8 @@ class LaunchOptions:
     provider: str | None = None
     color_scheme: ColorScheme | None = None
     hide_scrollbars: bool | None = None
+    webgpu: bool | None = None
+    no_xvfb: bool | None = None
     args: Sequence[str] = ()
     allow_file_access: bool = False
     ignore_https_errors: bool = False
@@ -150,11 +153,33 @@ class LaunchConfiguration:
     auto_connect: bool = False
     color_scheme: ColorScheme | None = None
     hide_scrollbars: bool | None = None
+    webgpu: bool | None = None
+    no_xvfb: bool | None = None
     args: tuple[str, ...] = ()
     allow_file_access: bool = False
     ignore_https_errors: bool = False
     user_agent: str | None = None
     download_path: str | None = None
+
+    def __post_init__(self) -> None:
+        external_browser = (
+            self.cdp_url is not None
+            or self.cdp_port is not None
+            or self.auto_connect
+            or self.provider is not None
+        )
+        if not external_browser:
+            return
+        webgpu_enabled = self.webgpu
+        if webgpu_enabled is None:
+            webgpu_enabled = os.environ.get("AGENT_BROWSER_WEBGPU") in {"1", "true"}
+        if webgpu_enabled:
+            raise ValueError(
+                "webgpu requires a local browser launch. Pass webgpu=False to override "
+                "AGENT_BROWSER_WEBGPU for CDP and provider connections"
+            )
+        if self.no_xvfb is True:
+            raise ValueError("no_xvfb requires a local browser launch")
 
     @classmethod
     def from_options(
@@ -174,6 +199,8 @@ class LaunchConfiguration:
         auto_connect: bool = False,
         color_scheme: ColorScheme | None = None,
         hide_scrollbars: bool | None = None,
+        webgpu: bool | None = None,
+        no_xvfb: bool | None = None,
         args: Sequence[str] = (),
         allow_file_access: bool = False,
         ignore_https_errors: bool = False,
@@ -196,6 +223,8 @@ class LaunchConfiguration:
             auto_connect=auto_connect,
             color_scheme=color_scheme,
             hide_scrollbars=hide_scrollbars,
+            webgpu=webgpu,
+            no_xvfb=no_xvfb,
             args=tuple(args),
             allow_file_access=allow_file_access,
             ignore_https_errors=ignore_https_errors,
@@ -229,6 +258,8 @@ class LaunchConfiguration:
             auto_connect=target.auto_connect if target is not None else False,
             color_scheme=options.color_scheme,
             hide_scrollbars=options.hide_scrollbars,
+            webgpu=options.webgpu,
+            no_xvfb=options.no_xvfb,
             args=options.args,
             allow_file_access=options.allow_file_access,
             ignore_https_errors=options.ignore_https_errors,
@@ -251,6 +282,8 @@ class LaunchConfiguration:
             provider=options.provider,
             color_scheme=options.color_scheme,
             hide_scrollbars=options.hide_scrollbars,
+            webgpu=options.webgpu,
+            no_xvfb=options.no_xvfb,
             args=tuple(options.args),
             allow_file_access=options.allow_file_access,
             ignore_https_errors=options.ignore_https_errors,
@@ -285,5 +318,7 @@ class LaunchConfiguration:
             "downloadPath": optional(config.download_path),
             "colorScheme": optional(config.color_scheme),
             "hideScrollbars": optional(resolved_hide_scrollbars),
+            "webgpu": optional(config.webgpu),
+            "noXvfb": optional(config.no_xvfb),
             "allowedDomains": optional(config.allowed_domains),
         }

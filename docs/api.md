@@ -83,6 +83,8 @@ The `browser.page` namespace contains the full page surface, including history n
 | `provider` | `None` | Selects a native browser provider. |
 | `color_scheme` | `None` | Sets the preferred color scheme. |
 | `hide_scrollbars` | `None` | Controls native scrollbar visibility. |
+| `webgpu` | `None` | Inherits the native setting. `True` enables the WebGPU preset for a local browser launch. `False` overrides `AGENT_BROWSER_WEBGPU`. |
+| `no_xvfb` | `None` | Inherits the native setting. `True` disables automatic Xvfb startup for local headed launches on displayless Linux hosts. `False` overrides `AGENT_BROWSER_NO_XVFB`. |
 | `args` | `()` | Adds browser arguments. Pass a sequence. |
 | `allow_file_access` | `False` | Permits file URL access. |
 | `ignore_https_errors` | `False` | Continues through certificate errors. |
@@ -90,6 +92,7 @@ The `browser.page` namespace contains the full page surface, including history n
 | `download_path` | `None` | Sets the default download directory. |
 
 Scalar strings raise `TypeError` for `extensions` and `args`.
+`Browser.attach()` and provider launches raise `ValueError` when WebGPU is enabled. Pass `webgpu=False` to override `AGENT_BROWSER_WEBGPU` for those connection modes.
 
 ### `SessionOptions`
 

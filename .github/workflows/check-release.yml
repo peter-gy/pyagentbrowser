@@ -130,6 +130,9 @@ jobs:
         run: |
           wheel=$(find dist -name '*.whl' -print -quit)
           uv pip install --python .venv "$wheel" "websockets>=15.0"
+      - name: Install Linux WebGPU dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libvulkan1 mesa-vulkan-drivers
       - name: Test native boundary
         run: |
           marker=native_smoke
