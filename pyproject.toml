@@ -1,6 +1,6 @@
 [project]
 name = "pyagentbrowser"
-version = "0.31.2rc0"
+version = "0.32.3"
 description = "Python SDK for controlling the native agent-browser engine in-process"
 readme = "README.md"
 authors = [
