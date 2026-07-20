@@ -72,6 +72,31 @@ def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
 
 
 @pytest.mark.parametrize(
+    ("options", "command", "match"),
+    [
+        ({"restore_key": "saved"}, {}, "--restore"),
+        ({}, {"storageState": "/tmp/state.json"}, "storageState"),
+        ({}, {"cdpPort": 9222}, "--cdp"),
+        ({}, {"profile": "/tmp/profile"}, "--profile"),
+        ({}, {"args": ["--user-data-dir=/tmp/profile"]}, "--user-data-dir"),
+        ({}, {"provider": "safari"}, "Safari provider"),
+    ],
+)
+def test_native_allowlist_rejects_uncontained_launch_modes(
+    options: dict[str, object],
+    command: dict[str, object],
+    match: str,
+) -> None:
+    native = NativeBrowser(json.dumps({"allowed_domains": "example.com", **options}))
+    response = json.loads(
+        native.execute_json(json.dumps({"id": "launch", "action": "launch", **command}))
+    )
+
+    assert response["success"] is False
+    assert match in response["error"]
+
+
+@pytest.mark.parametrize(
     "options,command,match",
     [
         ("{not-json", None, "invalid native options JSON"),

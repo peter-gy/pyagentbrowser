@@ -66,6 +66,48 @@ def _launch_then_navigate_native() -> ScriptedNative:
     )
 
 
+def _chained_tab_switch_native() -> ScriptedNative:
+    attempts = 0
+    existing = {
+        "id": "existing",
+        "url": "https://example.com/old",
+        "label": "work",
+    }
+
+    def confirm(command: dict[str, Any]) -> dict[str, Any]:
+        nonlocal attempts
+        assert command["confirmation_id"] == "confirm-switch"
+        attempts += 1
+        if attempts == 1:
+            return {
+                "success": True,
+                "data": {
+                    "confirmed": True,
+                    "action": "tab_switch",
+                    "result": {
+                        "id": "confirmed-tab-switch",
+                        "success": True,
+                        "data": {
+                            "confirmation_required": True,
+                            "confirmation_id": "confirm-switch",
+                            "action": "plugin:provider:launch.mutate",
+                        },
+                    },
+                },
+            }
+        return _confirmed("plugin:provider:launch.mutate", {})
+
+    return ScriptedNative(
+        {
+            "tab_list": {"tabs": [existing]},
+            "tab_switch": _confirmation("tab_switch", "confirm-switch"),
+            "confirm": confirm,
+            "navigate": {},
+            "__agent_browser_internal_shutdown": {},
+        }
+    )
+
+
 def _snapshot(*, submitted: bool) -> dict[str, Any]:
     return {
         "snapshot": '@e1 [button] "Submit"',
@@ -136,6 +178,55 @@ def test_async_repeated_launch_and_navigation_confirmation_returns_browser() -> 
             "confirm",
             "navigate",
             "confirm",
+        ]
+        await browser.close()
+
+    asyncio.run(run())
+
+
+def test_sync_chained_confirmation_preserves_decoder_and_completion() -> None:
+    native = _chained_tab_switch_native()
+    browser = _browser(native)
+
+    with pytest.raises(ConfirmationRequired) as first:
+        browser.tabs.open("example.com/new", label="work")
+    with pytest.raises(ConfirmationRequired) as second:
+        first.value.pending.confirm()
+
+    tab = second.value.pending.confirm()
+    assert tab.id == "existing"
+    assert tab.url == "https://example.com/new"
+    assert tab.active is True
+    assert [command["action"] for command in native.commands[:5]] == [
+        "tab_list",
+        "tab_switch",
+        "confirm",
+        "confirm",
+        "navigate",
+    ]
+    browser.close()
+
+
+def test_async_chained_confirmation_preserves_decoder_and_completion() -> None:
+    async def run() -> None:
+        native = _chained_tab_switch_native()
+        browser = _async_browser(native)
+
+        with pytest.raises(ConfirmationRequired) as first:
+            await browser.tabs.open("example.com/new", label="work")
+        with pytest.raises(ConfirmationRequired) as second:
+            await first.value.pending.confirm()
+
+        tab = await second.value.pending.confirm()
+        assert tab.id == "existing"
+        assert tab.url == "https://example.com/new"
+        assert tab.active is True
+        assert [command["action"] for command in native.commands[:5]] == [
+            "tab_list",
+            "tab_switch",
+            "confirm",
+            "confirm",
+            "navigate",
         ]
         await browser.close()
 

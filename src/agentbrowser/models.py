@@ -22,6 +22,7 @@ JSONValue: TypeAlias = object
 JSONObject: TypeAlias = dict[str, JSONValue]
 JSONMapping: TypeAlias = Mapping[str, JSONValue]
 LoadState = Literal["load", "domcontentloaded", "networkidle", "none"]
+HarContentMode = Literal["all", "text", "none"]
 LlmsMode = Literal["index", "full"]
 MouseButton = Literal["left", "right", "middle"]
 MouseEventType = Literal["mouseMoved", "mousePressed", "mouseReleased", "mouseWheel"]

@@ -27,6 +27,7 @@ from agentbrowser import (
     ReadMode,
     ReadResult,
     Ref,
+    RestoreOptions,
     RestoreSaveError,
     Screenshot,
     SessionOptions,
@@ -156,9 +157,57 @@ def test_query_factories_validate_empty_and_negative_inputs() -> None:
         (lambda: SessionOptions(confirm_actions=cast(Any, "click")), TypeError, "confirm_actions"),
         (lambda: LaunchOptions(extensions=cast(Any, "extension")), TypeError, "extensions"),
         (lambda: LaunchOptions(args=cast(Any, "--headless")), TypeError, "args"),
+        (
+            lambda: SessionOptions(
+                restore=RestoreOptions("saved"),
+                allowed_domains=("example.com",),
+            ),
+            ValueError,
+            "allowed_domains",
+        ),
+        (
+            lambda: Browser.launch(
+                LaunchOptions(storage_state="state.json"),
+                session=SessionOptions(allowed_domains=("example.com",)),
+            ),
+            ValueError,
+            "storage_state",
+        ),
+        (
+            lambda: Browser.launch(
+                LaunchOptions(profile="profile"),
+                session=SessionOptions(allowed_domains=("example.com",)),
+            ),
+            ValueError,
+            "profile",
+        ),
+        (
+            lambda: Browser.launch(
+                LaunchOptions(args=("--user-data-dir=profile",)),
+                session=SessionOptions(allowed_domains=("example.com",)),
+            ),
+            ValueError,
+            "user-data-dir",
+        ),
+        (
+            lambda: Browser.launch(
+                LaunchOptions(provider="safari"),
+                session=SessionOptions(allowed_domains=("example.com",)),
+            ),
+            ValueError,
+            "safari",
+        ),
+        (
+            lambda: Browser.attach(
+                CDPTarget(port=9222),
+                session=SessionOptions(allowed_domains=("example.com",)),
+            ),
+            ValueError,
+            "CDP attachment",
+        ),
     ],
 )
-def test_public_configuration_rejects_ambiguous_values(
+def test_public_configuration_rejects_invalid_values(
     factory: Any,
     error: type[Exception],
     match: str,
@@ -420,6 +469,11 @@ def test_typed_namespaces_decode_successful_native_data(
             },
         ),
         (
+            lambda browser: browser.network.har_start(content="all"),
+            "har_start",
+            {"content": "all"},
+        ),
+        (
             lambda browser: browser.scripts.add(script="window.ready = true"),
             "addscript",
             {"script": "window.ready = true"},
@@ -477,6 +531,21 @@ def test_namespace_commands_serialize_supported_values(
     assert {key: command[key] for key in expected_params} == expected_params
 
 
+def test_har_start_rejects_an_unknown_content_mode() -> None:
+    native = ScriptedNative(default={})
+    browser = _browser(native)
+
+    with pytest.raises(ValueError, match=r"all.*text.*none"):
+        browser.network.har_start(content=cast(Any, "binary"))
+
+    assert native.commands == []
+
+
+def test_har_content_mode_is_a_package_export() -> None:
+    assert "HarContentMode" in agentbrowser.__all__
+    assert agentbrowser.HarContentMode is not None
+
+
 def test_path_namespaces_return_typed_paths(tmp_path: Path) -> None:
     pdf = tmp_path / "page.pdf"
     state = tmp_path / "state.json"
@@ -485,6 +554,7 @@ def test_path_namespaces_return_typed_paths(tmp_path: Path) -> None:
         {
             "pdf": lambda command: {"path": command["path"]},
             "state_save": lambda command: {"path": command["path"]},
+            "state_load": {},
             "waitfordownload": {"path": str(download)},
         }
     )
@@ -492,9 +562,11 @@ def test_path_namespaces_return_typed_paths(tmp_path: Path) -> None:
 
     assert browser.capture.pdf(pdf, landscape=True) == pdf
     assert browser.state.save(state, unsafe_export_all=True) == state
+    browser.state.load(state, unsafe_import_all=True)
     assert browser.downloads.wait() == download
     assert native.commands[0]["landscape"] is True
     assert native.commands[1]["unsafeExportAll"] is True
+    assert native.commands[2]["unsafeImportAll"] is True
 
 
 def test_tabs_open_creates_a_labelled_tab_when_no_reusable_tab_exists() -> None:
@@ -943,6 +1015,21 @@ def test_async_core_uses_the_same_nouns() -> None:
         assert result.save_status == "saved"
         assert await browser.close() is result
         assert browser.closed is True
+
+    asyncio.run(run())
+
+
+def test_async_har_start_serializes_the_content_mode() -> None:
+    async def run() -> None:
+        native = ScriptedNative({"har_start": {}})
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+
+        await browser.network.har_start(content="none")
+
+        assert _command_without_id(native.commands[0]) == {
+            "action": "har_start",
+            "content": "none",
+        }
 
     asyncio.run(run())
 

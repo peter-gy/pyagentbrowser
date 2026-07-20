@@ -130,9 +130,33 @@ print(closed.save_status)
 
 An explicit `autosave_interval_ms` takes precedence over `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS`. `close()` raises `RestoreSaveError` after cleanup when persistence fails. Use `browser.state.save(path)` and `browser.state.load(path)` when the workflow owns the state file directly.
 
+## Capture network traffic
+
+[`browser.network`](api.md#browsernetwork) records an HTTP Archive with request
+metadata and selected response bodies:
+
+```python
+from agentbrowser import Browser
+
+with Browser.launch() as browser:
+    browser.network.har_start(content="text")
+    browser.open("https://example.com")
+    har_path = browser.network.har_stop("trace.har")
+
+print(har_path)
+```
+
+`content="text"` embeds text-like bodies up to 2 MiB each. Use `"all"` to
+include base64-encoded binary bodies or `"none"` to record metadata. One
+recording can embed up to 64 MiB. Treat the HAR as sensitive when the page uses
+cookies, authorization headers, or account data.
+
 ## Restrict domains and confirm actions
 
-[`SessionOptions.allowed_domains`](api.md#sessionoptions) applies at the Python boundary before native execution. It covers navigation, host-qualified URL patterns, cookies, permission origins, state files, and raw native commands.
+[`SessionOptions.allowed_domains`](api.md#sessionoptions) checks navigation,
+host-qualified URL patterns, cookies, permission origins, and raw native
+commands before native execution. State exports are filtered after the native
+write unless `unsafe_export_all=True`.
 
 ```python
 from agentbrowser import Browser, ConfirmationRequired, SessionOptions
@@ -151,6 +175,12 @@ with Browser.launch(session=session) as browser:
     except ConfirmationRequired as required:
         result = required.pending.confirm()
 ```
+
+Domain-restricted sessions launch a fresh controllable browser context so
+containment covers page requests, popups, frames, workers, and WebRTC before
+scripts run. Configure authentication after launch through browser APIs.
+Restore, storage-state replay, profiles, CDP attachment, and
+`browser.state.load()` raise an error while the allowlist is active.
 
 [`pending.confirm()`](api.md#confirmation) preserves the initiating method's return type. For a ref action, it also completes the requested wait, resulting snapshot, and diff. `pending.deny()` rejects the action and returns `None`.
 

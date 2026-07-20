@@ -1,6 +1,6 @@
 [package]
 name = "agent-browser"
-version = "0.31.2"
+version = "0.32.3"
 edition = "2021"
 description = "Library adapter for the agent-browser upstream submodule"
 license = "Apache-2.0"

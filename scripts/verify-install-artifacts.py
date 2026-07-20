@@ -38,7 +38,9 @@ assert isinstance(browser.session.status(), SessionStatus)
 assert isinstance(browser.close(), CloseResult)
 
 assert "core" in skills.available()
+assert "derive-client" in skills.available()
 assert skills.get("core").parts
+assert skills.get("derive-client").parts
 core = skills.get("core", full=True)
 assert core.files
 full_markdown = skills.markdown("core", full=True)

@@ -16,6 +16,7 @@ from agentbrowser.command_params import (
     cookies_clear_params,
     cookies_get_params,
     cookies_set_params,
+    har_start_params,
     keyboard_params,
     mouse_params,
     optional,
@@ -42,6 +43,7 @@ from agentbrowser.models import (
     ConfirmationRequired,
     ConsoleMessage,
     Cookie,
+    HarContentMode,
     JSONMapping,
     LoadState,
     MouseButton,
@@ -743,9 +745,9 @@ class AsyncNetwork:
             _decode=request_detail_from_data,
         )
 
-    async def har_start(self) -> None:
-        """Start HAR capture."""
-        await self.browser._command("har_start", _decode=_none)
+    async def har_start(self, *, content: HarContentMode = "text") -> None:
+        """Start HAR capture with the selected response-body content."""
+        await self.browser._command("har_start", _decode=_none, **har_start_params(content))
 
     async def har_stop(self, path: str | Path | None = None) -> Path:
         """Stop HAR capture and return the written file path."""
@@ -893,7 +895,10 @@ class AsyncState:
         )
 
     async def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> None:
-        """Load browser storage state from a file."""
+        """Load browser storage state from a file.
+
+        Raises `BrowserError` when the session uses `allowed_domains`.
+        """
         await self.browser._command(
             "state_load",
             _decode=_none,

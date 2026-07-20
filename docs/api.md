@@ -112,6 +112,12 @@ Scalar strings raise `TypeError` for `extensions` and `args`.
 
 Empty domain and action entries raise `ValueError`. Scalar strings raise `TypeError` for `allowed_domains` and `confirm_actions`.
 
+`allowed_domains` requires a fresh browser context so native containment starts
+before page, popup, frame, and worker scripts. It raises `ValueError` when used
+with restore, storage state, profiles, CDP attachment, iOS or Safari providers,
+or browser arguments that can open existing pages. Other providers must expose
+browser-level target attachment before page scripts start.
+
 ### Session IDs
 
 `session_id(*, scope="worktree", prefix=None, path=None) -> SessionId` derives a stable identifier from a worktree, current directory, or Git root. `SessionId` exposes `session`, `scope`, `path`, and `hash`. Converting it to `str` returns the session string accepted by `SessionOptions.session_id`.
@@ -283,8 +289,8 @@ It can inspect a lazy session before Chrome launches.
 | `storage.get(key=None, *, area="local")` | Reads one key or the full local or session storage area. |
 | `storage.set(key, value, *, area="local") -> None` | Writes one storage value. |
 | `storage.clear(*, area="local") -> None` | Clears one storage area. |
-| `state.save(path=None, *, unsafe_export_all=False) -> Path` | Writes cookies and origin storage. Domain allowlists filter the saved state. |
-| `state.load(path, *, unsafe_import_all=False) -> None` | Loads cookies and origin storage. Domain allowlists filter the input file. |
+| `state.save(path=None, *, unsafe_export_all=False) -> Path` | Writes cookies and origin storage. Domain allowlists filter the saved state unless `unsafe_export_all=True`. |
+| `state.load(path, *, unsafe_import_all=False) -> None` | Loads cookies and origin storage. A session with `allowed_domains` raises `BrowserError` before dispatch. |
 | `state.list() -> Mapping` | Lists saved native state. |
 | `state.show(path) -> Mapping` | Reads one saved-state record. |
 | `state.clear(path=None) -> None` | Clears selected saved state. |
@@ -322,9 +328,15 @@ Mutation methods return `None`. `clipboard.read()` returns a string.
 | `unroute(url=None) -> None` | Removes one route or all routes. |
 | `requests(*, clear=False, url_pattern=None, resource_type=None, method=None, status=None) -> tuple[NetworkRequest, ...]` | Returns captured request summaries. |
 | `request_detail(request_id) -> RequestDetail` | Returns request and response detail. |
-| `har_start() -> None` | Starts HAR capture. |
+| `har_start(*, content="text") -> None` | Starts HAR capture. `content` accepts `"text"`, `"all"`, or `"none"`. |
 | `har_stop(path=None) -> Path` | Stops HAR capture and returns the written path. |
 | `credentials(username, password) -> None` | Sets HTTP authentication credentials. |
+
+`content="text"` embeds text-like response bodies. `content="all"` also embeds
+binary bodies as base64. `content="none"` records response metadata. A body is
+omitted when it exceeds 2 MiB or would take the recording above 64 MiB. HAR
+files can contain cookies, authorization headers, request data, and response
+bodies.
 
 ### `browser.scripts`, `browser.diagnostics`, and `browser.active_frame`
 
@@ -367,7 +379,7 @@ Executes one native action and returns its complete response envelope. An unsucc
 
 Executes one native action and returns successful response data. `expect="object"` requires a mapping. `expect="any"` accepts every JSON value. Native failures raise `BrowserError`.
 
-Domain allowlists, policy confirmation, and browser or CDP lifecycle tracking apply to both methods. See the [`agent-browser` command reference at the embedded commit](https://github.com/vercel-labs/agent-browser/blob/afae698a51242166170b6fe4809dd57fe9f75798/README.md#commands) for native action names and parameters.
+Domain allowlists, policy confirmation, and browser or CDP lifecycle tracking apply to both methods. See the [`agent-browser` command reference at the embedded commit](https://github.com/vercel-labs/agent-browser/blob/81c336c1c20b80ac648e0416a7b6e0c0ae7878bb/README.md#commands) for native action names and parameters.
 
 ## Confirmation
 

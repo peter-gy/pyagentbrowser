@@ -17,6 +17,42 @@ from agentbrowser.models import (
     proxy_value,
 )
 
+_ALLOWLIST_BLOCKED_CHROME_SWITCHES = {
+    "app",
+    "app-id",
+    "app-launch-url-for-shortcuts-menu-item",
+    "load-and-launch-app",
+    "profile-directory",
+    "restore-last-session",
+    "restore-session",
+    "user-data-dir",
+}
+
+
+def _chrome_switch_name(arg: str) -> str | None:
+    value = arg.strip()
+    for prefix in ("--", "/", "-"):
+        if value.startswith(prefix):
+            switch = value.removeprefix(prefix).split("=", 1)[0].split(" ", 1)[0]
+            if switch and "/" not in switch and "\\" not in switch:
+                return switch.lower()
+            return None
+    return None
+
+
+def _allowlist_arg_conflict(args: Sequence[str]) -> str | None:
+    for arg in args:
+        value = arg.strip()
+        lowered = value.lower()
+        if lowered.startswith(("http://", "https://", "file://")):
+            return "a startup URL"
+        switch = _chrome_switch_name(arg)
+        if value and switch is None:
+            return "a startup URL or path"
+        if switch in _ALLOWLIST_BLOCKED_CHROME_SWITCHES:
+            return f"--{switch}"
+    return None
+
 
 @dataclass(frozen=True, slots=True)
 class LaunchOptions:
@@ -93,6 +129,11 @@ class SessionOptions:
             raise ValueError("allowed_domains entries must not be empty")
         if any(not action.strip() for action in actions):
             raise ValueError("confirm_actions entries must not be empty")
+        if domains and self.restore is not None:
+            raise ValueError(
+                "allowed_domains cannot be combined with restore because saved origins can "
+                "replay before containment starts"
+            )
         if self.dashboard is not None and not isinstance(self.dashboard, DashboardOptions):
             raise TypeError("dashboard must be DashboardOptions")
         object.__setattr__(self, "allowed_domains", domains)
@@ -162,6 +203,37 @@ class LaunchConfiguration:
     download_path: str | None = None
 
     def __post_init__(self) -> None:
+        if self.allowed_domains and self.allowed_domains.strip():
+            if self.storage_state is not None and self.storage_state.strip():
+                raise ValueError(
+                    "allowed_domains cannot be combined with storage_state because saved "
+                    "origins can replay before containment starts"
+                )
+            if self.cdp_url is not None or self.cdp_port is not None:
+                raise ValueError(
+                    "allowed_domains cannot be combined with CDP attachment because containment "
+                    "must start before page scripts"
+                )
+            if self.auto_connect:
+                raise ValueError(
+                    "allowed_domains cannot be combined with auto-connect because containment "
+                    "must start before page scripts"
+                )
+            if self.profile is not None:
+                raise ValueError(
+                    "allowed_domains cannot be combined with profile because Chrome can restore "
+                    "pages before containment starts"
+                )
+            if self.provider is not None and self.provider.strip().lower() in {"ios", "safari"}:
+                raise ValueError(
+                    f"allowed_domains cannot be enforced by the {self.provider.strip()} provider"
+                )
+            if conflict := _allowlist_arg_conflict(self.args):
+                raise ValueError(
+                    "allowed_domains cannot be combined with browser args containing "
+                    f"{conflict} because pages can open before containment starts"
+                )
+
         external_browser = (
             self.cdp_url is not None
             or self.cdp_port is not None

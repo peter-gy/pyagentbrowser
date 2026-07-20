@@ -147,3 +147,14 @@ jobs:
           PYAGENTBROWSER_CHROME="$chrome_path" \
           PYAGENTBROWSER_FAIL_ON_SKIP=1 \
           uv run --no-sync --python 3.14 pytest -q -m integration
+
+  gate:
+    name: Required gate
+    if: always()
+    needs: [build-linux, build-macos, build-windows, quality, sdk, native]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require every release check
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: jq --exit-status 'all(.[]; .result == "success")' <<<"$RESULTS"
