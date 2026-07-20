@@ -116,7 +116,9 @@ fails, fix forward with a new version and tag.
 
 CI uses the same ownership boundaries. `Release Check` separates quality, SDK
 versions, platform builds, and real-browser seams. `Publish` reuses the wheel
-builder, then verifies the public index from clean environments.
+builder, then verifies the public index from clean environments. `Required
+gate` reports one aggregate result after every `Release Check` job group
+finishes.
 
 ## Cross-platform source
 
