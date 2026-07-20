@@ -6,6 +6,7 @@ from typing import Any
 
 from agentbrowser.models import (
     OMIT,
+    HarContentMode,
     MouseButton,
     MouseEventType,
     ReadMode,
@@ -16,6 +17,8 @@ from agentbrowser.models import (
     path_value,
     paths_value,
 )
+
+HAR_CONTENT_MODES = frozenset({"all", "text", "none"})
 
 
 def optional(value: Any) -> Any:
@@ -143,6 +146,12 @@ def read_params(
         "headers": dict(headers) if headers is not None else OMIT,
         "allowedDomains": list(allowed_domains) if allowed_domains is not None else OMIT,
     }
+
+
+def har_start_params(content: HarContentMode = "text") -> dict[str, HarContentMode]:
+    if not isinstance(content, str) or content not in HAR_CONTENT_MODES:
+        raise ValueError("content must be 'all', 'text', or 'none'")
+    return {"content": content}
 
 
 def viewport_params(

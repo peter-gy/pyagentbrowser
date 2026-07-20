@@ -116,17 +116,259 @@ def test_exact_domain_does_not_authorize_a_wildcard_url_pattern() -> None:
     assert native.commands == []
 
 
-def test_raw_launch_cannot_weaken_the_session_allowlist() -> None:
+@pytest.mark.parametrize("allowed_domains", ["evil.example", ["evil.example"], [], None])
+def test_raw_launch_cannot_weaken_the_session_allowlist(allowed_domains: object) -> None:
     native = ScriptedNative({"launch": {}})
     browser = _browser(native)
 
     with pytest.raises(BrowserError, match="allowed domains"):
         browser.native.data(
             "launch",
-            allowedDomains="evil.example",
+            allowedDomains=allowed_domains,
         )
 
     assert native.commands == []
+
+
+def test_raw_launch_accepts_the_matching_array_allowlist() -> None:
+    native = ScriptedNative({"launch": {}, "navigate": {}})
+    browser = _browser(native)
+
+    browser.native.data("launch", allowedDomains=["example.com"])
+
+    with pytest.raises(BrowserError, match="not in the allowed domains"):
+        browser.native.data("navigate", url="https://evil.example")
+    assert [command["action"] for command in native.commands] == ["launch"]
+
+
+def test_raw_launch_adopts_an_array_allowlist() -> None:
+    native = ScriptedNative(
+        {
+            "launch": {},
+            "cookies_get": {
+                "cookies": [
+                    {"name": "allowed", "value": "1", "domain": ".example.com"},
+                    {"name": "blocked", "value": "2", "domain": ".evil.example"},
+                ]
+            },
+        }
+    )
+    browser = _browser(native, domains="")
+
+    browser.native.data("launch", allowedDomains=["example.com"])
+    cookies = browser.native.data("cookies_get")["cookies"]
+
+    assert cookies == [{"name": "allowed", "value": "1", "domain": ".example.com"}]
+
+
+def test_denied_raw_launch_does_not_adopt_its_array_allowlist() -> None:
+    native = ScriptedNative(
+        {
+            "launch": {
+                "success": True,
+                "data": {
+                    "confirmation_required": True,
+                    "confirmation_id": "launch-confirmation",
+                    "action": "launch",
+                },
+            },
+            "deny": {},
+            "navigate": {},
+        }
+    )
+    browser = _browser(native, domains="")
+
+    with pytest.raises(ConfirmationRequired) as required:
+        browser.native.data("launch", allowedDomains=["example.com"])
+
+    required.value.pending.deny()
+    browser.native.data("navigate", url="https://evil.example")
+    assert [command["action"] for command in native.commands] == ["launch", "deny", "navigate"]
+
+
+def test_confirmed_raw_launch_adopts_its_array_allowlist() -> None:
+    native = ScriptedNative(
+        {
+            "launch": {
+                "success": True,
+                "data": {
+                    "confirmation_required": True,
+                    "confirmation_id": "launch-confirmation",
+                    "action": "launch",
+                },
+            },
+            "confirm": {
+                "success": True,
+                "data": {
+                    "confirmed": True,
+                    "action": "launch",
+                    "result": {"id": "confirmed-launch", "success": True, "data": {}},
+                },
+            },
+            "navigate": {},
+        }
+    )
+    browser = _browser(native, domains="")
+
+    with pytest.raises(ConfirmationRequired) as required:
+        browser.native.data("launch", allowedDomains=["example.com"])
+
+    required.value.pending.confirm()
+    with pytest.raises(BrowserError, match="not in the allowed domains"):
+        browser.native.data("navigate", url="https://evil.example")
+    assert [command["action"] for command in native.commands] == ["launch", "confirm"]
+
+
+def test_failed_confirm_can_retry_and_adopt_the_launch_allowlist() -> None:
+    attempts = 0
+
+    def confirm(_command: dict[str, Any]) -> dict[str, Any]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {"success": False, "error": "policy reload failed"}
+        return {
+            "success": True,
+            "data": {
+                "confirmed": True,
+                "action": "launch",
+                "result": {"id": "confirmed-launch", "success": True, "data": {}},
+            },
+        }
+
+    native = ScriptedNative(
+        {
+            "launch": {
+                "success": True,
+                "data": {
+                    "confirmation_required": True,
+                    "confirmation_id": "launch-confirmation",
+                    "action": "launch",
+                },
+            },
+            "confirm": confirm,
+            "navigate": {},
+        }
+    )
+    browser = _browser(native, domains="")
+
+    with pytest.raises(ConfirmationRequired) as required:
+        browser.native.data("launch", allowedDomains=["example.com"])
+
+    with pytest.raises(BrowserError, match="policy reload failed"):
+        required.value.pending.confirm()
+    required.value.pending.confirm()
+    with pytest.raises(BrowserError, match="not in the allowed domains"):
+        browser.native.data("navigate", url="https://evil.example")
+    assert [command["action"] for command in native.commands] == [
+        "launch",
+        "confirm",
+        "confirm",
+    ]
+
+
+def test_failed_confirmed_launch_does_not_adopt_its_array_allowlist() -> None:
+    native = ScriptedNative(
+        {
+            "launch": {
+                "success": True,
+                "data": {
+                    "confirmation_required": True,
+                    "confirmation_id": "launch-confirmation",
+                    "action": "launch",
+                },
+            },
+            "confirm": {
+                "success": True,
+                "data": {
+                    "confirmed": True,
+                    "action": "launch",
+                    "result": {
+                        "id": "failed-launch",
+                        "success": False,
+                        "error": "launch failed",
+                    },
+                },
+            },
+            "navigate": {},
+        }
+    )
+    browser = _browser(native, domains="")
+
+    with pytest.raises(ConfirmationRequired) as required:
+        browser.native.data("launch", allowedDomains=["example.com"])
+
+    with pytest.raises(BrowserError, match="launch failed"):
+        required.value.pending.confirm()
+    browser.native.data("navigate", url="https://evil.example")
+    assert [command["action"] for command in native.commands] == [
+        "launch",
+        "confirm",
+        "navigate",
+    ]
+
+
+def test_chained_confirm_transfers_and_applies_the_launch_allowlist() -> None:
+    attempts = 0
+
+    def confirm(_command: dict[str, Any]) -> dict[str, Any]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {
+                "success": True,
+                "data": {
+                    "confirmed": True,
+                    "action": "launch",
+                    "result": {
+                        "id": "replayed-launch",
+                        "success": True,
+                        "data": {
+                            "confirmation_required": True,
+                            "confirmation_id": "launch-confirmation",
+                            "action": "plugin:provider:launch.mutate",
+                        },
+                    },
+                },
+            }
+        return {
+            "success": True,
+            "data": {
+                "confirmed": True,
+                "action": "plugin:provider:launch.mutate",
+                "result": {"id": "confirmed-launch", "success": True, "data": {}},
+            },
+        }
+
+    native = ScriptedNative(
+        {
+            "launch": {
+                "success": True,
+                "data": {
+                    "confirmation_required": True,
+                    "confirmation_id": "launch-confirmation",
+                    "action": "launch",
+                },
+            },
+            "confirm": confirm,
+            "navigate": {},
+        }
+    )
+    browser = _browser(native, domains="")
+
+    with pytest.raises(ConfirmationRequired) as first:
+        browser.native.data("launch", allowedDomains=["example.com"])
+    with pytest.raises(ConfirmationRequired) as second:
+        first.value.pending.confirm()
+
+    second.value.pending.confirm()
+    with pytest.raises(BrowserError, match="not in the allowed domains"):
+        browser.native.data("navigate", url="https://evil.example")
+    assert [command["action"] for command in native.commands] == [
+        "launch",
+        "confirm",
+        "confirm",
+    ]
 
 
 def test_cookie_responses_are_filtered_at_the_python_boundary() -> None:
@@ -191,102 +433,26 @@ def test_permissions_origin_is_checked_before_native_dispatch() -> None:
     assert native.commands == []
 
 
-def test_state_load_filters_disallowed_origins_before_native_dispatch(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text(
-        json.dumps(
-            {
-                "cookies": [],
-                "origins": [
-                    {"origin": "https://example.com", "localStorage": []},
-                    {"origin": "https://evil.example", "localStorage": []},
-                ],
-            }
-        )
-    )
-    captured: dict[str, Any] = {}
-    prepared_path: Path | None = None
-
-    def state_load(command: dict[str, Any]) -> dict[str, Any]:
-        nonlocal prepared_path
-        filtered = Path(str(command["path"]))
-        prepared_path = filtered
-        captured.update(json.loads(filtered.read_text()))
-        return {}
-
-    native = ScriptedNative({"state_load": state_load})
+def test_state_load_rejects_origin_replay_before_native_dispatch(tmp_path: Path) -> None:
+    native = ScriptedNative({"state_load": {}})
     browser = _browser(native)
-    browser.native.data("state_load", path=source)
 
-    assert [origin["origin"] for origin in captured["origins"]] == ["https://example.com"]
-    assert prepared_path is not None
-    assert prepared_path != source
-    assert not prepared_path.exists()
+    with pytest.raises(BrowserError, match="saved origins") as denied:
+        browser.state.load(tmp_path / "state.json")
 
-
-def test_unsafe_state_import_preserves_the_explicit_source_file(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text(
-        json.dumps(
-            {
-                "cookies": [],
-                "origins": [
-                    {"origin": "https://example.com", "localStorage": []},
-                    {"origin": "https://evil.example", "localStorage": []},
-                ],
-            }
-        )
-    )
-    captured: dict[str, Any] = {}
-
-    def state_load(command: dict[str, Any]) -> dict[str, Any]:
-        captured["path"] = command["path"]
-        captured["state"] = json.loads(Path(str(command["path"])).read_text())
-        return {}
-
-    browser = _browser(ScriptedNative({"state_load": state_load}))
-    browser.native.data("state_load", path=source, unsafeImportAll=True)
-
-    assert captured["path"] == str(source)
-    assert [origin["origin"] for origin in captured["state"]["origins"]] == [
-        "https://example.com",
-        "https://evil.example",
-    ]
+    assert denied.value.code == "allowed_domains"
+    assert native.commands == []
 
 
-def test_launch_filters_storage_state_and_removes_its_prepared_copy(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text(
-        json.dumps(
-            {
-                "cookies": [
-                    {"name": "allowed", "value": "1", "domain": ".example.com"},
-                    {"name": "blocked", "value": "2", "domain": ".evil.example"},
-                ],
-                "origins": [
-                    {"origin": "https://example.com", "localStorage": []},
-                    {"origin": "https://evil.example", "localStorage": []},
-                ],
-            }
-        )
-    )
-    captured: dict[str, Any] = {}
-    prepared_path: Path | None = None
+def test_launch_rejects_storage_state_before_native_dispatch(tmp_path: Path) -> None:
+    native = ScriptedNative({"launch": {}})
+    browser = _browser(native)
 
-    def launch(command: dict[str, Any]) -> dict[str, Any]:
-        nonlocal prepared_path
-        prepared_path = Path(str(command["storageState"]))
-        captured.update(json.loads(prepared_path.read_text()))
-        return {}
+    with pytest.raises(BrowserError, match="storage_state") as denied:
+        browser.native.data("launch", storageState=tmp_path / "state.json")
 
-    browser = _browser(ScriptedNative({"launch": launch}))
-    browser.native.data("launch", storageState=source)
-
-    assert [cookie["name"] for cookie in captured["cookies"]] == ["allowed"]
-    assert [origin["origin"] for origin in captured["origins"]] == ["https://example.com"]
-    assert prepared_path is not None
-    assert prepared_path != source
-    assert not prepared_path.exists()
+    assert denied.value.code == "allowed_domains"
+    assert native.commands == []
 
 
 @pytest.mark.parametrize(
@@ -319,19 +485,6 @@ def test_state_save_applies_the_requested_export_scope(
 
     saved = json.loads(target.read_text())
     assert [origin["origin"] for origin in saved["origins"]] == expected_origins
-
-
-def test_malformed_state_is_rejected_before_native_dispatch(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text("not-json")
-    native = ScriptedNative({"state_load": {}})
-    browser = _browser(native)
-
-    with pytest.raises(BrowserError) as denied:
-        browser.native.data("state_load", path=source)
-
-    assert denied.value.code == "allowed_domains"
-    assert native.commands == []
 
 
 def test_confirmed_cookie_response_keeps_the_original_allowlist() -> None:
@@ -374,121 +527,3 @@ def test_confirmed_state_save_filters_the_deferred_response(tmp_path: Path) -> N
     required.value.pending.confirm()
     saved = json.loads(target.read_text())
     assert [origin["origin"] for origin in saved["origins"]] == ["https://example.com"]
-
-
-def test_confirmed_state_load_retains_filtered_input_until_resolution(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text(
-        json.dumps(
-            {
-                "cookies": [],
-                "origins": [
-                    {"origin": "https://example.com", "localStorage": []},
-                    {"origin": "https://evil.example", "localStorage": []},
-                ],
-            }
-        )
-    )
-    captured: dict[str, Any] = {}
-    prepared_path: Path | None = None
-
-    def state_load(command: dict[str, Any]) -> dict[str, Any]:
-        nonlocal prepared_path
-        prepared_path = Path(str(command["path"]))
-        return {
-            "success": True,
-            "data": {
-                "confirmation_required": True,
-                "confirmation_id": "confirm-state-load",
-                "action": "state_load",
-            },
-        }
-
-    def confirm(_command: dict[str, Any]) -> dict[str, Any]:
-        assert prepared_path is not None
-        captured.update(json.loads(prepared_path.read_text()))
-        return {
-            "success": True,
-            "data": {
-                "confirmed": True,
-                "action": "state_load",
-                "result": {
-                    "id": "confirmed-state-load",
-                    "success": True,
-                    "data": {},
-                },
-            },
-        }
-
-    browser = _browser(ScriptedNative({"state_load": state_load, "confirm": confirm}))
-
-    with pytest.raises(ConfirmationRequired) as required:
-        browser.native.data("state_load", path=source)
-
-    required.value.pending.confirm()
-    assert [origin["origin"] for origin in captured["origins"]] == ["https://example.com"]
-    assert prepared_path is not None
-    assert not prepared_path.exists()
-
-
-def test_denied_state_load_removes_its_retained_input(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text(json.dumps({"cookies": [], "origins": []}))
-    prepared_path: Path | None = None
-
-    def state_load(command: dict[str, Any]) -> dict[str, Any]:
-        nonlocal prepared_path
-        prepared_path = Path(str(command["path"]))
-        return {
-            "success": True,
-            "data": {
-                "confirmation_required": True,
-                "confirmation_id": "deny-state-load",
-                "action": "state_load",
-            },
-        }
-
-    browser = _browser(ScriptedNative({"state_load": state_load, "deny": {}}))
-
-    with pytest.raises(ConfirmationRequired) as required:
-        browser.native.data("state_load", path=source)
-
-    assert prepared_path is not None
-    assert prepared_path.exists()
-    required.value.pending.deny()
-    assert not prepared_path.exists()
-
-
-def test_browser_close_removes_abandoned_confirmation_input(tmp_path: Path) -> None:
-    source = tmp_path / "state.json"
-    source.write_text(json.dumps({"cookies": [], "origins": []}))
-    prepared_path: Path | None = None
-
-    def state_load(command: dict[str, Any]) -> dict[str, Any]:
-        nonlocal prepared_path
-        prepared_path = Path(str(command["path"]))
-        return {
-            "success": True,
-            "data": {
-                "confirmation_required": True,
-                "confirmation_id": "abandoned-state-load",
-                "action": "state_load",
-            },
-        }
-
-    browser = _browser(
-        ScriptedNative(
-            {
-                "state_load": state_load,
-                "__agent_browser_internal_shutdown": {},
-            }
-        )
-    )
-
-    with pytest.raises(ConfirmationRequired):
-        browser.native.data("state_load", path=source)
-
-    assert prepared_path is not None
-    assert prepared_path.exists()
-    browser.close()
-    assert not prepared_path.exists()

@@ -28,6 +28,14 @@ def test_skills_get_loads_core_skill_payload() -> None:
     assert core.files == ()
 
 
+def test_skills_include_the_upstream_derive_client_workflow() -> None:
+    skill = skills.get("derive-client")
+
+    assert skill.name == "derive-client"
+    assert skill.description
+    assert SkillPart(path="SKILL.md", kind="main") in skill.parts
+
+
 def test_skills_full_load_includes_supplementary_parts() -> None:
     skill = skills.get("core", full=True)
     file_by_path = {file.path: file for file in skill.files}

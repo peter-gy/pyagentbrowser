@@ -24,15 +24,21 @@ from agentbrowser.models import (
 DEFAULT_TIMEOUT_MS = 15_000
 
 
+def _validate_restore_allowlist(
+    restore: RestoreOptions | None,
+    allowed_domains: str | None,
+) -> None:
+    if restore is not None and not DomainAllowlist(allowed_domains).is_empty:
+        raise ValueError(
+            "allowed_domains cannot be combined with restore because saved origins can replay "
+            "before containment starts"
+        )
+
+
 @dataclass(frozen=True, slots=True)
 class PendingConfirmation:
     command: JSONObject
     policy: DomainAllowlist
-    cleanup_paths: tuple[Path, ...] = ()
-
-    def cleanup(self) -> None:
-        for path in self.cleanup_paths:
-            path.unlink(missing_ok=True)
 
 
 class NativeEngine(Protocol):
@@ -86,6 +92,7 @@ class NativeSession:
         dashboard: bool | DashboardOptions | None = False,
         native: NativeEngine | None = None,
     ) -> None:
+        _validate_restore_allowlist(restore, allowed_domains)
         self._restore = restore
         self._native = native
         self._native_started = native is not None
@@ -122,11 +129,8 @@ class NativeSession:
             self._native_options["allowed_domains"] = allowed_domains
 
     def discard_pending_confirmations(self) -> None:
-        """Release resources retained by pending confirmations."""
-        pending = tuple(self._pending_confirmations.values())
+        """Discard pending confirmation context."""
         self._pending_confirmations.clear()
-        for confirmation in pending:
-            confirmation.cleanup()
 
     def command(self, action: str, **params: Any) -> JSONValue:
         """Run a native command and return checked response data."""
@@ -138,55 +142,67 @@ class NativeSession:
         command = self.build_command(action, **params)
         prepared = self._allowlist.prepare(command)
         pending_confirmation = self._consume_pending_confirmation(prepared.command)
-        retain_prepared = False
         try:
             raw_json = self._ensure_native().execute_json(json.dumps(prepared.command))
-            try:
-                raw = json.loads(raw_json)
-            except json.JSONDecodeError as err:
-                raise BrowserError(
-                    action,
-                    f"native response was not valid JSON: {err}",
-                    {"response": raw_json},
-                ) from err
+        except Exception:
+            self._restore_pending_confirmation(prepared.command, pending_confirmation)
+            raise
 
+        try:
+            raw = json.loads(raw_json)
             if not isinstance(raw, dict):
                 raise BrowserError(action, "native response was not an object", {"response": raw})
-
             response = _response_from_mapping(
                 action=action,
                 command_id=prepared.command["id"],
                 raw=raw,
             )
-            if response.success:
-                response = _filter_confirmed_response(
-                    response,
-                    prepared.policy,
-                    pending_confirmation,
-                )
-                filtered_data = prepared.policy.filter_successful_response(
-                    prepared.command,
-                    response.data,
-                )
-                if filtered_data is not response.data:
-                    response = replace(
-                        response,
-                        data=filtered_data,
-                        raw=cast(JSONMapping, {**response.raw, "data": filtered_data}),
-                    )
-                self._allowlist = prepared.policy.finish(prepared.command)
-                retain_prepared = self._record_pending_confirmation(
-                    response,
-                    prepared.command,
-                    prepared.policy,
-                    prepared.cleanup_paths,
-                )
+        except json.JSONDecodeError as err:
+            self._restore_pending_confirmation(prepared.command, pending_confirmation)
+            raise BrowserError(
+                action,
+                f"native response was not valid JSON: {err}",
+                {"response": raw_json},
+            ) from err
+        except Exception:
+            self._restore_pending_confirmation(prepared.command, pending_confirmation)
+            raise
+
+        if not response.success:
+            self._restore_pending_confirmation(prepared.command, pending_confirmation)
             return response
-        finally:
-            if pending_confirmation is not None:
-                pending_confirmation.cleanup()
-            if not retain_prepared:
-                prepared.cleanup()
+
+        response = _filter_confirmed_response(
+            response,
+            prepared.policy,
+            pending_confirmation,
+        )
+        filtered_data = prepared.policy.filter_successful_response(
+            prepared.command,
+            response.data,
+        )
+        if filtered_data is not response.data:
+            response = replace(
+                response,
+                data=filtered_data,
+                raw=cast(JSONMapping, {**response.raw, "data": filtered_data}),
+            )
+
+        confirmation_pending = self._record_pending_confirmation(
+            response,
+            prepared.command,
+            prepared.policy,
+            inherited=pending_confirmation,
+        )
+        if not confirmation_pending:
+            next_policy = prepared.policy.finish(prepared.command)
+            if action == "confirm" and pending_confirmation is not None:
+                confirmed = _try_unwrap_confirmed_response(response)
+                if confirmed.success:
+                    next_policy = pending_confirmation.policy.finish(pending_confirmation.command)
+            self._allowlist = next_policy
+
+        return response
 
     def _ensure_native(self) -> NativeEngine:
         if self._native is None:
@@ -215,24 +231,53 @@ class NativeSession:
             return None
         return self._pending_confirmations.pop(str(confirmation_id), None)
 
+    def _restore_pending_confirmation(
+        self,
+        command: Mapping[str, Any],
+        pending: PendingConfirmation | None,
+    ) -> None:
+        confirmation_id = command.get("confirmation_id")
+        if pending is not None and confirmation_id is not None:
+            self._pending_confirmations[str(confirmation_id)] = pending
+
     def _record_pending_confirmation(
         self,
         response: BrowserResponse,
         command: JSONObject,
         policy: DomainAllowlist,
-        cleanup_paths: tuple[Path, ...] = (),
+        *,
+        inherited: PendingConfirmation | None = None,
     ) -> bool:
         data = _response_data_mapping(response)
-        if data is None or not bool(data.get("confirmation_required")):
+        raw = response.raw
+        if data is None:
             return False
-        confirmation_id = data.get("confirmation_id") or response.raw.get("id") or response.id
-        previous = self._pending_confirmations.pop(str(confirmation_id), None)
-        if previous is not None:
-            previous.cleanup()
-        self._pending_confirmations[str(confirmation_id)] = PendingConfirmation(
+        if not bool(data.get("confirmation_required")):
+            if command.get("action") != "confirm":
+                return False
+            result = data.get("result")
+            action = data.get("action")
+            if not isinstance(result, Mapping) or not isinstance(action, str):
+                return False
+            nested = _response_from_mapping(
+                action=action,
+                command_id=response.id,
+                raw=cast(Mapping[str, Any], result),
+            )
+            nested_data = _response_data_mapping(nested)
+            if (
+                not nested.success
+                or nested_data is None
+                or not bool(nested_data.get("confirmation_required"))
+            ):
+                return False
+            data = nested_data
+            raw = nested.raw
+
+        confirmation_id = data.get("confirmation_id") or raw.get("id") or response.id
+        self._pending_confirmations[str(confirmation_id)] = inherited or PendingConfirmation(
             command=dict(command),
             policy=policy,
-            cleanup_paths=cleanup_paths,
         )
         return True
 
@@ -316,7 +361,7 @@ def _filter_confirmed_response(
 
     filter_policy = pending_confirmation.policy if pending_confirmation is not None else policy
     filter_command = cast(JSONObject, {"id": response.id, "action": action})
-    if pending_confirmation is not None and pending_confirmation.command.get("action") == action:
+    if pending_confirmation is not None:
         filter_command = pending_confirmation.command
 
     filtered_data = filter_policy.filter_successful_response(

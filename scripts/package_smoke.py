@@ -89,6 +89,7 @@ SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
         "third_party/agent-browser/cli/src/native/actions.rs",
         "third_party/agent-browser/cli/cdp-protocol/browser_protocol.json",
         "third_party/agent-browser/skill-data/core/SKILL.md",
+        "third_party/agent-browser/skill-data/derive-client/SKILL.md",
     }
 )
 

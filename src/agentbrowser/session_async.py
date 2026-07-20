@@ -22,6 +22,7 @@ from agentbrowser.session import (
     NativeSession,
     _checked_response,
     _try_unwrap_confirmed_response,
+    _validate_restore_allowlist,
 )
 
 
@@ -71,6 +72,7 @@ class AsyncNativeSession:
         dashboard: bool | DashboardOptions | None = False,
         native: NativeEngine | None = None,
     ) -> None:
+        _validate_restore_allowlist(restore, allowed_domains)
         self._queue: Queue[_AsyncCommand | object] = Queue()
         self._ready = Event()
         self._thread: Thread | None = None

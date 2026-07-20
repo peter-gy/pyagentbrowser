@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import tempfile
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -39,17 +38,12 @@ URL_PATTERN_FIELDS: dict[str, tuple[str, ...]] = {
 class PreparedCommand:
     command: JSONObject
     policy: DomainAllowlist
-    cleanup_paths: tuple[Path, ...] = ()
-
-    def cleanup(self) -> None:
-        for path in self.cleanup_paths:
-            path.unlink(missing_ok=True)
 
 
 class DomainAllowlist:
     """Python-side command guard for the native `allowedDomains` option."""
 
-    def __init__(self, domains: str | None = None) -> None:
+    def __init__(self, domains: object = None) -> None:
         self._patterns = _parse_domain_list(domains)
 
     @property
@@ -58,26 +52,18 @@ class DomainAllowlist:
 
     def prepare(self, command: JSONObject) -> PreparedCommand:
         prepared = dict(command)
-        cleanup_paths: tuple[Path, ...] = ()
         action = str(prepared.get("action", ""))
         policy = self._policy_for_command(action, command)
 
         if not policy.is_empty:
             policy._validate_command(prepared)
-            if action == "state_load":
-                prepared, cleanup_paths = policy._prepare_state_load(prepared)
-            elif action == "launch":
-                prepared, cleanup_paths = policy._prepare_launch(prepared)
 
-        return PreparedCommand(prepared, policy, cleanup_paths)
+        return PreparedCommand(prepared, policy)
 
     def finish(self, command: JSONObject) -> DomainAllowlist:
-        if command.get("action") != "launch":
+        if command.get("action") != "launch" or "allowedDomains" not in command:
             return self
-        allowed_domains = command.get("allowedDomains")
-        if isinstance(allowed_domains, str):
-            return DomainAllowlist(allowed_domains)
-        return self
+        return DomainAllowlist(command.get("allowedDomains"))
 
     def filter_successful_response(self, command: JSONObject, data: JSONValue) -> JSONValue:
         if self.is_empty:
@@ -158,18 +144,15 @@ class DomainAllowlist:
         path.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n")
 
     def _policy_for_command(self, action: str, command: Mapping[str, Any]) -> DomainAllowlist:
-        if action != "launch":
+        if action != "launch" or "allowedDomains" not in command:
             return self
-        allowed_domains = command.get("allowedDomains")
-        if isinstance(allowed_domains, str):
-            requested = DomainAllowlist(allowed_domains)
-            if not self.is_empty and requested._patterns != self._patterns:
-                self._deny(
-                    "launch",
-                    "launch allowed domains must match the session allowlist",
-                )
-            return requested
-        return self
+        requested = DomainAllowlist(command.get("allowedDomains"))
+        if not self.is_empty and requested._patterns != self._patterns:
+            self._deny(
+                "launch",
+                "launch allowed domains must match the session allowlist",
+            )
+        return requested
 
     def _validate_command(self, command: Mapping[str, Any]) -> None:
         action = str(command.get("action", ""))
@@ -200,6 +183,24 @@ class DomainAllowlist:
             origin = command.get("origin")
             if isinstance(origin, str):
                 self.check_url(action, origin)
+        elif action == "state_load":
+            self._deny(
+                action,
+                "state.load cannot replay saved origins while allowed_domains is set",
+            )
+        elif action == "launch":
+            restore_key = command.get("restoreKey")
+            if isinstance(restore_key, str) and restore_key.strip():
+                self._deny(
+                    action,
+                    "launch cannot restore saved origins while allowed_domains is set",
+                )
+            storage_state = command.get("storageState")
+            if isinstance(storage_state, str) and storage_state.strip():
+                self._deny(
+                    action,
+                    "launch cannot load storage_state while allowed_domains is set",
+                )
 
     def _filter_cookies_get_response(
         self,
@@ -227,31 +228,6 @@ class DomainAllowlist:
                     "cookies_set",
                     "Cookie target cannot be validated against allowed domains",
                 )
-
-    def _prepare_launch(self, command: JSONObject) -> tuple[JSONObject, tuple[Path, ...]]:
-        storage_state = command.get("storageState")
-        if not isinstance(storage_state, str):
-            return command, ()
-        prepared_path = self.filtered_state_copy(Path(storage_state), action="launch")
-        return {**command, "storageState": str(prepared_path)}, (prepared_path,)
-
-    def _prepare_state_load(self, command: JSONObject) -> tuple[JSONObject, tuple[Path, ...]]:
-        path = command.get("path")
-        if not isinstance(path, str):
-            self._deny("state_load", "state_load requires a path when allowed domains are set")
-        if bool(command.get("unsafeImportAll")):
-            return command, ()
-        prepared_path = self.filtered_state_copy(Path(path), action="state_load")
-        return {**command, "path": str(prepared_path)}, (prepared_path,)
-
-    def filtered_state_copy(self, path: Path, *, action: str) -> Path:
-        state = self._filtered_state(path, action=action)
-        handle, raw_path = tempfile.mkstemp(prefix="pyagentbrowser-state-", suffix=".json")
-        target = Path(raw_path)
-        with open(handle, "w", encoding="utf-8") as file:
-            json.dump(state, file, indent=2, sort_keys=True)
-            file.write("\n")
-        return target
 
     def _filtered_state(self, path: Path, *, action: str) -> dict[str, Any]:
         if path.suffix == ".enc" or path.name.endswith(".json.enc"):
@@ -341,10 +317,14 @@ class DomainAllowlist:
         )
 
 
-def _parse_domain_list(value: str | None) -> tuple[str, ...]:
-    if value is None:
-        return ()
-    return tuple(part.strip().lower() for part in value.split(",") if part.strip())
+def _parse_domain_list(value: object) -> tuple[str, ...]:
+    if isinstance(value, str):
+        parts = value.split(",")
+    elif isinstance(value, list):
+        parts = [part for part in value if isinstance(part, str)]
+    else:
+        parts = []
+    return tuple(part.strip().lower() for part in parts if part.strip())
 
 
 def _url_pattern_host(value: str) -> str | None:

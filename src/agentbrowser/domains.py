@@ -16,6 +16,7 @@ from agentbrowser.command_params import (
     cookies_clear_params,
     cookies_get_params,
     cookies_set_params,
+    har_start_params,
     keyboard_params,
     mouse_params,
     optional,
@@ -35,6 +36,7 @@ from agentbrowser.models import (
     ConfirmationRequired,
     ConsoleMessage,
     Cookie,
+    HarContentMode,
     JSONMapping,
     LoadState,
     MouseButton,
@@ -748,9 +750,9 @@ class Network:
             _decode=request_detail_from_data,
         )
 
-    def har_start(self) -> None:
-        """Start HAR capture."""
-        self.browser._command("har_start", _decode=_none)
+    def har_start(self, *, content: HarContentMode = "text") -> None:
+        """Start HAR capture with the selected response-body content."""
+        self.browser._command("har_start", _decode=_none, **har_start_params(content))
 
     def har_stop(self, path: str | Path | None = None) -> Path:
         """Stop HAR capture and return the written file path."""
@@ -888,7 +890,10 @@ class State:
         )
 
     def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> None:
-        """Load browser storage state from a file."""
+        """Load browser storage state from a file.
+
+        Raises `BrowserError` when the session uses `allowed_domains`.
+        """
         self.browser._command(
             "state_load",
             _decode=_none,

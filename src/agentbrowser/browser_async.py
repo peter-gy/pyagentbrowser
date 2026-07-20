@@ -281,11 +281,21 @@ class AsyncPendingAction(Generic[T]):
 
     async def confirm(self) -> T:
         """Confirm this pending action and decode its original return type."""
-        result: Any = await self._browser._native_data(
-            "confirm",
-            expect=self._expect,
-            confirmation_id=self.confirmation_id,
-        )
+        try:
+            result: Any = await self._browser._native_data(
+                "confirm",
+                expect=self._expect,
+                confirmation_id=self.confirmation_id,
+            )
+        except ConfirmationRequired as error:
+            if isinstance(error.pending, AsyncPendingAction):
+                error.pending = replace(
+                    error.pending,
+                    _decode=self._decode,
+                    _expect=self._expect,
+                    _complete=self._complete,
+                )
+            raise
         if self._decode is not None:
             result = self._decode(cast(JSONMapping, result))
         if self._complete is None:

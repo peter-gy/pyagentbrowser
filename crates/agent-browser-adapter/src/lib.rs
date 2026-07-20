@@ -19,8 +19,14 @@ pub async fn maintain_browser_state(
     if process_exited {
         let _ = native::actions::close_current_browser(state).await;
     } else if state.browser.is_some() {
-        state.drain_cdp_events_background().await;
-        native::actions::maybe_autosave_restore_state(state, autosave_interval_ms).await;
+        match state.drain_cdp_events_background().await {
+            Ok(()) => {
+                native::actions::maybe_autosave_restore_state(state, autosave_interval_ms).await;
+            }
+            Err(error) => {
+                eprintln!("Failed to apply browser network controls: {error}");
+            }
+        }
     }
 }
 

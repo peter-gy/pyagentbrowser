@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import socket
 import subprocess
 import sys
@@ -23,6 +24,7 @@ from agentbrowser import (
     BrowserError,
     CDPTarget,
     ConfirmationRequired,
+    HarContentMode,
     LaunchOptions,
     RestoreOptions,
     SessionOptions,
@@ -215,6 +217,67 @@ def test_cdp_frame_resolution_uses_the_active_native_target(
 
         assert frame.url == f"{local_site.base_url}/frame.html"
         assert frame.evaluate("document.title") == "Nested"
+
+
+def test_completed_page_load_wait_returns_after_navigation(
+    chrome_path: Path,
+    local_site: LocalSite,
+) -> None:
+    with _browser(chrome_path) as browser:
+        browser.open(local_site.base_url)
+        browser.page.wait_for_load_state("load")
+
+
+def test_allowed_domains_support_a_fresh_local_browser(
+    chrome_path: Path,
+    local_site: LocalSite,
+) -> None:
+    session = SessionOptions(
+        session_id=f"allowlist-{time.monotonic_ns()}",
+        timeout=5.0,
+        allowed_domains=("127.0.0.1",),
+    )
+
+    with _browser(chrome_path, session=session) as browser:
+        browser.open(local_site.base_url)
+        assert browser.url().startswith(local_site.base_url)
+
+
+@pytest.mark.parametrize(("content_mode", "embeds_text"), [("text", True), ("none", False)])
+def test_har_content_mode_controls_response_body_capture(
+    chrome_path: Path,
+    local_site: LocalSite,
+    tmp_path: Path,
+    content_mode: HarContentMode,
+    embeds_text: bool,
+) -> None:
+    payload = {"message": f"captured-{content_mode}"}
+    payload_name = f"payload-{content_mode}.json"
+    page_name = f"har-{content_mode}.html"
+    (local_site.root / payload_name).write_text(json.dumps(payload))
+    (local_site.root / page_name).write_text(
+        "<script>"
+        f"fetch('/{payload_name}').then(response => response.json()).then(payload => {{"
+        "document.body.textContent = payload.message;"
+        "document.body.dataset.loaded = 'true';"
+        "});"
+        "</script>"
+    )
+
+    with _browser(chrome_path) as browser:
+        browser.network.har_start(content=content_mode)
+        browser.open(f"{local_site.base_url}/{page_name}")
+        browser.page.wait_for_function("document.body.dataset.loaded === 'true'")
+        har_path = browser.network.har_stop(tmp_path / f"{content_mode}.har")
+
+    har = json.loads(har_path.read_text())
+    entry = next(
+        item for item in har["log"]["entries"] if item["request"]["url"].endswith(payload_name)
+    )
+    content = entry["response"]["content"]
+    assert ("text" in content) is embeds_text
+    if embeds_text:
+        assert json.loads(content["text"]) == payload
 
 
 def test_webgpu_launch_preset_renders_offscreen_pixels_across_native_boundary(
