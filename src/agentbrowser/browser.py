@@ -454,6 +454,7 @@ class Browser:
         self._close_result: CloseResult | None = None
         self._close_error: BaseException | None = None
         self._cdp_controller: CDPController | None = None
+        self._pending_cdp_invalidations: set[str] = set()
 
         command_target = cast(CommandTarget, weak_proxy(self))
         browser_proxy = cast(Browser, weak_proxy(self))
@@ -687,16 +688,37 @@ class Browser:
         if expect not in {"object", "any"}:
             raise ValueError('expect must be "object" or "any"')
         self._prepare_install_for_action(action, params)
+        pending_id, compound_invalidation = self._cdp_invalidation_context(action, params)
+        confirmation_consumed = False
         try:
-            response = _checked_response(action, self._session.execute(action, **params))
+            raw_response = self._session.execute(action, **params)
+            confirmation_consumed = action == "confirm" and raw_response.success
+            response = _checked_response(action, raw_response)
         except ConfirmationRequired as err:
+            self._continue_cdp_invalidation(
+                pending_id,
+                err.confirmation_id,
+                compound_invalidation,
+            )
             if err.confirmation_id is not None:
                 err.pending = self._pending_action(
                     err,
                     expect=cast(Literal["object", "any"], expect),
                 )
             raise
-        self._record_successful_action(response)
+        except BaseException:
+            if compound_invalidation:
+                self._invalidate_cdp()
+            if pending_id is not None and confirmation_consumed:
+                self._pending_cdp_invalidations.discard(pending_id)
+            raise
+        if pending_id is not None and (action == "deny" or confirmation_consumed):
+            self._pending_cdp_invalidations.discard(pending_id)
+        self._record_successful_action(
+            response,
+            params=params,
+            force_cdp_invalidation=compound_invalidation,
+        )
         if expect == "any":
             return response.data
         return _require_response_data_mapping(response)
@@ -704,19 +726,46 @@ class Browser:
     def _native_execute(self, action: str, **params: Any) -> BrowserResponse:
         self._ensure_open()
         self._prepare_install_for_action(action, params)
-        response = self._session.execute(action, **params)
+        pending_id, compound_invalidation = self._cdp_invalidation_context(action, params)
+        try:
+            response = self._session.execute(action, **params)
+        except BaseException:
+            if compound_invalidation:
+                self._invalidate_cdp()
+            raise
         confirmation_consumed = action == "confirm" and response.success
         if confirmation_consumed:
             response = _try_unwrap_confirmed_response(response)
         data = response_data_mapping(response)
         if data is not None and bool(data.get("confirmation_required")):
+            self._continue_cdp_invalidation(
+                pending_id,
+                response_confirmation_id(response),
+                compound_invalidation,
+            )
             return response
+        if pending_id is not None and (
+            (action == "deny" and response.success) or confirmation_consumed
+        ):
+            self._pending_cdp_invalidations.discard(pending_id)
         if confirmation_consumed:
             if response.success:
-                self._record_successful_action(response)
+                self._record_successful_action(
+                    response,
+                    params=params,
+                    force_cdp_invalidation=compound_invalidation,
+                )
+            elif compound_invalidation:
+                self._invalidate_cdp()
             return response
         if response.success:
-            self._record_successful_action(response)
+            self._record_successful_action(
+                response,
+                params=params,
+                force_cdp_invalidation=compound_invalidation,
+            )
+        elif compound_invalidation and action == "a11y":
+            self._invalidate_cdp()
         return response
 
     def _pending_action(
@@ -750,7 +799,40 @@ class Browser:
             _expect=expect,
         )
 
-    def _record_successful_action(self, response: BrowserResponse) -> None:
+    def _cdp_invalidation_context(
+        self,
+        action: str,
+        params: Mapping[str, Any],
+    ) -> tuple[str | None, bool]:
+        confirmation_value = (
+            params.get("confirmation_id") if action in {"confirm", "deny"} else None
+        )
+        pending_id = str(confirmation_value) if confirmation_value is not None else None
+        # URL audits navigate before axe runs. Preserve that lifecycle fact
+        # across confirmation because the confirmed response omits the URL.
+        compound_invalidation = action == "a11y" and action_invalidates_cdp(action, params)
+        if action == "confirm" and pending_id in self._pending_cdp_invalidations:
+            compound_invalidation = True
+        return pending_id, compound_invalidation
+
+    def _continue_cdp_invalidation(
+        self,
+        previous_id: str | None,
+        next_id: str | None,
+        enabled: bool,
+    ) -> None:
+        if previous_id is not None:
+            self._pending_cdp_invalidations.discard(previous_id)
+        if enabled and next_id is not None:
+            self._pending_cdp_invalidations.add(next_id)
+
+    def _record_successful_action(
+        self,
+        response: BrowserResponse,
+        *,
+        params: Mapping[str, Any] | None = None,
+        force_cdp_invalidation: bool = False,
+    ) -> None:
         action = response.action
         browser_launched = response_browser_launched(response)
         if browser_launched is not None:
@@ -759,9 +841,11 @@ class Browser:
             self._launched = True
         elif action_clears_pending_confirmation(action) and action_closes_browser(action):
             self._launched = False
+        if action_closes_browser(action):
+            self._pending_cdp_invalidations.clear()
         if action_resets_cdp(action):
             self._reset_cdp()
-        elif action_invalidates_cdp(action):
+        elif force_cdp_invalidation or action_invalidates_cdp(action, params):
             self._invalidate_cdp()
 
     def _cdp(self) -> CDPController:

@@ -18,6 +18,7 @@ const ROOT_MODULES: &[(&str, &str)] = &[
 ];
 
 const NATIVE_MODULES: &[(&str, &str)] = &[
+    ("a11y", "a11y/mod.rs"),
     ("actions", "actions.rs"),
     ("auth", "auth.rs"),
     ("browser", "browser.rs"),

@@ -15,6 +15,10 @@ from agentbrowser.launch import (
     SessionOptions,
 )
 from agentbrowser.models import (
+    AccessibilityAudit,
+    AccessibilityCounts,
+    AccessibilityIssue,
+    AccessibilityNode,
     ActionResult,
     ActionTransitionError,
     AgentBrowserError,
@@ -40,7 +44,9 @@ from agentbrowser.models import (
     SessionStatus,
     SnapshotDiff,
     SnapshotSpec,
+    TabCloseResult,
     TabInfo,
+    TabSwitchResult,
     Wait,
 )
 from agentbrowser.query import Query
@@ -56,6 +62,10 @@ __agent_browser_version__ = __upstream_version__
 __agent_browser_commit__ = UPSTREAM_COMMIT
 
 __all__ = [
+    "AccessibilityAudit",
+    "AccessibilityCounts",
+    "AccessibilityIssue",
+    "AccessibilityNode",
     "ActionResult",
     "ActionTransitionError",
     "AgentBrowserError",
@@ -98,7 +108,9 @@ __all__ = [
     "SnapshotDiff",
     "SnapshotSpec",
     "StaleRefError",
+    "TabCloseResult",
     "TabInfo",
+    "TabSwitchResult",
     "Wait",
     "ensure_installed",
     "session_id",

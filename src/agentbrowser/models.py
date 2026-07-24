@@ -21,6 +21,7 @@ JSONPrimitive: TypeAlias = str | int | float | bool | None
 JSONValue: TypeAlias = object
 JSONObject: TypeAlias = dict[str, JSONValue]
 JSONMapping: TypeAlias = Mapping[str, JSONValue]
+AccessibilityTargetPart: TypeAlias = str | tuple["AccessibilityTargetPart", ...]
 LoadState = Literal["load", "domcontentloaded", "networkidle", "none"]
 HarContentMode = Literal["all", "text", "none"]
 LlmsMode = Literal["index", "full"]
@@ -652,6 +653,52 @@ def diff_snapshot_data(before: SnapshotData, after: SnapshotData) -> SnapshotDif
 
 
 @dataclass(frozen=True, slots=True)
+class AccessibilityCounts:
+    """Rule counts returned by an accessibility audit."""
+
+    violations: int
+    incomplete: int
+    passes: int
+    inapplicable: int
+
+
+@dataclass(frozen=True, slots=True)
+class AccessibilityNode:
+    """One DOM target reported by an accessibility rule."""
+
+    target: tuple[AccessibilityTargetPart, ...]
+    html: str
+    failure_summary: str
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class AccessibilityIssue:
+    """One failed or incomplete accessibility rule."""
+
+    id: str
+    impact: str
+    help: str
+    help_url: str
+    tags: tuple[str, ...]
+    node_count: int
+    nodes: tuple[AccessibilityNode, ...]
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class AccessibilityAudit:
+    """Structured axe-core accessibility audit for one page."""
+
+    url: str
+    axe_version: str | None
+    counts: AccessibilityCounts
+    violations: tuple[AccessibilityIssue, ...]
+    incomplete: tuple[AccessibilityIssue, ...]
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
 class BoundingBox:
     """Element bounding box in CSS pixels."""
 
@@ -671,6 +718,30 @@ class TabInfo:
     title: str = ""
     label: str | None = None
     active: bool = False
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class TabSwitchResult:
+    """Metadata and renderer state observed while switching tabs."""
+
+    id: str
+    url: str
+    title: str
+    label: str | None
+    revived: bool
+    dialog_blocked: bool
+    raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class TabCloseResult:
+    """Result of closing one browser tab."""
+
+    id: str
+    label: str | None
+    closed: bool
+    active_tab_revived: bool
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -986,6 +1057,40 @@ def tab_from_data(data: Mapping[str, Any]) -> TabInfo:
     return _tab_info(raw)
 
 
+def tab_switch_from_data(data: Mapping[str, Any]) -> TabSwitchResult:
+    tab = _tab_info(data)
+    return TabSwitchResult(
+        id=tab.id,
+        url=tab.url,
+        title=_required_model_string(data, "title", action="tab_switch"),
+        label=_nullable_model_string(data, "label", action="tab_switch"),
+        revived=_optional_model_flag(data, "revived", model="TabSwitchResult"),
+        dialog_blocked=_optional_model_flag(
+            data,
+            "dialogBlocked",
+            model="TabSwitchResult",
+        ),
+        raw=tab.raw,
+    )
+
+
+def tab_close_result_from_data(data: Mapping[str, Any]) -> TabCloseResult:
+    closed = _required_model_bool(data, "closed", action="tab_close")
+    if not closed:
+        raise NativeParseError("tab_close field 'closed' must be true")
+    return TabCloseResult(
+        id=_required_model_string(data, "tabId", action="tab_close"),
+        label=_optional_model_string(data, "label", action="tab_close"),
+        closed=closed,
+        active_tab_revived=_optional_model_flag(
+            data,
+            "activeTabRevived",
+            model="TabCloseResult",
+        ),
+        raw=data,
+    )
+
+
 def cookies_from_data(data: Mapping[str, Any]) -> tuple[Cookie, ...]:
     raw_cookies = data.get("cookies")
     if not isinstance(raw_cookies, list):
@@ -1032,6 +1137,26 @@ def read_result_from_data(data: Mapping[str, Any]) -> ReadResult:
         source=str(data.get("source", "")),
         truncated=bool(data.get("truncated", False)),
         content=str(data.get("content", "")),
+        raw=data,
+    )
+
+
+def accessibility_audit_from_data(data: Mapping[str, Any]) -> AccessibilityAudit:
+    action = "a11y"
+    raw_counts = data.get("counts")
+    if not isinstance(raw_counts, Mapping):
+        raise NativeParseError("a11y field 'counts' must be an object")
+    return AccessibilityAudit(
+        url=_required_model_string(data, "url", action=action),
+        axe_version=_nullable_model_string(data, "axeVersion", action=action),
+        counts=AccessibilityCounts(
+            violations=_required_model_int(raw_counts, "violations", action=action),
+            incomplete=_required_model_int(raw_counts, "incomplete", action=action),
+            passes=_required_model_int(raw_counts, "passes", action=action),
+            inapplicable=_required_model_int(raw_counts, "inapplicable", action=action),
+        ),
+        violations=_accessibility_issues(data, "violations"),
+        incomplete=_accessibility_issues(data, "incomplete"),
         raw=data,
     )
 
@@ -1192,14 +1317,36 @@ def _first_present(
 def _tab_info(raw: Mapping[str, Any]) -> TabInfo:
     id_value = _first_present(raw, "id", "tabId", "targetId", model="TabInfo", field="id")
     url_value = _first_present(raw, "url", model="TabInfo", field="url")
+    if not isinstance(id_value, str):
+        raise NativeParseError("TabInfo field 'id' must be a string")
+    if not isinstance(url_value, str):
+        raise NativeParseError("TabInfo field 'url' must be a string")
+    title = raw.get("title", "")
+    if not isinstance(title, str):
+        raise NativeParseError("TabInfo field 'title' must be a string")
+    active = False
+    for field_name in ("active", "selected", "current"):
+        if field_name not in raw:
+            continue
+        value = raw[field_name]
+        if not isinstance(value, bool):
+            raise NativeParseError(f"TabInfo field '{field_name}' must be a boolean")
+        active = active or value
     return TabInfo(
-        id=str(id_value),
-        url=str(url_value),
-        title=str(raw.get("title", "")),
-        label=str(raw["label"]) if raw.get("label") is not None else None,
-        active=bool(raw.get("active") or raw.get("selected") or raw.get("current")),
+        id=id_value,
+        url=url_value,
+        title=title,
+        label=_optional_model_string(raw, "label", action="TabInfo"),
+        active=active,
         raw=raw,
     )
+
+
+def _optional_model_flag(data: Mapping[str, Any], field: str, *, model: str) -> bool:
+    value = data.get(field, False)
+    if not isinstance(value, bool):
+        raise NativeParseError(f"{model} field '{field}' must be a boolean")
+    return value
 
 
 def _cookie(raw: Mapping[str, Any]) -> Cookie:
@@ -1243,6 +1390,56 @@ def _console_message(raw: Mapping[str, Any]) -> ConsoleMessage:
         column=_optional_int(raw.get("column") or raw.get("columnNumber")),
         raw=raw,
     )
+
+
+def _accessibility_issues(
+    data: Mapping[str, Any],
+    field: str,
+) -> tuple[AccessibilityIssue, ...]:
+    value = data.get(field)
+    if not isinstance(value, list) or any(not isinstance(item, Mapping) for item in value):
+        raise NativeParseError(f"a11y field '{field}' must be an array of objects")
+    return tuple(_accessibility_issue(cast(Mapping[str, Any], item)) for item in value)
+
+
+def _accessibility_issue(raw: Mapping[str, Any]) -> AccessibilityIssue:
+    action = "a11y"
+    raw_tags = raw.get("tags")
+    if not isinstance(raw_tags, list) or any(not isinstance(tag, str) for tag in raw_tags):
+        raise NativeParseError("a11y issue field 'tags' must be an array of strings")
+    raw_nodes = raw.get("nodes")
+    if not isinstance(raw_nodes, list) or any(not isinstance(node, Mapping) for node in raw_nodes):
+        raise NativeParseError("a11y issue field 'nodes' must be an array of objects")
+    return AccessibilityIssue(
+        id=_required_model_string(raw, "id", action=action),
+        impact=_required_model_string(raw, "impact", action=action),
+        help=_required_model_string(raw, "help", action=action),
+        help_url=_required_model_string(raw, "helpUrl", action=action),
+        tags=tuple(cast(list[str], raw_tags)),
+        node_count=_required_model_int(raw, "nodeCount", action=action),
+        nodes=tuple(_accessibility_node(cast(Mapping[str, Any], node)) for node in raw_nodes),
+        raw=raw,
+    )
+
+
+def _accessibility_node(raw: Mapping[str, Any]) -> AccessibilityNode:
+    target = raw.get("target")
+    if not isinstance(target, list):
+        raise NativeParseError("a11y node field 'target' must be an array")
+    return AccessibilityNode(
+        target=tuple(_accessibility_target_part(part) for part in target),
+        html=_required_model_string(raw, "html", action="a11y"),
+        failure_summary=_required_model_string(raw, "failureSummary", action="a11y"),
+        raw=raw,
+    )
+
+
+def _accessibility_target_part(value: Any) -> AccessibilityTargetPart:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, list):
+        return tuple(_accessibility_target_part(part) for part in value)
+    raise NativeParseError("a11y node target entries must be strings or arrays")
 
 
 def _optional_bool(value: Any) -> bool | None:

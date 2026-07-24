@@ -11,6 +11,7 @@ from fakes import ConfirmationNative, ScriptedNative
 
 import agentbrowser
 from agentbrowser import (
+    AccessibilityAudit,
     AsyncBrowser,
     AsyncQuery,
     AsyncRef,
@@ -33,6 +34,8 @@ from agentbrowser import (
     SessionOptions,
     SessionStatus,
     Snapshot,
+    TabCloseResult,
+    TabSwitchResult,
 )
 from agentbrowser.session import NativeSession
 from agentbrowser.session_async import AsyncNativeSession
@@ -46,6 +49,28 @@ def _browser(native: Any) -> Browser:
 
 def _command_without_id(command: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in command.items() if key != "id"}
+
+
+class _InvalidationProbe:
+    def __init__(self) -> None:
+        self.invalidations = 0
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+
+    def close(self) -> None:
+        pass
+
+
+class _AsyncInvalidationProbe:
+    def __init__(self) -> None:
+        self.invalidations = 0
+
+    def invalidate(self) -> None:
+        self.invalidations += 1
+
+    async def close(self) -> None:
+        pass
 
 
 def _session_status_data() -> dict[str, Any]:
@@ -70,6 +95,37 @@ def _session_status_data() -> dict[str, Any]:
         "restoreCheckUrl": None,
         "restoreCheckText": "Dashboard",
         "restoreCheckFn": None,
+    }
+
+
+def _accessibility_audit_data() -> dict[str, Any]:
+    return {
+        "url": "https://example.com/",
+        "axeVersion": "4.12.1",
+        "counts": {
+            "violations": 1,
+            "incomplete": 0,
+            "passes": 4,
+            "inapplicable": 2,
+        },
+        "violations": [
+            {
+                "id": "image-alt",
+                "impact": "critical",
+                "help": "Images must have alternative text",
+                "helpUrl": "https://dequeuniversity.com/rules/axe/4.12/image-alt",
+                "tags": ["cat.text-alternatives", "wcag2a"],
+                "nodeCount": 1,
+                "nodes": [
+                    {
+                        "target": ["#logo", ["#shadow-root", "img"]],
+                        "html": '<img id="logo">',
+                        "failureSummary": "Fix the missing alternative text.",
+                    }
+                ],
+            }
+        ],
+        "incomplete": [],
     }
 
 
@@ -367,6 +423,10 @@ def test_console_messages_preserve_a_present_empty_collection() -> None:
 @pytest.mark.parametrize(
     "name",
     [
+        "AccessibilityAudit",
+        "AccessibilityCounts",
+        "AccessibilityIssue",
+        "AccessibilityNode",
         "ConsoleMessage",
         "Cookie",
         "CloseResult",
@@ -377,7 +437,9 @@ def test_console_messages_preserve_a_present_empty_collection() -> None:
         "RouteResponse",
         "SessionId",
         "SessionStatus",
+        "TabCloseResult",
         "TabInfo",
+        "TabSwitchResult",
     ],
 )
 def test_public_contract_types_are_package_exports(name: str) -> None:
@@ -390,6 +452,168 @@ def test_screenshot_rejects_a_missing_native_path() -> None:
 
     with pytest.raises(NativeParseError, match="path"):
         browser.capture.screenshot(wait_ms=0)
+
+
+def test_accessibility_audit_returns_typed_results_and_serializes_scope() -> None:
+    native = ScriptedNative({"a11y": _accessibility_audit_data()})
+    browser = _browser(native)
+
+    audit = browser.diagnostics.accessibility(
+        "example.com",
+        tags=("wcag2a", "wcag2aa"),
+        selector="#main",
+    )
+
+    assert isinstance(audit, AccessibilityAudit)
+    assert audit.axe_version == "4.12.1"
+    assert audit.counts.violations == 1
+    assert audit.violations[0].id == "image-alt"
+    assert audit.violations[0].nodes[0].target == (
+        "#logo",
+        ("#shadow-root", "img"),
+    )
+    assert _command_without_id(native.commands[0]) == {
+        "action": "a11y",
+        "url": "https://example.com",
+        "tags": "wcag2a,wcag2aa",
+        "selector": "#main",
+    }
+
+
+@pytest.mark.parametrize("tags", ["wcag2a", ("",), ("wcag2a,wcag2aa",), (1,)])
+def test_accessibility_audit_rejects_invalid_tags(tags: Any) -> None:
+    native = ScriptedNative(default={})
+    browser = _browser(native)
+
+    with pytest.raises((TypeError, ValueError), match="tags"):
+        browser.diagnostics.accessibility(tags=tags)
+
+    assert native.commands == []
+
+
+def test_accessibility_audit_rejects_invalid_native_targets() -> None:
+    data = _accessibility_audit_data()
+    data["violations"][0]["nodes"][0]["target"] = [42]
+    browser = _browser(ScriptedNative({"a11y": data}))
+
+    with pytest.raises(NativeParseError, match="target entries"):
+        browser.diagnostics.accessibility()
+
+
+def test_accessibility_audit_invalidates_cdp_only_when_it_navigates() -> None:
+    native = ScriptedNative(
+        {
+            "a11y": _accessibility_audit_data(),
+            "__agent_browser_internal_shutdown": {},
+        }
+    )
+    browser = _browser(native)
+    probe = _InvalidationProbe()
+    browser._cdp_controller = cast(Any, probe)
+
+    browser.diagnostics.accessibility()
+    assert probe.invalidations == 0
+
+    browser.diagnostics.accessibility("example.com")
+    assert probe.invalidations == 1
+    browser.close()
+
+
+def test_accessibility_url_failure_invalidates_cdp_after_navigation_attempt() -> None:
+    native = ScriptedNative(
+        {
+            "a11y": {
+                "success": False,
+                "error": "No element matches selector: #missing",
+            },
+            "__agent_browser_internal_shutdown": {},
+        }
+    )
+    browser = _browser(native)
+    probe = _InvalidationProbe()
+    browser._cdp_controller = cast(Any, probe)
+
+    with pytest.raises(BrowserError, match="No element matches"):
+        browser.diagnostics.accessibility("example.com", selector="#missing")
+
+    assert probe.invalidations == 1
+    browser.close()
+
+
+def test_raw_accessibility_calls_preserve_the_cdp_lifecycle() -> None:
+    def a11y(command: dict[str, Any]) -> dict[str, Any]:
+        if command.get("selector") == "#missing":
+            return {
+                "success": False,
+                "error": "No element matches selector: #missing",
+            }
+        return _accessibility_audit_data()
+
+    native = ScriptedNative(
+        {
+            "a11y": a11y,
+            "__agent_browser_internal_shutdown": {},
+        }
+    )
+    browser = _browser(native)
+    probe = _InvalidationProbe()
+    browser._cdp_controller = cast(Any, probe)
+
+    browser.native.data("a11y")
+    assert probe.invalidations == 0
+
+    browser.native.data("a11y", url="https://example.com")
+    assert probe.invalidations == 1
+
+    response = browser.native.execute(
+        "a11y",
+        url="https://example.com",
+        selector="#missing",
+    )
+    assert response.success is False
+    assert probe.invalidations == 2
+    browser.close()
+
+
+@pytest.mark.parametrize(
+    ("url", "expected_invalidations"),
+    [(None, 0), ("https://example.com", 1)],
+)
+def test_confirmed_accessibility_audit_preserves_navigation_lifecycle(
+    url: str | None,
+    expected_invalidations: int,
+) -> None:
+    native = ConfirmationNative(action="a11y", result=_accessibility_audit_data())
+    browser = _browser(native)
+    probe = _InvalidationProbe()
+    browser._cdp_controller = cast(Any, probe)
+
+    with pytest.raises(ConfirmationRequired) as required:
+        browser.diagnostics.accessibility(url)
+
+    assert probe.invalidations == 0
+    assert isinstance(required.value.pending.confirm(), AccessibilityAudit)
+    assert probe.invalidations == expected_invalidations
+    browser.close()
+
+
+def test_raw_confirmed_accessibility_audit_preserves_navigation_lifecycle() -> None:
+    native = ConfirmationNative(action="a11y", result=_accessibility_audit_data())
+    browser = _browser(native)
+    probe = _InvalidationProbe()
+    browser._cdp_controller = cast(Any, probe)
+
+    pending = browser.native.execute("a11y", url="https://example.com")
+    assert pending.success is True
+    assert probe.invalidations == 0
+
+    confirmed = browser.native.execute(
+        "confirm",
+        confirmation_id=native.confirmation_id,
+    )
+    assert confirmed.success is True
+    assert probe.invalidations == 1
+    browser.close()
 
 
 @pytest.mark.parametrize(
@@ -569,6 +793,85 @@ def test_path_namespaces_return_typed_paths(tmp_path: Path) -> None:
     assert native.commands[2]["unsafeImportAll"] is True
 
 
+def test_tab_lifecycle_results_surface_discarded_tab_revival() -> None:
+    native = ScriptedNative(
+        {
+            "tab_switch": {
+                "tabId": "t2",
+                "url": "https://example.com/reloaded",
+                "title": "Reloaded",
+                "label": "work",
+                "revived": True,
+            },
+            "tab_close": {
+                "tabId": "t2",
+                "label": "work",
+                "closed": True,
+                "activeTabRevived": True,
+            },
+        }
+    )
+    browser = _browser(native)
+
+    switched = browser.tabs.switch(id="t2")
+    closed = browser.tabs.close(id="t2")
+
+    assert switched.id == "t2"
+    assert isinstance(switched, TabSwitchResult)
+    assert switched.revived is True
+    assert switched.dialog_blocked is False
+    assert isinstance(closed, TabCloseResult)
+    assert closed.id == "t2"
+    assert closed.closed is True
+    assert closed.active_tab_revived is True
+
+
+def test_tab_switch_result_surfaces_a_blocking_dialog() -> None:
+    browser = _browser(
+        ScriptedNative(
+            {
+                "tab_switch": {
+                    "tabId": "t2",
+                    "url": "https://example.com/form",
+                    "title": "Form",
+                    "label": None,
+                    "dialogBlocked": True,
+                }
+            }
+        )
+    )
+
+    switched = browser.tabs.switch(id="t2")
+
+    assert switched.dialog_blocked is True
+    assert switched.revived is False
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("tabId", 7),
+        ("url", False),
+        ("title", {"unexpected": True}),
+        ("label", ["work"]),
+        ("revived", 1),
+        ("dialogBlocked", "yes"),
+    ],
+)
+def test_tab_switch_rejects_malformed_native_metadata(field: str, value: Any) -> None:
+    data: dict[str, Any] = {
+        "tabId": "t2",
+        "url": "https://example.com/form",
+        "title": "Form",
+        "label": None,
+    }
+    data[field] = value
+    browser = _browser(ScriptedNative({"tab_switch": data}))
+
+    with pytest.raises(NativeParseError):
+        browser.tabs.switch(id="t2")
+
+
 def test_tabs_open_creates_a_labelled_tab_when_no_reusable_tab_exists() -> None:
     native = ScriptedNative(
         {
@@ -617,7 +920,16 @@ def test_tabs_open_confirmation_continues_switch_and_navigation() -> None:
                 "data": {
                     "confirmed": True,
                     "action": "tab_switch",
-                    "result": {"id": "confirmed-switch", "success": True, "data": {}},
+                    "result": {
+                        "id": "confirmed-switch",
+                        "success": True,
+                        "data": {
+                            "tabId": "existing",
+                            "url": "https://example.com/old",
+                            "title": "Existing",
+                            "label": "work",
+                        },
+                    },
                 },
             },
             "navigate": {},
@@ -1034,6 +1346,105 @@ def test_async_har_start_serializes_the_content_mode() -> None:
     asyncio.run(run())
 
 
+def test_async_accessibility_audit_matches_the_sync_contract() -> None:
+    async def run() -> None:
+        native = ScriptedNative({"a11y": _accessibility_audit_data()})
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+
+        audit = await browser.diagnostics.accessibility(tags=("wcag2aa",))
+
+        assert audit.violations[0].nodes[0].failure_summary
+        assert _command_without_id(native.commands[0]) == {
+            "action": "a11y",
+            "tags": "wcag2aa",
+        }
+
+    asyncio.run(run())
+
+
+def test_async_accessibility_audit_preserves_the_cdp_lifecycle() -> None:
+    async def run() -> None:
+        def a11y(command: dict[str, Any]) -> dict[str, Any]:
+            if "url" in command:
+                return {
+                    "success": False,
+                    "error": "No element matches selector: #missing",
+                }
+            return _accessibility_audit_data()
+
+        native = ScriptedNative(
+            {
+                "a11y": a11y,
+                "__agent_browser_internal_shutdown": {},
+            }
+        )
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        probe = _AsyncInvalidationProbe()
+        browser._cdp_controller = cast(Any, probe)
+
+        await browser.diagnostics.accessibility()
+        assert probe.invalidations == 0
+
+        with pytest.raises(BrowserError, match="No element matches"):
+            await browser.diagnostics.accessibility(
+                "example.com",
+                selector="#missing",
+            )
+
+        assert probe.invalidations == 1
+        await browser.close()
+
+    asyncio.run(run())
+
+
+def test_async_confirmed_accessibility_audit_preserves_navigation_lifecycle() -> None:
+    async def run() -> None:
+        native = ConfirmationNative(action="a11y", result=_accessibility_audit_data())
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        probe = _AsyncInvalidationProbe()
+        browser._cdp_controller = cast(Any, probe)
+
+        with pytest.raises(ConfirmationRequired) as required:
+            await browser.diagnostics.accessibility("example.com")
+
+        assert probe.invalidations == 0
+        assert isinstance(await required.value.pending.confirm(), AccessibilityAudit)
+        assert probe.invalidations == 1
+        await browser.close()
+
+    asyncio.run(run())
+
+
+def test_async_tab_lifecycle_results_match_the_sync_contract() -> None:
+    async def run() -> None:
+        native = ScriptedNative(
+            {
+                "tab_switch": {
+                    "tabId": "t2",
+                    "url": "https://example.com/reloaded",
+                    "title": "Reloaded",
+                    "label": None,
+                    "revived": True,
+                },
+                "tab_close": {
+                    "tabId": "t2",
+                    "label": None,
+                    "closed": True,
+                    "activeTabRevived": True,
+                },
+            }
+        )
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+
+        switched = await browser.tabs.switch(id="t2")
+        closed = await browser.tabs.close(id="t2")
+
+        assert switched.revived is True
+        assert closed.active_tab_revived is True
+
+    asyncio.run(run())
+
+
 def test_async_close_is_single_flight() -> None:
     async def run() -> None:
         started = Event()
@@ -1162,7 +1573,12 @@ def test_async_tabs_open_confirmation_continues_switch_and_navigation() -> None:
                         },
                     },
                 },
-                "tab_switch": {},
+                "tab_switch": {
+                    "tabId": "existing",
+                    "url": "https://example.com/old",
+                    "title": "Existing",
+                    "label": "work",
+                },
                 "navigate": {},
             },
             default={},

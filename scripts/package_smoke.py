@@ -27,6 +27,7 @@ CONTAINER_BUILD_PATHS = (
     b"/root/.cargo/",
     b"/usr/local/cargo/",
 )
+AXE_CORE_SOURCE_URL = "https://github.com/dequelabs/axe-core/tree/v4.12.1"
 
 
 WHEEL_REQUIRED_FILES = frozenset(
@@ -34,6 +35,15 @@ WHEEL_REQUIRED_FILES = frozenset(
         "agentbrowser/__init__.py",
         "agentbrowser/_upstream.json",
         "agentbrowser/py.typed",
+    }
+)
+WHEEL_REQUIRED_LICENSE_FILES = frozenset(
+    {
+        "LICENSE",
+        "NOTICE",
+        "third_party/agent-browser/LICENSE",
+        "third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core-THIRD-PARTY.txt",
+        "third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core.txt",
     }
 )
 WHEEL_FORBIDDEN_EXACT = frozenset(
@@ -86,6 +96,10 @@ SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
     {
         "third_party/agent-browser/LICENSE",
         "third_party/agent-browser/cli/Cargo.toml",
+        "third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core-THIRD-PARTY.txt",
+        "third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core.txt",
+        "third_party/agent-browser/cli/src/native/a11y/axe.min.js",
+        "third_party/agent-browser/cli/src/native/a11y/mod.rs",
         "third_party/agent-browser/cli/src/native/actions.rs",
         "third_party/agent-browser/cli/cdp-protocol/browser_protocol.json",
         "third_party/agent-browser/skill-data/core/SKILL.md",
@@ -243,6 +257,20 @@ def assert_wheel_python_modules_are_nonempty(sizes: Mapping[str, int]) -> None:
     )
     if empty:
         _fail(f"wheel contains empty Python modules: {empty}")
+
+
+def assert_wheel_license_files(path: Path, names: set[str]) -> None:
+    resolved: dict[str, str] = {}
+    for relative_path in WHEEL_REQUIRED_LICENSE_FILES:
+        suffix = f".dist-info/licenses/{relative_path}"
+        matches = [name for name in names if name.endswith(suffix)]
+        if len(matches) != 1:
+            _fail(f"wheel should contain one license file at {relative_path}: {matches}")
+        resolved[relative_path] = matches[0]
+    with zipfile.ZipFile(path) as archive:
+        notice = archive.read(resolved["NOTICE"]).decode("utf-8")
+    if AXE_CORE_SOURCE_URL not in notice:
+        _fail("wheel NOTICE is missing the axe-core source URL")
 
 
 def assert_wheel_excludes_source_and_junk(names: set[str]) -> None:
@@ -413,6 +441,12 @@ def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:
         _fail(f"{artifact_name} metadata allows unsupported Python {rejected_version}")
     if metadata["Summary"] != project["description"]:
         _fail(f"{artifact_name} metadata has wrong Summary: {metadata['Summary']}")
+    license_files = set(metadata.get_all("License-File") or [])
+    if license_files != WHEEL_REQUIRED_LICENSE_FILES:
+        _fail(
+            f"{artifact_name} metadata license files drifted: "
+            f"expected={sorted(WHEEL_REQUIRED_LICENSE_FILES)}, actual={sorted(license_files)}"
+        )
     classifiers = set(metadata.get_all("Classifier") or [])
     missing_classifiers = {
         str(classifier) for classifier in project_classifiers if str(classifier) not in classifiers
@@ -482,6 +516,7 @@ def check_wheel(path: Path) -> None:
     sizes = wheel_file_sizes(path)
     assert_wheel_runtime_payload(names, sizes, path.name)
     assert_wheel_python_modules_are_nonempty(sizes)
+    assert_wheel_license_files(path, names)
     assert_wheel_excludes_source_and_junk(names)
     assert_native_extension_excludes_local_build_paths(path)
     assert_metadata_invariants(_metadata_from_wheel(path), path.name)

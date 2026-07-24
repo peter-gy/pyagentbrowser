@@ -13,6 +13,7 @@ from agentbrowser._browser_common import (
     validate_screenshot_wait_ms,
 )
 from agentbrowser.command_params import (
+    accessibility_audit_params,
     cookies_clear_params,
     cookies_get_params,
     cookies_set_params,
@@ -33,6 +34,7 @@ from agentbrowser.command_params import (
     wheel_params,
 )
 from agentbrowser.models import (
+    AccessibilityAudit,
     ConfirmationRequired,
     ConsoleMessage,
     Cookie,
@@ -52,8 +54,11 @@ from agentbrowser.models import (
     SessionStatus,
     SnapshotDiff,
     StorageArea,
+    TabCloseResult,
     TabInfo,
+    TabSwitchResult,
     WaitSelectorState,
+    accessibility_audit_from_data,
     console_messages_from_data,
     cookies_from_data,
     network_requests_from_data,
@@ -62,7 +67,9 @@ from agentbrowser.models import (
     request_detail_from_data,
     screenshot_from_data,
     session_status_from_data,
+    tab_close_result_from_data,
     tab_from_data,
+    tab_switch_from_data,
     tabs_from_data,
 )
 
@@ -547,11 +554,11 @@ class Tabs:
         id: str | None = None,
         label: str | None = None,
         index: int | None = None,
-    ) -> None:
-        """Switch to a tab by id, label, or zero-based index."""
-        self.browser._command(
+    ) -> TabSwitchResult:
+        """Switch to a tab and return observed renderer state."""
+        return self.browser._command(
             "tab_switch",
-            _decode=_none,
+            _decode=tab_switch_from_data,
             tabId=self._resolve_selector(id=id, label=label, index=index, required=True),
         )
 
@@ -561,11 +568,11 @@ class Tabs:
         id: str | None = None,
         label: str | None = None,
         index: int | None = None,
-    ) -> None:
-        """Close a tab or the current tab."""
-        self.browser._command(
+    ) -> TabCloseResult:
+        """Close a tab and return observed successor reactivation."""
+        return self.browser._command(
             "tab_close",
-            _decode=_none,
+            _decode=tab_close_result_from_data,
             tabId=self._resolve_selector(id=id, label=label, index=index),
         )
 
@@ -1127,7 +1134,7 @@ class Diff:
 
 @dataclass(frozen=True, slots=True)
 class Diagnostics:
-    """Console, error, vitals, and framework diagnostic helpers."""
+    """Accessibility, console, error, vitals, and framework diagnostics."""
 
     browser: CommandTarget
 
@@ -1142,6 +1149,25 @@ class Diagnostics:
     def vitals(self) -> Mapping[str, Any]:
         """Return page vitals when supported by the native engine."""
         return self.browser._command("vitals")
+
+    def accessibility(
+        self,
+        url: str | None = None,
+        *,
+        tags: Sequence[str] = (),
+        selector: str | None = None,
+    ) -> AccessibilityAudit:
+        """Run an axe-core accessibility audit for a URL or the active page."""
+        normalized_url = normalize_url(url) if url is not None else None
+        return self.browser._command(
+            "a11y",
+            _decode=accessibility_audit_from_data,
+            **accessibility_audit_params(
+                normalized_url,
+                tags=tags,
+                selector=selector,
+            ),
+        )
 
     def react_tree(self, *, selector: str | None = None) -> Mapping[str, Any]:
         """Return React tree diagnostics, optionally scoped by selector."""
