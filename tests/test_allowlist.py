@@ -38,6 +38,7 @@ def test_allowlist_forwards_allowed_navigation(url: str) -> None:
 @pytest.mark.parametrize(
     ("action", "field", "target"),
     [
+        ("a11y", "url", "https://evil.example/audit"),
         ("addscript", "url", "https://evil.example/script.js"),
         ("addstyle", "url", "https://evil.example/style.css"),
         ("auth_save", "url", "https://evil.example/login"),

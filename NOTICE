@@ -7,5 +7,16 @@ agent-browser project.
 Upstream project: https://github.com/vercel-labs/agent-browser
 Upstream license: third_party/agent-browser/LICENSE
 
+The embedded native engine includes axe-core 4.12.1 for accessibility audits.
+
+axe-core license:
+third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core.txt
+
+axe-core bundled dependency notices:
+third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core-THIRD-PARTY.txt
+
+axe-core source:
+https://github.com/dequelabs/axe-core/tree/v4.12.1
+
 pyagentbrowser is an independent project. It is not affiliated with, endorsed
 by, or sponsored by Vercel Inc. or Vercel Labs.

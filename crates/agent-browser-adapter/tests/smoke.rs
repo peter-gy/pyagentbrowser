@@ -36,6 +36,14 @@ fn assert_error_contains(response: &Value, expected: &str) {
     );
 }
 
+#[test]
+fn accessibility_audit_engine_is_embedded() {
+    let source = agent_browser::native::a11y::AXE_JS;
+
+    assert!(source.len() > 100_000);
+    assert!(source.contains("axe.version="));
+}
+
 struct EnvVarGuard {
     key: &'static str,
     previous: Option<OsString>,

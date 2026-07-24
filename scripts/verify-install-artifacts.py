@@ -22,11 +22,20 @@ from pathlib import Path
 
 import agentbrowser as ab
 import agentbrowser.skills as skills
-from agentbrowser import Browser, CloseResult, RestoreSaveError, SessionStatus
+from agentbrowser import (
+    AccessibilityAudit,
+    Browser,
+    CloseResult,
+    RestoreSaveError,
+    SessionStatus,
+    TabSwitchResult,
+)
 from agentbrowser.cdp import CDPClient
 from agentbrowser.models import Screenshot
 
 assert Browser
+assert AccessibilityAudit
+assert TabSwitchResult
 assert metadata.version("pyagentbrowser")
 assert isinstance(ab.__agent_browser_version__, str)
 assert ab.__agent_browser_version__

@@ -95,7 +95,15 @@ def _chained_tab_switch_native() -> ScriptedNative:
                     },
                 },
             }
-        return _confirmed("plugin:provider:launch.mutate", {})
+        return _confirmed(
+            "plugin:provider:launch.mutate",
+            {
+                "tabId": "existing",
+                "url": "https://example.com/old",
+                "title": "Existing",
+                "label": "work",
+            },
+        )
 
     return ScriptedNative(
         {
@@ -318,8 +326,17 @@ def test_async_native_any_confirmation_preserves_arbitrary_json() -> None:
 def test_sync_tab_labels_are_forwarded_to_native_without_listing() -> None:
     native = ScriptedNative(
         {
-            "tab_switch": {},
-            "tab_close": {},
+            "tab_switch": {
+                "tabId": "t1",
+                "url": "https://example.com",
+                "title": "Example",
+                "label": "work",
+            },
+            "tab_close": {
+                "tabId": "t1",
+                "label": "work",
+                "closed": True,
+            },
             "__agent_browser_internal_shutdown": {},
         }
     )
@@ -337,8 +354,17 @@ def test_async_tab_labels_are_forwarded_to_native_without_listing() -> None:
     async def run() -> None:
         native = ScriptedNative(
             {
-                "tab_switch": {},
-                "tab_close": {},
+                "tab_switch": {
+                    "tabId": "t1",
+                    "url": "https://example.com",
+                    "title": "Example",
+                    "label": "work",
+                },
+                "tab_close": {
+                    "tabId": "t1",
+                    "label": "work",
+                    "closed": True,
+                },
                 "__agent_browser_internal_shutdown": {},
             }
         )

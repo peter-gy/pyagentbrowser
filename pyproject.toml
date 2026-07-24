@@ -7,6 +7,13 @@ authors = [
     { name = "Péter Ferenc Gyarmati", email = "dev.petergy@gmail.com" }
 ]
 license = "Apache-2.0"
+license-files = [
+    "LICENSE",
+    "NOTICE",
+    "third_party/agent-browser/LICENSE",
+    "third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core.txt",
+    "third_party/agent-browser/cli/src/native/a11y/LICENSE-axe-core-THIRD-PARTY.txt",
+]
 requires-python = ">=3.11,<3.15"
 classifiers = [
     "Development Status :: 3 - Alpha",

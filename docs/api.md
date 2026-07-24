@@ -271,8 +271,15 @@ It can inspect a lazy session before Chrome launches.
 | `list() -> tuple[TabInfo, ...]` | Returns open tabs. |
 | `new(url=None, *, label=None) -> TabInfo` | Creates a tab with an optional URL and label. |
 | `open(url, *, label=None, reuse=True, wait_until="load") -> TabInfo` | Opens a URL and reuses a matching label when requested. |
-| `switch(*, id=None, label=None, index=None) -> None` | Switches by exactly one id, label, or zero-based index. |
-| `close(*, id=None, label=None, index=None) -> None` | Closes the selected tab or the active tab. |
+| `switch(*, id=None, label=None, index=None) -> TabSwitchResult` | Switches by exactly one id, label, or zero-based index and returns the observed renderer state. |
+| `close(*, id=None, label=None, index=None) -> TabCloseResult` | Closes the selected tab or the active tab and reports successor reactivation when observed. |
+
+`TabSwitchResult.revived=True` means switching reactivated the renderer, so the
+page may have reloaded. `dialog_blocked=True` means a JavaScript dialog paused
+the renderer. Its URL and title contain the last-known tab metadata.
+`TabCloseResult.active_tab_revived=True` means closing reactivated the successor
+renderer. Use it as a positive signal. Tab closure commits before successor
+recovery, and recovery errors are suppressed.
 
 ### `browser.cookies`
 
@@ -349,11 +356,21 @@ bodies.
 | `diagnostics.console(*, clear=False) -> tuple[ConsoleMessage, ...]` | Returns captured console messages. |
 | `diagnostics.errors() -> Mapping` | Returns page errors. |
 | `diagnostics.vitals() -> Mapping` | Returns page vitals. |
+| `diagnostics.accessibility(url=None, *, tags=(), selector=None) -> AccessibilityAudit` | Runs an axe-core audit for the active page or an optional URL. |
 | `diagnostics.react_tree(*, selector=None) -> Mapping` | Returns React tree diagnostics. |
 | `active_frame.select(*, selector=None, name=None, url=None) -> None` | Selects one native frame. |
 | `active_frame.main() -> None` | Restores the main native frame. |
 
 Script and style methods accept exactly one inline source or URL or path. Invalid source combinations raise `ValueError`.
+
+Accessibility audits run the embedded axe-core engine in a CDP browser.
+`tags` accepts axe rule tags such as `("wcag2a", "wcag2aa")`. `selector`
+scopes the audit to one matching subtree. Passing `url` navigates before the
+audit. It invalidates cached direct CDP page handles after the navigation
+attempt, including when the audit then fails. A current-page audit keeps
+existing handles valid. Safari and iOS WebDriver sessions reject this
+operation. Each issue includes up to 10 node records and keeps the complete
+affected count in `node_count`.
 
 ## CDP
 
@@ -367,7 +384,9 @@ The `cdp` extra supplies WebSocket transport for CDP operations.
 | `browser.cdp.evaluate(script, *, frame=None, extension_id=None, context=None, await_promise=True, return_by_value=True)` | Evaluates JavaScript in a selected CDP realm. |
 | `browser.cdp.send(method, params=None, *, session_id=None)` | Sends one raw CDP command and returns its result mapping. |
 
-Navigation, tab changes, and browser relaunch invalidate cached CDP handles. Resolve handles again after those lifecycle events.
+Navigation, URL accessibility audits, tab changes, and browser relaunch
+invalidate cached CDP handles. Resolve handles again after those lifecycle
+events.
 
 ## Native protocol
 
@@ -379,7 +398,7 @@ Executes one native action and returns its complete response envelope. An unsucc
 
 Executes one native action and returns successful response data. `expect="object"` requires a mapping. `expect="any"` accepts every JSON value. Native failures raise `BrowserError`.
 
-Domain allowlists, policy confirmation, and browser or CDP lifecycle tracking apply to both methods. See the [`agent-browser` command reference at the embedded commit](https://github.com/vercel-labs/agent-browser/blob/81c336c1c20b80ac648e0416a7b6e0c0ae7878bb/README.md#commands) for native action names and parameters.
+Domain allowlists, policy confirmation, and browser or CDP lifecycle tracking apply to both methods. See the [`agent-browser` command reference at the embedded commit](https://github.com/vercel-labs/agent-browser/blob/1ed371f3af472cc0d6cd8fdaea75d1a085ff7534/README.md#commands) for native action names and parameters.
 
 ## Confirmation
 
@@ -391,12 +410,18 @@ Typed operations raise `ConfirmationRequired` when the native policy pauses an a
 
 | Model | Contract |
 | --- | --- |
+| `AccessibilityAudit` | Audited URL, axe-core version, counts, violations, incomplete checks, and raw data. |
+| `AccessibilityCounts` | Violation, incomplete, pass, and inapplicable rule counts. |
+| `AccessibilityIssue` | Rule id, impact, guidance, tags, affected node count, and sampled nodes. |
+| `AccessibilityNode` | Nested selector target, HTML excerpt, failure summary, and raw data. |
 | `BrowserResponse` | Complete native response envelope. |
 | `CloseResult` | Terminal browser close and restore-save result. |
 | `ReadResult` | URL, final URL, status, content type, source, truncation state, content, and raw data. |
 | `Screenshot` | Screenshot path, format, annotations, and image helpers. |
 | `SnapshotDiff` | Text diff, line counts for additions, removals, and unchanged content, plus a changed flag. |
 | `TabInfo` | Tab id, URL, title, label, and active state. |
+| `TabSwitchResult` | Selected tab metadata plus renderer reactivation and blocking-dialog signals observed during the switch. |
+| `TabCloseResult` | Closed tab id and label plus an observed successor reactivation signal. |
 | `Cookie` | Cookie value and browser metadata. |
 | `NetworkRequest` | Captured request summary. |
 | `RequestDetail` | Request, response, headers, status, and body details. |

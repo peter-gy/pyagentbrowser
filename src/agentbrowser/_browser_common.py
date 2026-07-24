@@ -101,7 +101,12 @@ def action_clears_pending_confirmation(action: str) -> bool:
     return action in {"close", "confirm", "deny", INTERNAL_SHUTDOWN_ACTION}
 
 
-def action_invalidates_cdp(action: str) -> bool:
+def action_invalidates_cdp(
+    action: str,
+    params: Mapping[str, Any] | None = None,
+) -> bool:
+    if action == "a11y":
+        return params is not None and isinstance(params.get("url"), str)
     return action in CDP_INVALIDATING_ACTIONS
 
 

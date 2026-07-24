@@ -98,11 +98,19 @@ with Browser.launch() as browser:
     browser.tabs.open("https://example.com/report", label="report")
     browser.tabs.open("https://example.com/settings", label="settings")
 
-    browser.tabs.switch(label="report")
+    selected = browser.tabs.switch(label="report")
+    print(selected.revived, selected.dialog_blocked)
     print(browser.tabs.list())
 ```
 
-Pass `reuse=False` to create a new tab when the label already exists. `tabs.switch()` and `tabs.close()` accept one id, label, or zero-based index.
+Pass `reuse=False` to create a new tab when the label already exists.
+`tabs.switch()` and `tabs.close()` accept one id, label, or zero-based index.
+A switch can reactivate a discarded renderer. `TabSwitchResult.revived=True`
+means the page may have reloaded, so refresh workflow state derived from the
+page. `TabSwitchResult.dialog_blocked=True` means a JavaScript dialog paused
+the renderer and the result contains last-known URL and title metadata.
+`TabCloseResult.active_tab_revived=True` reports a reactivated successor after
+the selected tab closes.
 
 ## Save and restore browser state
 
@@ -150,6 +158,30 @@ print(har_path)
 include base64-encoded binary bodies or `"none"` to record metadata. One
 recording can embed up to 64 MiB. Treat the HAR as sensitive when the page uses
 cookies, authorization headers, or account data.
+
+## Audit page accessibility
+
+[`browser.diagnostics.accessibility()`](api.md#browserscripts-browserdiagnostics-and-browseractive_frame)
+runs the embedded axe-core engine and returns typed violations, incomplete
+checks, and rule counts:
+
+```python
+from agentbrowser import Browser
+
+with Browser.launch() as browser:
+    audit = browser.diagnostics.accessibility(
+        "https://example.com",
+        tags=("wcag2a", "wcag2aa"),
+        selector="main",
+    )
+
+for issue in audit.violations:
+    print(issue.id, issue.impact, issue.node_count)
+```
+
+Pass a URL to navigate before the audit or omit it to inspect the active page.
+Each `AccessibilityNode.target` preserves axe selector paths as nested tuples
+across frames and shadow roots. Audits require a CDP browser.
 
 ## Restrict domains and confirm actions
 

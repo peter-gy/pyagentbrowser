@@ -12,6 +12,7 @@ from agentbrowser.models import BrowserError, JSONObject, JSONValue
 
 DENIED_CODE = "allowed_domains"
 URL_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
+    "a11y": ("url",),
     "addscript": ("url",),
     "addstyle": ("url",),
     "auth_save": ("url",),
