@@ -180,6 +180,8 @@ for issue in audit.violations:
 ```
 
 Pass a URL to navigate before the audit or omit it to inspect the active page.
+The optional selector must be valid CSS and match an element. Invalid and
+unmatched selectors raise `BrowserError` with the selector in the message.
 Each `AccessibilityNode.target` preserves axe selector paths as nested tuples
 across frames and shadow roots. Audits require a CDP browser.
 

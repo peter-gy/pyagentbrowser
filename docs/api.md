@@ -15,12 +15,12 @@ from agentbrowser import Browser, SessionOptions, Snapshot, Wait
 | API | Contract |
 | --- | --- |
 | `Browser.launch(options=None, *, session=None) -> Browser` | Starts a local browser and returns an active controller. |
-| `Browser.attach(target, *, launch=None, session=None) -> Browser` | Connects to one CDP target and returns an active controller. |
+| `Browser.attach(target, *, launch=None, session=None) -> Browser` | Connects to one CDP target, selects a responsive tab when several are available, and returns an active controller. |
 | `Browser(*, session=None) -> Browser` | Creates a lazy controller. The first browser-dependent command starts the configured local browser. An explicit-URL `read()` completes through HTTP and leaves browser startup deferred. |
 | `AsyncBrowser.launch(...) -> AsyncBrowser` | Awaitable local launch. |
 | `AsyncBrowser.attach(...) -> AsyncBrowser` | Awaitable CDP attachment. |
 
-`Browser.launch()` raises `BrowserInstallError` when it cannot prepare a local browser and `BrowserError` when native launch fails. `Browser.attach()` accepts a `CDPTarget` with exactly one port or URL.
+`Browser.launch()` raises `BrowserInstallError` when it cannot prepare a local browser and `BrowserError` when native launch fails. `Browser.attach()` accepts a `CDPTarget` with exactly one port or URL. When the target exposes several tabs, attachment selects the first responsive tab. When every tab renderer is discarded, attachment reactivates the first tab or raises `BrowserError` if it remains unresponsive.
 
 ### Lifecycle
 
@@ -365,12 +365,13 @@ Script and style methods accept exactly one inline source or URL or path. Invali
 
 Accessibility audits run the embedded axe-core engine in a CDP browser.
 `tags` accepts axe rule tags such as `("wcag2a", "wcag2aa")`. `selector`
-scopes the audit to one matching subtree. Passing `url` navigates before the
-audit. It invalidates cached direct CDP page handles after the navigation
-attempt, including when the audit then fails. A current-page audit keeps
-existing handles valid. Safari and iOS WebDriver sessions reject this
-operation. Each issue includes up to 10 node records and keeps the complete
-affected count in `node_count`.
+scopes the audit to one matching subtree. It must be valid CSS and match an
+element. Invalid and unmatched selectors raise `BrowserError` with the selector
+in the message. Passing `url` navigates before the audit. It invalidates cached
+direct CDP page handles after the navigation attempt, including when the audit
+then fails. A current-page audit keeps existing handles valid. Safari and iOS
+WebDriver sessions reject this operation. Each issue includes up to 10 node
+records and keeps the complete affected count in `node_count`.
 
 ## CDP
 

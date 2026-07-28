@@ -103,7 +103,7 @@ with Browser.attach(CDPTarget(port=9222)) as browser:
     print(browser.tabs.list())
 ```
 
-`Browser.attach()` completes the CDP connection before returning. `CDPTarget` accepts exactly one `port` or `url`.
+`Browser.attach()` completes the CDP connection before returning. When the target exposes several tabs, attachment selects a responsive tab. When every renderer is discarded, attachment reactivates the first tab or raises `BrowserError` if it remains unresponsive. `CDPTarget` accepts exactly one `port` or `url`.
 
 ## Select a browser executable
 
