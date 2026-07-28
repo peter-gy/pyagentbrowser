@@ -294,6 +294,14 @@ def test_accessibility_audit_runs_the_embedded_engine_with_scope(
     assert issue.nodes[0].target == ("#missing-alt",)
 
 
+def test_accessibility_audit_reports_an_invalid_selector(chrome_path: Path) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content("<main>Audit</main>")
+
+        with pytest.raises(BrowserError, match=r"Invalid selector: main::bogus\("):
+            browser.diagnostics.accessibility(selector="main::bogus(")
+
+
 def test_implicit_accessible_roles_resolve_through_live_queries(
     chrome_path: Path,
 ) -> None:

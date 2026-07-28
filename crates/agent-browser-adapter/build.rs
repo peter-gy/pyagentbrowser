@@ -190,6 +190,9 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
                 "#[allow(dead_code, clippy::new_without_default, clippy::should_implement_trait)]"
             ),
         );
+        if matches!(*name, "actions" | "stream") {
+            line(&mut output, format_args!("#[allow(private_interfaces)]"));
+        }
         if *name == "snapshot" {
             line(
                 &mut output,
@@ -865,7 +868,7 @@ fn rewrite_actions_namespace(contents: String) -> String {
 
 fn rewrite_dashboard_streaming(contents: String) -> String {
     assert!(
-        contents.contains("use super::stream::{self, StreamServer};"),
+        contents.contains("use super::stream::{self, IdleActivity, StreamServer};"),
         "upstream dashboard stream import moved"
     );
     assert!(
