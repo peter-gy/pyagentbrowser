@@ -1,0 +1,59 @@
+src/agentbrowser/browser.py
+  s_39b276da2e541f::t_eed39f5cdf2051 411,439-440
+src/agentbrowser/launch.py
+  s_39b276da2e541f::t_eed39f5cdf2051 117,127-128
+tests/test_session.py
+  s_39b276da2e541f::t_bdcc144331e9ca 54-72
+  s_39b276da2e541f::t_df982b3ee8e98c 244-256
+  s_39b276da2e541f::t_d603e53965d59e 167-190
+src/agentbrowser/_upstream.json
+  s_39b276da2e541f::t_7a19a8db651216 2-3
+src/agentbrowser/session.py
+  s_39b276da2e541f::t_eed39f5cdf2051 92,100,219-220
+tests/test_browser_api.py
+  s_39b276da2e541f::t_0157e0d3bcd2a4 214,810,818,831,837,1215,1224,1440,1448,1461,1463
+  s_39b276da2e541f::t_d603e53965d59e 625-633,635-636,870
+tests/test_browser_integration.py
+  s_39b276da2e541f::t_30e57d97844226 450-454,471-472,475-481
+docs/api.md
+  s_39b276da2e541f::t_2ebf0422594fee 111,130-135,291-294,434-436
+crates/agent-browser-adapter/build.rs
+  s_39b276da2e541f::t_62a773c70ea4c9 224-227
+  s_39b276da2e541f::t_a92eddece7d40d 843-851,854-857,860-872
+  s_39b276da2e541f::t_c07b96599bd661 852-853,858-859
+  s_39b276da2e541f::t_98170d33c74075 937-999,1001-1003
+  s_39b276da2e541f::t_c79bf2518a171b 1000
+  s_39b276da2e541f::t_d6acbba735ab90 41,186
+  s_39b276da2e541f::t_2e400fe89d5488 688-692
+src/agentbrowser/models.py
+  s_39b276da2e541f::t_e980e14e512e18 721,735,747,1076,1094,1346
+crates/agent-browser-adapter/tests/smoke.rs
+  s_39b276da2e541f::t_da84b011a11a6b 47-49,51-56,59-64,69-73
+  s_39b276da2e541f::t_c79bf2518a171b 50,57-58,65-68
+docs/guides.md
+  s_39b276da2e541f::t_2ebf0422594fee 115-131
+scripts/package_smoke.py
+  s_39b276da2e541f::t_98170d33c74075 104
+src/agentbrowser/session_async.py
+  s_39b276da2e541f::t_eed39f5cdf2051 50,73,91,228
+src/agentbrowser/browser_async.py
+  s_39b276da2e541f::t_eed39f5cdf2051 389,420-422
+crates/agent-browser-adapter/Cargo.toml
+  s_39b276da2e541f::t_7a19a8db651216 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6fe3a77972869ff0e5cf8a15c9fa54c9cdae5848",
+  "prompts": {},
+  "sessions": {
+    "s_39b276da2e541f": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "019fefc0-8b52-7481-ad80-1ad5671554c1",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
