@@ -1,4 +1,10 @@
-use std::{env, ffi::OsString, path::Path, sync::Arc, time::Duration};
+use std::{
+    env,
+    ffi::OsString,
+    path::Path,
+    sync::{Arc, Mutex, MutexGuard},
+    time::Duration,
+};
 
 use agent_browser::native::{
     actions::{execute_command, DaemonState},
@@ -44,16 +50,53 @@ fn accessibility_audit_engine_is_embedded() {
     assert!(source.contains("axe.version="));
 }
 
+#[test]
+fn tab_bindings_follow_the_python_namespace() {
+    let socket_dir = TempDir::new().expect("socket dir should be created");
+    let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());
+    let binding = agent_browser::native::tab_binding::TabBinding {
+        target_id: "target-a".to_string(),
+        url: "https://example.com/path?secret=value".to_string(),
+        pinned: true,
+    };
+
+    agent_browser::native::tab_binding::save_for_namespace("research", &binding, Some("worker-a"))
+        .expect("namespaced binding should save");
+
+    let path = agent_browser::native::tab_binding::binding_path_for_namespace(
+        "research",
+        Some("worker-a"),
+    );
+    assert!(path.starts_with(socket_dir.path().join("namespaces/worker-a/run")));
+    let loaded =
+        agent_browser::native::tab_binding::load_for_namespace("research", Some("worker-a"))
+            .expect("namespaced binding should load")
+            .expect("namespaced binding should exist");
+    assert_eq!(loaded.target_id, "target-a");
+    assert_eq!(loaded.url, "https://example.com/path");
+    assert!(loaded.pinned);
+}
+
+static ENV_MUTEX: Mutex<()> = Mutex::new(());
+
 struct EnvVarGuard {
+    _lock: MutexGuard<'static, ()>,
     key: &'static str,
     previous: Option<OsString>,
 }
 
 impl EnvVarGuard {
     fn set_path(key: &'static str, value: &Path) -> Self {
+        let lock = ENV_MUTEX
+            .lock()
+            .expect("environment lock should be available");
         let previous = env::var_os(key);
         env::set_var(key, value);
-        Self { key, previous }
+        Self {
+            _lock: lock,
+            key,
+            previous,
+        }
     }
 }
 

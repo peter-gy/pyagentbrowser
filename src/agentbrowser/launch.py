@@ -114,6 +114,7 @@ class SessionOptions:
     action_policy: str | Path | None = None
     confirm_actions: Sequence[str] = ()
     auto_dialogs: bool = True
+    pin_tab: bool | None = None
     dashboard: DashboardOptions | None = None
 
     def __post_init__(self) -> None:
@@ -123,6 +124,8 @@ class SessionOptions:
             raise TypeError("allowed_domains must be a sequence, not a string")
         if isinstance(self.confirm_actions, str):
             raise TypeError("confirm_actions must be a sequence, not a string")
+        if self.pin_tab is not None and not isinstance(self.pin_tab, bool):
+            raise TypeError("pin_tab must be a boolean or None")
         domains = tuple(self.allowed_domains)
         actions = tuple(self.confirm_actions)
         if any(not domain.strip() for domain in domains):

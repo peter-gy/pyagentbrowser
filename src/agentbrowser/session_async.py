@@ -47,6 +47,7 @@ class _AsyncNativeConfig:
     action_policy: str | Path | None
     confirm_actions: tuple[str, ...] | None
     no_auto_dialog: bool
+    pin_tab: bool | None
     dashboard: bool | DashboardOptions | None
     native: NativeEngine | None
 
@@ -69,6 +70,7 @@ class AsyncNativeSession:
         action_policy: str | Path | None = None,
         confirm_actions: Sequence[str] | None = None,
         no_auto_dialog: bool = False,
+        pin_tab: bool | None = None,
         dashboard: bool | DashboardOptions | None = False,
         native: NativeEngine | None = None,
     ) -> None:
@@ -86,6 +88,7 @@ class AsyncNativeSession:
             action_policy=action_policy,
             confirm_actions=tuple(confirm_actions) if confirm_actions is not None else None,
             no_auto_dialog=no_auto_dialog,
+            pin_tab=pin_tab,
             dashboard=dashboard,
             native=native,
         )
@@ -222,6 +225,7 @@ def _run_async_native_session(
             action_policy=config.action_policy,
             confirm_actions=config.confirm_actions,
             no_auto_dialog=config.no_auto_dialog,
+            pin_tab=config.pin_tab,
             dashboard=config.dashboard,
             native=config.native,
         )

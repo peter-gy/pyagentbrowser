@@ -108,6 +108,7 @@ Scalar strings raise `TypeError` for `extensions` and `args`.
 | `action_policy` | `None` | Loads an allow, deny, and confirm policy file. |
 | `confirm_actions` | `()` | Requests confirmation for named native actions. Pass a sequence. |
 | `auto_dialogs` | `True` | Enables automatic JavaScript dialog handling. |
+| `pin_tab` | `None` | Preserves the session's current tab-binding policy. Set `True` for strict binding or `False` to disable a sticky pin. |
 | `dashboard` | `None` | Configures dashboard observability before startup. |
 
 Empty domain and action entries raise `ValueError`. Scalar strings raise `TypeError` for `allowed_domains` and `confirm_actions`.
@@ -125,6 +126,12 @@ browser-level target attachment before page scripts start.
 ### `CDPTarget`
 
 `CDPTarget(url=None, port=None, auto_connect=True)` selects an existing browser. Pass exactly one URL or port. Ports must be between 1 and 65535.
+
+Use `SessionOptions(session_id="research", pin_tab=True)` when several sessions
+share one CDP browser. The first attachment creates or restores that session's
+tab. If the bound tab closes externally, browser actions raise `BrowserError`
+with `code="tab_gone"`. `error.response["data"]` contains the stable
+`targetId` and may contain a sanitized `lastUrl` for recovery.
 
 ### `RestoreOptions`
 
@@ -281,6 +288,10 @@ the renderer. Its URL and title contain the last-known tab metadata.
 renderer. Use it as a positive signal. Tab closure commits before successor
 recovery, and recovery errors are suppressed.
 
+`TabInfo`, `TabSwitchResult`, and `TabCloseResult` expose `target_id` when the
+engine reports a CDP target. Pass that value as `id=` to `tabs.switch()` or
+`tabs.close()` when a tab handle must remain stable across native restarts.
+
 ### `browser.cookies`
 
 | Method | Contract |
@@ -420,9 +431,9 @@ Typed operations raise `ConfirmationRequired` when the native policy pauses an a
 | `ReadResult` | URL, final URL, status, content type, source, truncation state, content, and raw data. |
 | `Screenshot` | Screenshot path, format, annotations, and image helpers. |
 | `SnapshotDiff` | Text diff, line counts for additions, removals, and unchanged content, plus a changed flag. |
-| `TabInfo` | Tab id, URL, title, label, and active state. |
-| `TabSwitchResult` | Selected tab metadata plus renderer reactivation and blocking-dialog signals observed during the switch. |
-| `TabCloseResult` | Closed tab id and label plus an observed successor reactivation signal. |
+| `TabInfo` | Tab id, stable CDP target id, URL, title, label, and active state. |
+| `TabSwitchResult` | Selected tab metadata plus its stable CDP target id, renderer reactivation, and blocking-dialog signals. |
+| `TabCloseResult` | Closed tab id, stable CDP target id, label, and observed successor reactivation. |
 | `Cookie` | Cookie value and browser metadata. |
 | `NetworkRequest` | Captured request summary. |
 | `RequestDetail` | Request, response, headers, status, and body details. |

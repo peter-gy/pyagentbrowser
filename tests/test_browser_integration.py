@@ -447,6 +447,11 @@ def test_browser_attaches_to_an_existing_cdp_target(
     tmp_path: Path,
 ) -> None:
     port = _free_port()
+    session = SessionOptions(
+        session_id=f"attach-{time.monotonic_ns()}",
+        timeout=5.0,
+        pin_tab=True,
+    )
     process = subprocess.Popen(
         [
             str(chrome_path),
@@ -463,9 +468,17 @@ def test_browser_attaches_to_an_existing_cdp_target(
     try:
         if not _wait_for_cdp(port):
             pytest.skip("Chrome CDP endpoint did not become ready")
-        with Browser.attach(CDPTarget(port=port), session=_session("attach")) as browser:
+        target = CDPTarget(port=port)
+        with Browser.attach(target, session=session) as browser:
             browser.open(_data_url("<title>Attached</title>"))
             assert browser.title() == "Attached"
+            active = next(tab for tab in browser.tabs.list() if tab.active)
+            assert active.target_id
+
+        with Browser.attach(target, session=session) as browser:
+            assert browser.title() == "Attached"
+            restored = next(tab for tab in browser.tabs.list() if tab.active)
+            assert restored.target_id == active.target_id
     finally:
         _stop_process(process)
 

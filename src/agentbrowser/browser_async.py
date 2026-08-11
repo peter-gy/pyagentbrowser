@@ -386,6 +386,7 @@ class AsyncBrowser:
             action_policy=session_config.action_policy,
             confirm_actions=session_config.confirm_actions,
             no_auto_dialog=not session_config.auto_dialogs,
+            pin_tab=session_config.pin_tab,
             dashboard=session_config.dashboard,
         )
         if native_session is not None and session_config.allowed_domains:
@@ -415,6 +416,10 @@ class AsyncBrowser:
         if native_session is not None and session_config.confirm_actions:
             raise ValueError(
                 "confirm_actions must be set on AsyncNativeSession when native_session is supplied"
+            )
+        if native_session is not None and session_config.pin_tab is not None:
+            raise ValueError(
+                "pin_tab must be set on AsyncNativeSession when native_session is supplied"
             )
         if (
             native_session is not None
