@@ -112,6 +112,23 @@ the renderer and the result contains last-known URL and title metadata.
 `TabCloseResult.active_tab_revived=True` reports a reactivated successor after
 the selected tab closes.
 
+Pin a named session when several agents attach to the same CDP browser:
+
+```python
+from agentbrowser import Browser, CDPTarget, SessionOptions
+
+session = SessionOptions(session_id="report-agent", pin_tab=True)
+
+with Browser.attach(CDPTarget(port=9222), session=session) as browser:
+    report = browser.tabs.open("https://example.com/report", label="report")
+    print(report.target_id)
+```
+
+The session restores its CDP target across native restarts. A target closed by
+another client raises `BrowserError` with `code="tab_gone"` and recovery data
+in `error.response["data"]`. `tabs.switch(id=target_id)` accepts the stable
+target id returned by the tab models.
+
 ## Save and restore browser state
 
 [`browser.state`](api.md#browser-state-namespaces) saves and loads cookies plus origin storage through explicit files. [`RestoreOptions`](api.md#restoreoptions) binds periodic persistence to a session key.

@@ -718,6 +718,7 @@ class TabInfo:
     title: str = ""
     label: str | None = None
     active: bool = False
+    target_id: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -731,6 +732,7 @@ class TabSwitchResult:
     label: str | None
     revived: bool
     dialog_blocked: bool
+    target_id: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -742,6 +744,7 @@ class TabCloseResult:
     label: str | None
     closed: bool
     active_tab_revived: bool
+    target_id: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -1070,6 +1073,7 @@ def tab_switch_from_data(data: Mapping[str, Any]) -> TabSwitchResult:
             "dialogBlocked",
             model="TabSwitchResult",
         ),
+        target_id=tab.target_id,
         raw=tab.raw,
     )
 
@@ -1087,6 +1091,7 @@ def tab_close_result_from_data(data: Mapping[str, Any]) -> TabCloseResult:
             "activeTabRevived",
             model="TabCloseResult",
         ),
+        target_id=_optional_model_string(data, "targetId", action="tab_close"),
         raw=data,
     )
 
@@ -1338,6 +1343,7 @@ def _tab_info(raw: Mapping[str, Any]) -> TabInfo:
         title=title,
         label=_optional_model_string(raw, "label", action="TabInfo"),
         active=active,
+        target_id=_optional_model_string(raw, "targetId", action="TabInfo"),
         raw=raw,
     )
 

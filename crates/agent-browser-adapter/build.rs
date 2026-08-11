@@ -38,6 +38,7 @@ const NATIVE_MODULES: &[(&str, &str)] = &[
     ("state", "state.rs"),
     ("storage", "storage.rs"),
     ("stream", "stream/mod.rs"),
+    ("tab_binding", "tab_binding.rs"),
     ("tracing", "tracing.rs"),
     ("webdriver", "webdriver/mod.rs"),
 ];
@@ -182,6 +183,7 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
             "browser" => rewrite_browser_module(out_dir, &path),
             "state" => rewrite_state_module(out_dir, &path),
             "stream" => rewrite_stream_module(out_dir, &path),
+            "tab_binding" => rewrite_tab_binding_module(out_dir, &path),
             _ => path,
         };
         line(
@@ -219,7 +221,10 @@ fn read_rewrite_source(source: &Path, module: &str) -> String {
 fn rewrite_browser_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_browser.rs");
     let contents = read_rewrite_source(source, "browser file");
-    let contents = rewrite_tab_list_target_id(contents);
+    assert!(
+        contents.contains("\"targetId\": p.target_id"),
+        "upstream tab_list target id contract changed"
+    );
     fs::write(destination.as_path(), contents).expect("failed to write generated browser file");
     destination
 }
@@ -330,28 +335,6 @@ pub fn get_socket_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
     assert!(
         rewritten.contains("pub fn get_socket_dir_for_namespace("),
         "upstream socket directory helper changed"
-    );
-    rewritten
-}
-
-fn rewrite_tab_list_target_id(contents: String) -> String {
-    const UPSTREAM_TAB_LIST_FIELDS: &str = r#"                    "tabId": format_tab_id(p.tab_id),
-                    "label": p.label,
-                    "title": p.title,"#;
-    const REWRITTEN_TAB_LIST_FIELDS: &str = r#"                    "tabId": format_tab_id(p.tab_id),
-                    "targetId": p.target_id,
-                    "label": p.label,
-                    "title": p.title,"#;
-
-    let rewritten = replace_once_named(
-        contents,
-        "tab_list target id",
-        UPSTREAM_TAB_LIST_FIELDS,
-        REWRITTEN_TAB_LIST_FIELDS,
-    );
-    assert!(
-        rewritten.contains("\"targetId\": p.target_id"),
-        "upstream tab_list target id patch changed"
     );
     rewritten
 }
@@ -702,9 +685,11 @@ fn rewrite_actions_namespace(contents: String) -> String {
     const REWRITTEN_SESSION_FIELD: &str = r#"    pub session_id: String,
     pub namespace: Option<String>,
     pub tracing_state: TracingState,"#;
-    const UPSTREAM_SESSION_INIT: &str = r#"            session_id: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),"#;
-    const REWRITTEN_SESSION_INIT: &str = r#"            session_id: env::var("AGENT_BROWSER_SESSION").unwrap_or_else(|_| "default".to_string()),
-            namespace: env::var("AGENT_BROWSER_NAMESPACE").ok(),"#;
+    const UPSTREAM_SESSION_INIT: &str = r#"            session_id,
+            tracing_state: TracingState::new(),"#;
+    const REWRITTEN_SESSION_INIT: &str = r#"            session_id,
+            namespace: env::var("AGENT_BROWSER_NAMESPACE").ok(),
+            tracing_state: TracingState::new(),"#;
     const UPSTREAM_SESSION_INFO: &str = r#"async fn handle_session_info(state: &DaemonState) -> Result<Value, String> {
     Ok(json!({
         "session": state.session_id,
@@ -855,6 +840,36 @@ fn rewrite_actions_namespace(contents: String) -> String {
         UPSTREAM_STATE_SAVE,
         REWRITTEN_STATE_SAVE,
     );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace pin preference load",
+        "match tab_binding::load(&state.session_id) {",
+        "match tab_binding::load_for_namespace(&state.session_id, state.namespace.as_deref()) {",
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace pin preference save",
+        "if let Err(e) = tab_binding::save(&state.session_id, &binding) {",
+        "if let Err(e) = tab_binding::save_for_namespace(\n                            &state.session_id,\n                            &binding,\n                            state.namespace.as_deref(),\n                        ) {",
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace binding save",
+        "match tab_binding::save(&state.session_id, &binding) {",
+        "match tab_binding::save_for_namespace(\n        &state.session_id,\n        &binding,\n        state.namespace.as_deref(),\n    ) {",
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace binding load",
+        "let binding = tab_binding::load(&session).map_err(|e| {",
+        "let binding = tab_binding::load_for_namespace(&session, state.namespace.as_deref()).map_err(|e| {",
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace binding clear",
+        "tab_binding::clear(&session);",
+        "tab_binding::clear_for_namespace(&session, state.namespace.as_deref());",
+    );
     assert!(
         rewritten.contains("pub namespace: Option<String>"),
         "upstream DaemonState namespace layout changed"
@@ -916,6 +931,73 @@ fn rewrite_state_module(out_dir: &Path, source: &Path) -> PathBuf {
     let contents = read_rewrite_source(source, "state file");
     let contents = rewrite_state_namespace(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated state file");
+    destination
+}
+
+fn rewrite_tab_binding_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let destination = out_dir.join("agent_browser_tab_binding.rs");
+    let contents = read_rewrite_source(source, "tab binding file");
+    let contents = replace_once_named(
+        contents,
+        "tab binding namespace path",
+        r#"pub fn binding_path(session: &str) -> PathBuf {
+    crate::connection::get_socket_dir().join(format!("{}.target", session))
+}"#,
+        r#"pub fn binding_path(session: &str) -> PathBuf {
+    binding_path_for_namespace(session, None)
+}
+
+pub fn binding_path_for_namespace(session: &str, namespace: Option<&str>) -> PathBuf {
+    crate::connection::get_socket_dir_for_namespace(namespace)
+        .join(format!("{}.target", session))
+}"#,
+    );
+    let contents = replace_once_named(
+        contents,
+        "tab binding namespace load",
+        r#"pub fn load(session: &str) -> Result<Option<TabBinding>, String> {
+    let path = binding_path(session);"#,
+        r#"pub fn load(session: &str) -> Result<Option<TabBinding>, String> {
+    load_for_namespace(session, None)
+}
+
+pub fn load_for_namespace(
+    session: &str,
+    namespace: Option<&str>,
+) -> Result<Option<TabBinding>, String> {
+    let path = binding_path_for_namespace(session, namespace);"#,
+    );
+    let contents = replace_once_named(
+        contents,
+        "tab binding namespace save",
+        r#"pub fn save(session: &str, binding: &TabBinding) -> Result<(), String> {
+    let path = binding_path(session);"#,
+        r#"pub fn save(session: &str, binding: &TabBinding) -> Result<(), String> {
+    save_for_namespace(session, binding, None)
+}
+
+pub fn save_for_namespace(
+    session: &str,
+    binding: &TabBinding,
+    namespace: Option<&str>,
+) -> Result<(), String> {
+    let path = binding_path_for_namespace(session, namespace);"#,
+    );
+    let contents = replace_once_named(
+        contents,
+        "tab binding namespace clear",
+        r#"pub fn clear(session: &str) {
+    let _ = fs::remove_file(binding_path(session));
+}"#,
+        r#"pub fn clear(session: &str) {
+    clear_for_namespace(session, None);
+}
+
+pub fn clear_for_namespace(session: &str, namespace: Option<&str>) {
+    let _ = fs::remove_file(binding_path_for_namespace(session, namespace));
+}"#,
+    );
+    fs::write(destination.as_path(), contents).expect("failed to write generated tab binding file");
     destination
 }
 

@@ -211,6 +211,7 @@ def test_query_factories_validate_empty_and_negative_inputs() -> None:
             "allowed_domains",
         ),
         (lambda: SessionOptions(confirm_actions=cast(Any, "click")), TypeError, "confirm_actions"),
+        (lambda: SessionOptions(pin_tab=cast(Any, 1)), TypeError, "pin_tab"),
         (lambda: LaunchOptions(extensions=cast(Any, "extension")), TypeError, "extensions"),
         (lambda: LaunchOptions(args=cast(Any, "--headless")), TypeError, "args"),
         (
@@ -621,10 +622,18 @@ def test_raw_confirmed_accessibility_audit_preserves_navigation_lifecycle() -> N
     [
         (
             "tab_list",
-            {"tabs": [{"id": "tab-1", "url": "https://example.com"}]},
+            {
+                "tabs": [
+                    {
+                        "id": "tab-1",
+                        "targetId": "CDP-TARGET-1",
+                        "url": "https://example.com",
+                    }
+                ]
+            },
             lambda browser: browser.tabs.list()[0],
-            "id",
-            "tab-1",
+            "target_id",
+            "CDP-TARGET-1",
         ),
         (
             "cookies_get",
@@ -798,6 +807,7 @@ def test_tab_lifecycle_results_surface_discarded_tab_revival() -> None:
         {
             "tab_switch": {
                 "tabId": "t2",
+                "targetId": "CDP-TARGET-2",
                 "url": "https://example.com/reloaded",
                 "title": "Reloaded",
                 "label": "work",
@@ -805,6 +815,7 @@ def test_tab_lifecycle_results_surface_discarded_tab_revival() -> None:
             },
             "tab_close": {
                 "tabId": "t2",
+                "targetId": "CDP-TARGET-2",
                 "label": "work",
                 "closed": True,
                 "activeTabRevived": True,
@@ -817,11 +828,13 @@ def test_tab_lifecycle_results_surface_discarded_tab_revival() -> None:
     closed = browser.tabs.close(id="t2")
 
     assert switched.id == "t2"
+    assert switched.target_id == "CDP-TARGET-2"
     assert isinstance(switched, TabSwitchResult)
     assert switched.revived is True
     assert switched.dialog_blocked is False
     assert isinstance(closed, TabCloseResult)
     assert closed.id == "t2"
+    assert closed.target_id == "CDP-TARGET-2"
     assert closed.closed is True
     assert closed.active_tab_revived is True
 
@@ -854,6 +867,7 @@ def test_tab_switch_result_surfaces_a_blocking_dialog() -> None:
         ("url", False),
         ("title", {"unexpected": True}),
         ("label", ["work"]),
+        ("targetId", 1),
         ("revived", 1),
         ("dialogBlocked", "yes"),
     ],
@@ -1198,6 +1212,7 @@ def test_public_options_use_named_types_and_python_units(
         allowed_domains=("example.com", "*.example.org"),
         confirm_actions=("click",),
         auto_dialogs=False,
+        pin_tab=True,
         dashboard=DashboardOptions(port=0),
     )
 
@@ -1206,6 +1221,7 @@ def test_public_options_use_named_types_and_python_units(
     assert captured["allowed_domains"] == "example.com,*.example.org"
     assert captured["confirm_actions"] == ("click",)
     assert captured["no_auto_dialog"] is True
+    assert captured["pin_tab"] is True
     assert captured["dashboard"] == DashboardOptions(port=0)
     assert LaunchOptions(headless=False).headless is False
     with pytest.raises(TypeError, match="LaunchOptions"):
@@ -1421,6 +1437,7 @@ def test_async_tab_lifecycle_results_match_the_sync_contract() -> None:
             {
                 "tab_switch": {
                     "tabId": "t2",
+                    "targetId": "CDP-TARGET-2",
                     "url": "https://example.com/reloaded",
                     "title": "Reloaded",
                     "label": None,
@@ -1428,6 +1445,7 @@ def test_async_tab_lifecycle_results_match_the_sync_contract() -> None:
                 },
                 "tab_close": {
                     "tabId": "t2",
+                    "targetId": "CDP-TARGET-2",
                     "label": None,
                     "closed": True,
                     "activeTabRevived": True,
@@ -1440,7 +1458,9 @@ def test_async_tab_lifecycle_results_match_the_sync_contract() -> None:
         closed = await browser.tabs.close(id="t2")
 
         assert switched.revived is True
+        assert switched.target_id == "CDP-TARGET-2"
         assert closed.active_tab_revived is True
+        assert closed.target_id == "CDP-TARGET-2"
 
     asyncio.run(run())
 

@@ -51,6 +51,25 @@ def test_command_builder_owns_ids_paths_nulls_and_omission(tmp_path: Path) -> No
     assert command["nested"] == {"keep": 1}
 
 
+@pytest.mark.parametrize("pin_tab", [True, False])
+def test_command_builder_forwards_explicit_tab_pinning(pin_tab: bool) -> None:
+    native = EchoNative()
+    session = NativeSession(native=native, pin_tab=pin_tab)
+
+    command = cast(dict[str, Any], session.command("probe"))["echo"]
+
+    assert command["pinTab"] is pin_tab
+
+
+def test_command_builder_leaves_sticky_tab_pinning_unchanged_by_default() -> None:
+    native = EchoNative()
+    session = NativeSession(native=native)
+
+    command = cast(dict[str, Any], session.command("probe"))["echo"]
+
+    assert "pinTab" not in command
+
+
 def test_native_constructor_receives_session_options_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -145,6 +164,30 @@ def test_command_turns_failed_envelopes_into_browser_errors() -> None:
     assert failed.value.action == "probe"
 
 
+def test_command_preserves_tab_gone_recovery_data() -> None:
+    response = json.dumps(
+        {
+            "id": "native",
+            "success": False,
+            "error": "bound tab is gone",
+            "code": "tab_gone",
+            "data": {
+                "targetId": "CDP-TARGET-1",
+                "lastUrl": "https://example.com/report",
+            },
+        }
+    )
+
+    with pytest.raises(BrowserError) as failed:
+        NativeSession(native=RawResponseNative(response)).command("title")
+
+    assert failed.value.code == "tab_gone"
+    assert failed.value.response["data"] == {
+        "targetId": "CDP-TARGET-1",
+        "lastUrl": "https://example.com/report",
+    }
+
+
 @pytest.mark.parametrize(
     "response,match",
     [
@@ -194,6 +237,19 @@ def test_async_session_skips_cancelled_queued_work() -> None:
         assert await active == {"ok": True}
         await session.aclose(timeout=1.0)
         assert not any(command["action"] == "queued" for command in native.commands)
+
+    asyncio.run(run())
+
+
+def test_async_session_forwards_explicit_tab_pinning() -> None:
+    async def run() -> None:
+        native = EchoNative()
+        session = AsyncNativeSession(native=native, pin_tab=True)
+
+        response = await session.command("probe")
+        await session.aclose(timeout=1.0)
+
+        assert cast(dict[str, Any], response)["echo"]["pinTab"] is True
 
     asyncio.run(run())
 

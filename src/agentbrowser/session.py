@@ -89,6 +89,7 @@ class NativeSession:
         action_policy: str | Path | None = None,
         confirm_actions: Sequence[str] | None = None,
         no_auto_dialog: bool = False,
+        pin_tab: bool | None = None,
         dashboard: bool | DashboardOptions | None = False,
         native: NativeEngine | None = None,
     ) -> None:
@@ -96,6 +97,7 @@ class NativeSession:
         self._restore = restore
         self._native = native
         self._native_started = native is not None
+        self._pin_tab = pin_tab
         self._native_options: dict[str, Any] = {
             "session": session,
             "restore_key": restore.key if restore is not None else None,
@@ -214,6 +216,8 @@ class NativeSession:
         """Build the JSON command object sent to the native engine."""
         command: JSONObject = {"id": f"py{next(self._ids)}", "action": action}
         command.update(_restore_command_fields(self._restore))
+        if self._pin_tab is not None:
+            command["pinTab"] = self._pin_tab
         command.update(
             {key: _jsonable(value) for key, value in params.items() if value is not OMIT}
         )
