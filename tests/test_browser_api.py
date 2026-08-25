@@ -214,6 +214,7 @@ def test_query_factories_validate_empty_and_negative_inputs() -> None:
         (lambda: SessionOptions(pin_tab=cast(Any, 1)), TypeError, "pin_tab"),
         (lambda: LaunchOptions(extensions=cast(Any, "extension")), TypeError, "extensions"),
         (lambda: LaunchOptions(args=cast(Any, "--headless")), TypeError, "args"),
+        (lambda: LaunchOptions(ca_cert=""), ValueError, "ca_cert"),
         (
             lambda: SessionOptions(
                 restore=RestoreOptions("saved"),
@@ -296,6 +297,27 @@ def test_webgpu_process_controls_require_a_local_browser(
             )
         with pytest.raises(ValueError, match="no_xvfb requires a local browser launch"):
             await AsyncBrowser.launch(LaunchOptions(provider="remote", no_xvfb=True))
+
+    asyncio.run(run())
+
+
+def test_ca_certificate_requires_compatible_local_chromium() -> None:
+    options = LaunchOptions(ca_cert="proxy-ca.pem")
+
+    with pytest.raises(ValueError, match="local Chromium"):
+        Browser.attach(CDPTarget(port=9222), launch=options)
+    with pytest.raises(ValueError, match="local Chromium"):
+        Browser.launch(LaunchOptions(ca_cert="proxy-ca.pem", provider="remote"))
+    with pytest.raises(ValueError, match="Chrome engine"):
+        Browser.launch(LaunchOptions(ca_cert="proxy-ca.pem", engine="lightpanda"))
+    with pytest.raises(ValueError, match="profile"):
+        Browser.launch(LaunchOptions(ca_cert="proxy-ca.pem", profile="profile"))
+    with pytest.raises(ValueError, match="ignore_https_errors"):
+        Browser.launch(LaunchOptions(ca_cert="proxy-ca.pem", ignore_https_errors=True))
+
+    async def run() -> None:
+        with pytest.raises(ValueError, match="local Chromium"):
+            await AsyncBrowser.attach(CDPTarget(port=9222), launch=options)
 
     asyncio.run(run())
 
@@ -1313,6 +1335,65 @@ def test_launch_options_serialize_webgpu_process_controls(
         assert async_attach["cdpPort"] == 9222
         assert async_attach["webgpu"] is False
         assert async_attach["noXvfb"] is False
+
+    asyncio.run(run())
+
+
+def test_launch_options_serialize_private_ca_certificate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sync_native = ScriptedNative(default={})
+    sync_from_configuration = Browser._from_configuration
+
+    def sync_browser(
+        cls: type[Browser],
+        configuration: Any,
+        *,
+        session: SessionOptions | None = None,
+        native_session: NativeSession | None = None,
+    ) -> Browser:
+        del cls, native_session
+        return sync_from_configuration(
+            configuration,
+            session=session,
+            native_session=NativeSession(native=sync_native),
+        )
+
+    monkeypatch.setattr(Browser, "_from_configuration", classmethod(sync_browser))
+
+    with Browser.launch(LaunchOptions(ca_cert=Path("proxy-ca.pem"))):
+        pass
+
+    sync_launch = _command_without_id(sync_native.commands[0])
+    assert sync_launch["action"] == "launch"
+    assert sync_launch["caCert"] == "proxy-ca.pem"
+
+    async def run() -> None:
+        async_native = ScriptedNative(default={})
+        async_from_configuration = AsyncBrowser._from_configuration
+
+        def async_browser(
+            cls: type[AsyncBrowser],
+            configuration: Any,
+            *,
+            session: SessionOptions | None = None,
+            native_session: AsyncNativeSession | None = None,
+        ) -> AsyncBrowser:
+            del cls, native_session
+            return async_from_configuration(
+                configuration,
+                session=session,
+                native_session=AsyncNativeSession(native=async_native),
+            )
+
+        monkeypatch.setattr(AsyncBrowser, "_from_configuration", classmethod(async_browser))
+
+        async with await AsyncBrowser.launch(LaunchOptions(ca_cert="proxy-ca.pem")):
+            pass
+
+        async_launch = _command_without_id(async_native.commands[0])
+        assert async_launch["action"] == "launch"
+        assert async_launch["caCert"] == "proxy-ca.pem"
 
     asyncio.run(run())
 

@@ -65,6 +65,7 @@ class LaunchOptions:
     storage_state: str | Path | None = None
     extensions: Sequence[str | Path] = ()
     proxy: str | ProxyConfig | Mapping[str, Any] | None = None
+    ca_cert: str | Path | None = None
     provider: str | None = None
     color_scheme: ColorScheme | None = None
     hide_scrollbars: bool | None = None
@@ -81,6 +82,8 @@ class LaunchOptions:
             raise TypeError("extensions must be a sequence, not a string")
         if isinstance(self.args, str):
             raise TypeError("args must be a sequence, not a string")
+        if self.ca_cert is not None and not str(self.ca_cert).strip():
+            raise ValueError("ca_cert must not be empty")
         object.__setattr__(self, "extensions", tuple(self.extensions))
         object.__setattr__(self, "args", tuple(self.args))
 
@@ -191,6 +194,7 @@ class LaunchConfiguration:
     storage_state: str | None = None
     extensions: tuple[str, ...] = ()
     proxy: str | ProxyConfig | Mapping[str, Any] | None = None
+    ca_cert: str | None = None
     provider: str | None = None
     cdp_url: str | None = None
     cdp_port: int | None = None
@@ -243,6 +247,16 @@ class LaunchConfiguration:
             or self.auto_connect
             or self.provider is not None
         )
+        if self.ca_cert is not None:
+            if self.profile is not None:
+                raise ValueError("ca_cert cannot be combined with profile")
+            if self.ignore_https_errors:
+                raise ValueError("ca_cert cannot be combined with ignore_https_errors")
+            engine = self.engine or os.environ.get("AGENT_BROWSER_ENGINE")
+            if engine is not None and engine.strip().lower() != "chrome":
+                raise ValueError("ca_cert requires the Chrome engine on Linux")
+            if external_browser:
+                raise ValueError("ca_cert requires a local Chromium browser launch")
         if not external_browser:
             return
         webgpu_enabled = self.webgpu
@@ -268,6 +282,7 @@ class LaunchConfiguration:
         storage_state: str | Path | None = None,
         extensions: Sequence[str | Path] = (),
         proxy: str | ProxyConfig | Mapping[str, Any] | None = None,
+        ca_cert: str | Path | None = None,
         provider: str | None = None,
         cdp_url: str | None = None,
         cdp_port: int | None = None,
@@ -292,6 +307,7 @@ class LaunchConfiguration:
             storage_state=path_value(storage_state),
             extensions=tuple(paths_value(extensions)),
             proxy=proxy,
+            ca_cert=path_value(ca_cert),
             provider=provider,
             cdp_url=cdp_url,
             cdp_port=cdp_port,
@@ -327,6 +343,7 @@ class LaunchConfiguration:
             storage_state=options.storage_state,
             extensions=options.extensions,
             proxy=options.proxy,
+            ca_cert=options.ca_cert,
             provider=options.provider,
             cdp_url=target.url if target is not None else None,
             cdp_port=target.port if target is not None else None,
@@ -354,6 +371,7 @@ class LaunchConfiguration:
             storage_state=path_value(options.storage_state),
             extensions=tuple(paths_value(options.extensions)),
             proxy=options.proxy,
+            ca_cert=path_value(options.ca_cert),
             provider=options.provider,
             color_scheme=options.color_scheme,
             hide_scrollbars=options.hide_scrollbars,
@@ -383,6 +401,7 @@ class LaunchConfiguration:
             "storageState": optional(config.storage_state),
             "extensions": list(config.extensions),
             "proxy": optional(proxy_value(config.proxy)),
+            "caCert": optional(config.ca_cert),
             "provider": optional(config.provider),
             "cdpUrl": optional(config.cdp_url),
             "cdpPort": optional(config.cdp_port),

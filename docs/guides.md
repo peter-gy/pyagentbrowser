@@ -176,6 +176,30 @@ include base64-encoded binary bodies or `"none"` to record metadata. One
 recording can embed up to 64 MiB. Treat the HAR as sensitive when the page uses
 cookies, authorization headers, or account data.
 
+## Trust a private proxy CA
+
+`LaunchOptions.ca_cert` imports a PEM bundle or DER certificate into an isolated
+Chromium trust store on Linux. Install `certutil` from `libnss3-tools` on Debian
+or Ubuntu or `nss-tools` on RPM Linux before launching.
+
+```python
+from agentbrowser import Browser, LaunchOptions, ProxyConfig
+
+launch = LaunchOptions(
+    proxy=ProxyConfig("http://proxy.internal:8080"),
+    ca_cert="/etc/ssl/certs/proxy-ca.pem",
+)
+
+with Browser.launch(launch) as browser:
+    browser.open("https://service.internal")
+    print(browser.title())
+```
+
+Chromium continues to validate hostnames, certificate dates, and unrelated
+authorities. Later raw `launch` actions in the same browser session retain the
+CA. Pass `clearCaCert=True` on a raw `launch` action before switching to a CDP
+target or provider.
+
 ## Audit page accessibility
 
 [`browser.diagnostics.accessibility()`](api.md#browserscripts-browserdiagnostics-and-browseractive_frame)
