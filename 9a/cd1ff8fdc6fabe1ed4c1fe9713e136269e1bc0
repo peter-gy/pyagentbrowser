@@ -1,0 +1,39 @@
+crates/agent-browser-adapter/Cargo.toml
+  s_32c7af99e76fbf::t_a7d08744ef6eb5 3,23-24
+crates/agent-browser-adapter/build.rs
+  s_32c7af99e76fbf::t_a7d08744ef6eb5 10
+tests/test_browser_integration.py
+  s_32c7af99e76fbf::t_88d4d2a51ba082 5,7,101-106,121-243,508-525,531-535,537-542,544-551
+  s_32c7af99e76fbf::t_4c781e9dac4128 526-530
+  s_32c7af99e76fbf::t_b4eb89554d0fc2 536,543
+docs/api.md
+  s_32c7af99e76fbf::t_3058bec249c71c 83,97
+tests/test_browser_api.py
+  s_32c7af99e76fbf::t_a378a97a9e4822 217
+  s_32c7af99e76fbf::t_88d4d2a51ba082 304-324,1342-1396
+src/agentbrowser/launch.py
+  s_32c7af99e76fbf::t_0078e31c619067 68,85-86,197,250-259,285,310,346,374,404
+scripts/package_smoke.py
+  s_32c7af99e76fbf::t_88d4d2a51ba082 103,109
+docs/guides.md
+  s_32c7af99e76fbf::t_3058bec249c71c 179-180,184-197,202
+  s_32c7af99e76fbf::t_a378a97a9e4822 181-183,198-201
+.github/workflows/check-release.yml
+  s_32c7af99e76fbf::t_3058bec249c71c 133,135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "9acd1ff8fdc6fabe1ed4c1fe9713e136269e1bc0",
+  "prompts": {},
+  "sessions": {
+    "s_32c7af99e76fbf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03873-7f51-7901-9161-ad20c97b5895",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
