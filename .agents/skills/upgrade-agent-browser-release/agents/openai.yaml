@@ -1,0 +1,4 @@
+interface:
+  display_name: "Upgrade agent-browser Release"
+  short_description: "Upgrade agent-browser and release pyagentbrowser"
+  default_prompt: "Use $upgrade-agent-browser-release to update this repository to the requested official agent-browser release and complete the authorized release workflow."
