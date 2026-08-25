@@ -80,6 +80,7 @@ The `browser.page` namespace contains the full page surface, including history n
 | `storage_state` | `None` | Loads storage state during launch. |
 | `extensions` | `()` | Loads extension paths. Pass a sequence. |
 | `proxy` | `None` | Accepts a URL, `ProxyConfig`, or proxy mapping. |
+| `ca_cert` | `None` | Trusts a private proxy CA from a PEM bundle or DER certificate path. |
 | `provider` | `None` | Selects a native browser provider. |
 | `color_scheme` | `None` | Sets the preferred color scheme. |
 | `hide_scrollbars` | `None` | Controls native scrollbar visibility. |
@@ -93,6 +94,7 @@ The `browser.page` namespace contains the full page surface, including history n
 
 Scalar strings raise `TypeError` for `extensions` and `args`.
 `Browser.attach()` and provider launches raise `ValueError` when WebGPU is enabled. Pass `webgpu=False` to override `AGENT_BROWSER_WEBGPU` for those connection modes.
+`ca_cert` requires a local Chrome engine on Linux. It cannot be combined with a browser profile or `ignore_https_errors`, and the host must provide `certutil` from `libnss3-tools` on Debian or Ubuntu or `nss-tools` on RPM Linux.
 
 ### `SessionOptions`
 

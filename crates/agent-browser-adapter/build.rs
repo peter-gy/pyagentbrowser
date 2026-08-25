@@ -7,6 +7,7 @@ use std::{
 };
 
 const ROOT_MODULES: &[(&str, &str)] = &[
+    ("ca_bundle", "ca_bundle.rs"),
     ("color", "color.rs"),
     ("commands", "commands.rs"),
     ("connection", "connection.rs"),
