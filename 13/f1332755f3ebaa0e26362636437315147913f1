@@ -1,0 +1,41 @@
+crates/agent-browser-adapter/Cargo.toml
+  s_32c7af99e76fbf::t_a7d08744ef6eb5 3,23-24
+crates/agent-browser-adapter/build.rs
+  s_32c7af99e76fbf::t_a7d08744ef6eb5 10
+src/agentbrowser/launch.py
+  s_32c7af99e76fbf::t_0078e31c619067 68,85-86,197,250-259,285,310,346,374,404
+tests/test_browser_integration.py
+  s_32c7af99e76fbf::t_88d4d2a51ba082 5,7,122-127,142-143,150-269,534-535,537-538,543-546,552-556,562-566,568-573,575-582
+  s_32c7af99e76fbf::t_4c781e9dac4128 557-561
+  s_32c7af99e76fbf::t_9b8398b3f81fb3 94-114,144-149,536,539-542,547-551
+  s_32c7af99e76fbf::t_b4eb89554d0fc2 567,574
+docs/guides.md
+  s_32c7af99e76fbf::t_a378a97a9e4822 181-183,198-201
+  s_32c7af99e76fbf::t_3058bec249c71c 179-180,184-197,202
+docs/api.md
+  s_32c7af99e76fbf::t_3058bec249c71c 83,97
+tests/test_browser_api.py
+  s_32c7af99e76fbf::t_88d4d2a51ba082 304-324,1342-1363,1365-1368,1370-1396
+  s_32c7af99e76fbf::t_a378a97a9e4822 217
+  s_32c7af99e76fbf::t_48cbe31c6f4fc1 1364,1369
+.github/workflows/check-release.yml
+  s_32c7af99e76fbf::t_3058bec249c71c 133,135
+scripts/package_smoke.py
+  s_32c7af99e76fbf::t_88d4d2a51ba082 103,109
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "13f1332755f3ebaa0e26362636437315147913f1",
+  "prompts": {},
+  "sessions": {
+    "s_32c7af99e76fbf": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a03873-7f51-7901-9161-ad20c97b5895",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": null
+    }
+  }
+}
