@@ -60,6 +60,21 @@ class FakeWebSocket:
         self.closed = True
 
 
+class FakeWebSocketContext:
+    def __init__(self, websocket: FakeWebSocket) -> None:
+        self.websocket = websocket
+        self.entered = False
+        self.exited = False
+
+    def __enter__(self) -> FakeWebSocket:
+        self.entered = True
+        return self.websocket
+
+    def __exit__(self, *_args: object) -> None:
+        self.exited = True
+        self.websocket.close()
+
+
 class DelayedAsyncWebSocket:
     def __init__(self) -> None:
         self.sent: list[dict[str, Any]] = []
@@ -338,6 +353,28 @@ def test_cdp_client_queues_events_while_waiting_for_response() -> None:
 
     assert client.send("Runtime.evaluate", {"expression": "1"}, session_id="s1") == {"ok": True}
     assert client.pop_events()[0]["method"] == "Runtime.executionContextCreated"
+
+
+def test_cdp_client_owns_default_websocket_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    websocket = FakeWebSocket(responses={"Browser.getVersion": {"product": "Chrome"}})
+    context = FakeWebSocketContext(websocket)
+
+    def connect(url: str) -> FakeWebSocketContext:
+        assert url == "ws://cdp"
+        return context
+
+    client_module = importlib.import_module("agentbrowser.cdp.client")
+    monkeypatch.setattr(client_module, "_load_sync_websocket_connect", lambda: connect)
+    client = CDPClient("ws://cdp")
+
+    assert client.send("Browser.getVersion") == {"product": "Chrome"}
+    client.close()
+
+    assert context.entered is True
+    assert context.exited is True
+    assert websocket.closed is True
 
 
 def test_cdp_client_timeout_is_typed_sdk_error() -> None:

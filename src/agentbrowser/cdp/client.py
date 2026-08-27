@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import deque
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
+from contextlib import AbstractContextManager
 from itertools import count
 from threading import RLock
 from typing import Any, cast
@@ -37,6 +38,7 @@ class CDPClient:
         self._timeout = timeout
         self._connect = connect
         self._websocket: SyncWebSocket | None = None
+        self._websocket_context: AbstractContextManager[SyncWebSocket] | None = None
         self._ids = count(1)
         self._responses: dict[int, Mapping[str, Any]] = {}
         self._events: deque[Mapping[str, Any]] = deque()
@@ -98,14 +100,23 @@ class CDPClient:
         self._closed = True
         websocket = self._websocket
         self._websocket = None
-        if websocket is not None:
+        websocket_context = self._websocket_context
+        self._websocket_context = None
+        if websocket_context is not None:
+            websocket_context.__exit__(None, None, None)
+        elif websocket is not None:
             websocket.close()
 
     def _ensure_connected(self) -> SyncWebSocket:
         self._check_open()
         if self._websocket is None:
-            connect = self._connect or _load_sync_websocket_connect()
-            self._websocket = connect(self._url)
+            if self._connect is not None:
+                self._websocket = self._connect(self._url)
+            else:
+                connect = _load_sync_websocket_connect()
+                websocket_context = connect(self._url)
+                self._websocket = websocket_context.__enter__()
+                self._websocket_context = websocket_context
         return self._websocket
 
     def _check_open(self) -> None:
@@ -246,7 +257,7 @@ class AsyncCDPClient:
         return message
 
 
-def _load_sync_websocket_connect() -> SyncConnect:
+def _load_sync_websocket_connect() -> Callable[[str], AbstractContextManager[SyncWebSocket]]:
     try:
         from websockets.sync.client import connect
     except ModuleNotFoundError as exc:
@@ -254,7 +265,7 @@ def _load_sync_websocket_connect() -> SyncConnect:
             "CDP frame/context evaluation requires the optional cdp extra. "
             'install pyagentbrowser with "pyagentbrowser[cdp]" or install websockets.'
         ) from exc
-    return cast(SyncConnect, connect)
+    return cast(Callable[[str], AbstractContextManager[SyncWebSocket]], connect)
 
 
 def _load_async_websocket_connect() -> AsyncConnect:
