@@ -49,6 +49,7 @@ from agentbrowser.domains import (
     State,
     Storage,
     Tabs,
+    WebMCP,
 )
 from agentbrowser.install import ensure_installed
 from agentbrowser.launch import (
@@ -483,6 +484,7 @@ class Browser:
         self.state = State(command_target)
         self.storage = Storage(command_target)
         self.tabs = Tabs(command_target)
+        self.webmcp = WebMCP(command_target)
 
     def __enter__(self) -> Self:
         return self

@@ -31,6 +31,9 @@ from agentbrowser.command_params import (
     storage_get_params,
     storage_set_params,
     wait_params,
+    webmcp_cancel_params,
+    webmcp_invoke_params,
+    webmcp_result_params,
     wheel_params,
 )
 from agentbrowser.models import (
@@ -58,6 +61,8 @@ from agentbrowser.models import (
     TabInfo,
     TabSwitchResult,
     WaitSelectorState,
+    WebMCPInvocation,
+    WebMCPTool,
     accessibility_audit_from_data,
     console_messages_from_data,
     cookies_from_data,
@@ -71,6 +76,8 @@ from agentbrowser.models import (
     tab_from_data,
     tab_switch_from_data,
     tabs_from_data,
+    webmcp_invocation_from_data,
+    webmcp_tools_from_data,
 )
 
 DEFAULT_SCREENSHOT_WAIT_MS = 100
@@ -1172,6 +1179,55 @@ class Diagnostics:
     def react_tree(self, *, selector: str | None = None) -> Mapping[str, Any]:
         """Return React tree diagnostics, optionally scoped by selector."""
         return self.browser._command("react_tree", selector=optional(selector))
+
+
+@dataclass(frozen=True, slots=True)
+class WebMCP:
+    """Discover and invoke tools exposed by the active page."""
+
+    browser: CommandTarget
+
+    def list(self) -> tuple[WebMCPTool, ...]:
+        """Return WebMCP tools exposed by the active page and its frames."""
+        return self.browser._command("webmcp_list", _decode=webmcp_tools_from_data)
+
+    def invoke(
+        self,
+        tool: str,
+        params: Mapping[str, Any] | None = None,
+        *,
+        frame_id: str | None = None,
+        detach: bool = False,
+        timeout_ms: int | None = None,
+    ) -> WebMCPInvocation:
+        """Invoke a page tool and return its current lifecycle state."""
+        return self.browser._command(
+            "webmcp_invoke",
+            _decode=webmcp_invocation_from_data,
+            **webmcp_invoke_params(
+                tool,
+                params,
+                frame_id=frame_id,
+                detach=detach,
+                timeout_ms=timeout_ms,
+            ),
+        )
+
+    def result(self, invocation_id: str, *, timeout_ms: int | None = None) -> WebMCPInvocation:
+        """Wait for a detached invocation and return its current state."""
+        return self.browser._command(
+            "webmcp_result",
+            _decode=webmcp_invocation_from_data,
+            **webmcp_result_params(invocation_id, timeout_ms=timeout_ms),
+        )
+
+    def cancel(self, invocation_id: str) -> WebMCPInvocation:
+        """Cancel an active invocation and return its terminal state."""
+        return self.browser._command(
+            "webmcp_cancel",
+            _decode=webmcp_invocation_from_data,
+            **webmcp_cancel_params(invocation_id),
+        )
 
 
 def _tab_selector(

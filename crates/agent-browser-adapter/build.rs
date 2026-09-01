@@ -42,6 +42,7 @@ const NATIVE_MODULES: &[(&str, &str)] = &[
     ("tab_binding", "tab_binding.rs"),
     ("tracing", "tracing.rs"),
     ("webdriver", "webdriver/mod.rs"),
+    ("webmcp", "webmcp.rs"),
 ];
 
 fn manifest_dir() -> PathBuf {
@@ -1335,7 +1336,7 @@ fn rewrite_stream_module(out_dir: &Path, source: &Path) -> PathBuf {
     contents = replace_once_named(
         contents,
         "stream dashboard export",
-        "pub use dashboard::run_dashboard_server;\n",
+        "pub use dashboard::{\n    is_valid_dashboard_access_token, normalize_dashboard_allowed_origins, run_dashboard_server,\n};\n",
         "",
     );
 

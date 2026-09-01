@@ -53,6 +53,8 @@ SessionIdScope = Literal["worktree", "cwd", "git-root"]
 StorageArea = Literal["local", "session"]
 WaitSelectorState = Literal["attached", "detached", "hidden", "visible"]
 ColorScheme = Literal["dark", "light", "no-preference"]
+WebMCPInvocationStatus = Literal["pending", "completed", "canceled", "failed", "timed_out"]
+_WEBMCP_INVOCATION_STATUSES = frozenset(get_args(WebMCPInvocationStatus))
 T = TypeVar("T")
 RefT = TypeVar("RefT")
 SnapshotT = TypeVar("SnapshotT")
@@ -225,6 +227,38 @@ class BrowserResponse:
     warning: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class WebMCPTool:
+    """Tool exposed by the active page through WebMCP."""
+
+    name: str
+    description: str
+    input_schema: Mapping[str, Any]
+    annotations: Mapping[str, Any]
+    origin: str
+    frame_id: str
+    backend_node_id: int | None = None
+    raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
+
+@dataclass(frozen=True, slots=True)
+class WebMCPInvocation:
+    """Current result and lifecycle state for one WebMCP tool invocation."""
+
+    invocation_id: str
+    tool_name: str
+    frame_id: str
+    origin: str
+    status: WebMCPInvocationStatus
+    duration_ms: int
+    raw_status: str | None = None
+    output: JSONValue | None = None
+    output_truncated: bool = False
+    original_output_bytes: int | None = None
+    error: str | None = None
+    raw: Mapping[str, Any] = field(default_factory=dict, compare=False, repr=False)
+
+
 def _required_model_string(data: Mapping[str, Any], field: str, *, action: str) -> str:
     value = data.get(field)
     if not isinstance(value, str):
@@ -283,6 +317,75 @@ def _nullable_model_int(
     if isinstance(value, bool) or not isinstance(value, int):
         raise NativeParseError(f"{action} field '{field}' must be an integer or null")
     return value
+
+
+def _optional_model_mapping(
+    data: Mapping[str, Any], field: str, *, action: str
+) -> Mapping[str, Any]:
+    value = data.get(field, {})
+    if not isinstance(value, Mapping):
+        raise NativeParseError(f"{action} field '{field}' must be an object")
+    return value
+
+
+def webmcp_tools_from_data(data: Mapping[str, Any]) -> tuple[WebMCPTool, ...]:
+    """Decode the native `webmcp_list` result."""
+    action = "webmcp_list"
+    raw_tools = data.get("tools")
+    if not isinstance(raw_tools, list):
+        raise NativeParseError(f"{action} field 'tools' must be an array")
+    tools: list[WebMCPTool] = []
+    for raw_tool in raw_tools:
+        if not isinstance(raw_tool, Mapping):
+            raise NativeParseError(f"{action} field 'tools' must contain objects")
+        backend_node_id = raw_tool.get("backendNodeId")
+        if backend_node_id is not None and (
+            isinstance(backend_node_id, bool) or not isinstance(backend_node_id, int)
+        ):
+            raise NativeParseError(f"{action} field 'backendNodeId' must be an integer or null")
+        tools.append(
+            WebMCPTool(
+                name=_required_model_string(raw_tool, "name", action=action),
+                description=_required_model_string(raw_tool, "description", action=action),
+                input_schema=_optional_model_mapping(raw_tool, "inputSchema", action=action),
+                annotations=_optional_model_mapping(raw_tool, "annotations", action=action),
+                origin=_required_model_string(raw_tool, "origin", action=action),
+                frame_id=_required_model_string(raw_tool, "frameId", action=action),
+                backend_node_id=backend_node_id,
+                raw=raw_tool,
+            )
+        )
+    return tuple(tools)
+
+
+def webmcp_invocation_from_data(data: Mapping[str, Any]) -> WebMCPInvocation:
+    """Decode a native WebMCP invocation result."""
+    action = "webmcp invocation"
+    status = _required_model_string(data, "status", action=action)
+    if status not in _WEBMCP_INVOCATION_STATUSES:
+        raise NativeParseError(f"{action} field 'status' has unknown value '{status}'")
+    output_truncated = data.get("outputTruncated", False)
+    if not isinstance(output_truncated, bool):
+        raise NativeParseError(f"{action} field 'outputTruncated' must be a boolean")
+    original_output_bytes = data.get("originalOutputBytes")
+    if original_output_bytes is not None and (
+        isinstance(original_output_bytes, bool) or not isinstance(original_output_bytes, int)
+    ):
+        raise NativeParseError(f"{action} field 'originalOutputBytes' must be an integer or null")
+    return WebMCPInvocation(
+        invocation_id=_required_model_string(data, "invocationId", action=action),
+        tool_name=_required_model_string(data, "toolName", action=action),
+        frame_id=_required_model_string(data, "frameId", action=action),
+        origin=_required_model_string(data, "origin", action=action),
+        status=cast(WebMCPInvocationStatus, status),
+        duration_ms=_required_model_int(data, "durationMs", action=action),
+        raw_status=_optional_model_string(data, "rawStatus", action=action),
+        output=data.get("output"),
+        output_truncated=output_truncated,
+        original_output_bytes=original_output_bytes,
+        error=_optional_model_string(data, "error", action=action),
+        raw=data,
+    )
 
 
 def _restore_status(data: Mapping[str, Any], *, action: str) -> RestoreStatus:

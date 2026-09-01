@@ -48,6 +48,9 @@ from agentbrowser.models import (
     TabInfo,
     TabSwitchResult,
     Wait,
+    WebMCPInvocation,
+    WebMCPInvocationStatus,
+    WebMCPTool,
 )
 from agentbrowser.query import Query
 from agentbrowser.query_async import AsyncQuery
@@ -112,6 +115,9 @@ __all__ = [
     "TabInfo",
     "TabSwitchResult",
     "Wait",
+    "WebMCPInvocation",
+    "WebMCPInvocationStatus",
+    "WebMCPTool",
     "ensure_installed",
     "session_id",
 ]

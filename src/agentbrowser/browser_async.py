@@ -50,6 +50,7 @@ from agentbrowser.domains_async import (
     AsyncState,
     AsyncStorage,
     AsyncTabs,
+    AsyncWebMCP,
 )
 from agentbrowser.install import ensure_installed
 from agentbrowser.launch import (
@@ -464,6 +465,7 @@ class AsyncBrowser:
         self.state = AsyncState(command_target)
         self.storage = AsyncStorage(command_target)
         self.tabs = AsyncTabs(command_target)
+        self.webmcp = AsyncWebMCP(command_target)
 
     async def __aenter__(self) -> Self:
         return self

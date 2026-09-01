@@ -296,6 +296,32 @@ with Browser.launch() as browser:
 
 Install `pyagentbrowser[cdp]` for these APIs. Page navigation and tab changes invalidate cached CDP handles. Resolve the frame, target, or context again after navigation.
 
+## Invoke tools exposed by a page
+
+[`browser.webmcp`](api.md#webmcp) lists tools registered by the active page and
+invokes them through the browser-managed WebMCP lifecycle:
+
+```python
+from agentbrowser import Browser
+
+with Browser.launch() as browser:
+    browser.open("https://app.example.com")
+
+    tools = browser.webmcp.list()
+    search = next(tool for tool in tools if tool.name == "search")
+    result = browser.webmcp.invoke(
+        search.name,
+        {"query": "browser automation"},
+        frame_id=search.frame_id,
+    )
+
+    print(result.status, result.output)
+```
+
+Tool names can repeat across frames. Pass the selected tool's `frame_id` to
+bind invocation to the same page context. Use `detach=True` for long-running
+tools, then call `result(invocation_id)` or `cancel(invocation_id)`.
+
 ## Call the native protocol
 
 Typed namespaces cover the stable Python workflows. [`browser.native`](api.md#native-protocol) exposes every action in the pinned engine while retaining Python allowlist, policy, and lifecycle handling.
