@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 
 PACKAGE_NAME = "pyagentbrowser"
-PACKAGE_VERSION = "0.35.1"
+PACKAGE_VERSION = "0.36.0"
 
 _UPSTREAM = json.loads(Path(__file__).with_name("_upstream.json").read_text())
 UPSTREAM_VERSION = str(_UPSTREAM["version"])
