@@ -103,10 +103,12 @@ SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
         "third_party/agent-browser/cli/src/ca_bundle.rs",
         "third_party/agent-browser/cli/src/native/actions.rs",
         "third_party/agent-browser/cli/src/native/tab_binding.rs",
+        "third_party/agent-browser/cli/src/native/webmcp.rs",
         "third_party/agent-browser/cli/cdp-protocol/browser_protocol.json",
         "third_party/agent-browser/skill-data/core/SKILL.md",
         "third_party/agent-browser/skill-data/derive-client/SKILL.md",
         "third_party/agent-browser/skill-data/protected-vercel-deployments/SKILL.md",
+        "third_party/agent-browser/skill-data/webmcp-gen/SKILL.md",
     }
 )
 

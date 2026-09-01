@@ -1250,7 +1250,7 @@ def test_public_options_use_named_types_and_python_units(
         cast(Any, Browser.launch)({"headless": True})
 
 
-def test_launch_options_serialize_webgpu_process_controls(
+def test_launch_options_serialize_browser_process_controls(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     sync_native = ScriptedNative(default={})
@@ -1274,24 +1274,27 @@ def test_launch_options_serialize_webgpu_process_controls(
 
     with Browser.launch():
         pass
-    with Browser.launch(LaunchOptions(webgpu=True, no_xvfb=True)):
+    with Browser.launch(LaunchOptions(webgpu=True, webmcp=False, no_xvfb=True)):
         pass
     with Browser.attach(
         CDPTarget(port=9222),
-        launch=LaunchOptions(webgpu=False, no_xvfb=False),
+        launch=LaunchOptions(webgpu=False, webmcp=True, no_xvfb=False),
     ):
         pass
 
     sync_default = _command_without_id(sync_native.commands[0])
     assert "webgpu" not in sync_default
+    assert "webmcp" not in sync_default
     assert "noXvfb" not in sync_default
     sync_launch = _command_without_id(sync_native.commands[2])
     assert sync_launch["action"] == "launch"
     assert sync_launch["webgpu"] is True
+    assert sync_launch["webmcp"] is False
     assert sync_launch["noXvfb"] is True
     sync_attach = _command_without_id(sync_native.commands[4])
     assert sync_attach["cdpPort"] == 9222
     assert sync_attach["webgpu"] is False
+    assert sync_attach["webmcp"] is True
     assert sync_attach["noXvfb"] is False
 
     async def run() -> None:
@@ -1316,24 +1319,29 @@ def test_launch_options_serialize_webgpu_process_controls(
 
         async with await AsyncBrowser.launch():
             pass
-        async with await AsyncBrowser.launch(LaunchOptions(webgpu=True, no_xvfb=True)):
+        async with await AsyncBrowser.launch(
+            LaunchOptions(webgpu=True, webmcp=False, no_xvfb=True)
+        ):
             pass
         async with await AsyncBrowser.attach(
             CDPTarget(port=9222),
-            launch=LaunchOptions(webgpu=False, no_xvfb=False),
+            launch=LaunchOptions(webgpu=False, webmcp=True, no_xvfb=False),
         ):
             pass
 
         async_default = _command_without_id(async_native.commands[0])
         assert "webgpu" not in async_default
+        assert "webmcp" not in async_default
         assert "noXvfb" not in async_default
         async_launch = _command_without_id(async_native.commands[2])
         assert async_launch["action"] == "launch"
         assert async_launch["webgpu"] is True
+        assert async_launch["webmcp"] is False
         assert async_launch["noXvfb"] is True
         async_attach = _command_without_id(async_native.commands[4])
         assert async_attach["cdpPort"] == 9222
         assert async_attach["webgpu"] is False
+        assert async_attach["webmcp"] is True
         assert async_attach["noXvfb"] is False
 
     asyncio.run(run())

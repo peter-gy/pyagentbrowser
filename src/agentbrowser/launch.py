@@ -70,6 +70,7 @@ class LaunchOptions:
     color_scheme: ColorScheme | None = None
     hide_scrollbars: bool | None = None
     webgpu: bool | None = None
+    webmcp: bool | None = None
     no_xvfb: bool | None = None
     args: Sequence[str] = ()
     allow_file_access: bool = False
@@ -202,6 +203,7 @@ class LaunchConfiguration:
     color_scheme: ColorScheme | None = None
     hide_scrollbars: bool | None = None
     webgpu: bool | None = None
+    webmcp: bool | None = None
     no_xvfb: bool | None = None
     args: tuple[str, ...] = ()
     allow_file_access: bool = False
@@ -290,6 +292,7 @@ class LaunchConfiguration:
         color_scheme: ColorScheme | None = None,
         hide_scrollbars: bool | None = None,
         webgpu: bool | None = None,
+        webmcp: bool | None = None,
         no_xvfb: bool | None = None,
         args: Sequence[str] = (),
         allow_file_access: bool = False,
@@ -315,6 +318,7 @@ class LaunchConfiguration:
             color_scheme=color_scheme,
             hide_scrollbars=hide_scrollbars,
             webgpu=webgpu,
+            webmcp=webmcp,
             no_xvfb=no_xvfb,
             args=tuple(args),
             allow_file_access=allow_file_access,
@@ -351,6 +355,7 @@ class LaunchConfiguration:
             color_scheme=options.color_scheme,
             hide_scrollbars=options.hide_scrollbars,
             webgpu=options.webgpu,
+            webmcp=options.webmcp,
             no_xvfb=options.no_xvfb,
             args=options.args,
             allow_file_access=options.allow_file_access,
@@ -376,6 +381,7 @@ class LaunchConfiguration:
             color_scheme=options.color_scheme,
             hide_scrollbars=options.hide_scrollbars,
             webgpu=options.webgpu,
+            webmcp=options.webmcp,
             no_xvfb=options.no_xvfb,
             args=tuple(options.args),
             allow_file_access=options.allow_file_access,
@@ -413,6 +419,7 @@ class LaunchConfiguration:
             "colorScheme": optional(config.color_scheme),
             "hideScrollbars": optional(resolved_hide_scrollbars),
             "webgpu": optional(config.webgpu),
+            "webmcp": optional(config.webmcp),
             "noXvfb": optional(config.no_xvfb),
             "allowedDomains": optional(config.allowed_domains),
         }

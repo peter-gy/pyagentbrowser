@@ -85,6 +85,7 @@ The `browser.page` namespace contains the full page surface, including history n
 | `color_scheme` | `None` | Sets the preferred color scheme. |
 | `hide_scrollbars` | `None` | Controls native scrollbar visibility. |
 | `webgpu` | `None` | Inherits the native setting. `True` enables the WebGPU preset for a local browser launch. `False` overrides `AGENT_BROWSER_WEBGPU`. |
+| `webmcp` | `None` | Inherits the native setting. Local Chrome launches enable experimental WebMCP by default. `False` disables it. |
 | `no_xvfb` | `None` | Inherits the native setting. `True` disables automatic Xvfb startup for local headed launches on displayless Linux hosts. `False` overrides `AGENT_BROWSER_NO_XVFB`. |
 | `args` | `()` | Adds browser arguments. Pass a sequence. |
 | `allow_file_access` | `False` | Permits file URL access. |
@@ -386,6 +387,29 @@ then fails. A current-page audit keeps existing handles valid. Safari and iOS
 WebDriver sessions reject this operation. Each issue includes up to 10 node
 records and keeps the complete affected count in `node_count`.
 
+## WebMCP
+
+`browser.webmcp` discovers and invokes tools registered by the active page or
+its frames. Local Chrome launches enable the experimental WebMCP domain by
+default. The Chrome build must expose the WebMCP domain. Attached browsers and
+providers need WebMCP enabled by their launcher. An unavailable domain raises
+`BrowserError` with `code="webmcp_unsupported"`.
+
+| Method | Contract |
+| --- | --- |
+| `list() -> tuple[WebMCPTool, ...]` | Returns the tools exposed by the active page and its frames. |
+| `invoke(tool, params=None, *, frame_id=None, detach=False, timeout_ms=None) -> WebMCPInvocation` | Invokes one tool. Duplicate names require `frame_id`. `detach=True` returns the pending invocation. |
+| `result(invocation_id, *, timeout_ms=None) -> WebMCPInvocation` | Waits for a detached invocation and returns its current state. |
+| `cancel(invocation_id) -> WebMCPInvocation` | Cancels an active invocation and returns its terminal state. |
+
+`WebMCPTool` contains the tool name, description, input schema, annotations,
+origin, frame id, optional backend node id, and raw metadata.
+`WebMCPInvocation` reports the invocation id, tool, frame, origin, status,
+duration, output, truncation metadata, error, and raw native result. Native
+WebMCP failures raise `BrowserError` with codes such as
+`webmcp_tool_not_found`, `webmcp_ambiguous_tool`, and
+`webmcp_context_changed`.
+
 ## CDP
 
 The `cdp` extra supplies WebSocket transport for CDP operations.
@@ -412,7 +436,7 @@ Executes one native action and returns its complete response envelope. An unsucc
 
 Executes one native action and returns successful response data. `expect="object"` requires a mapping. `expect="any"` accepts every JSON value. Native failures raise `BrowserError`.
 
-Domain allowlists, policy confirmation, and browser or CDP lifecycle tracking apply to both methods. See the [`agent-browser` command reference at the embedded commit](https://github.com/vercel-labs/agent-browser/blob/1ed371f3af472cc0d6cd8fdaea75d1a085ff7534/README.md#commands) for native action names and parameters.
+Domain allowlists, policy confirmation, and browser or CDP lifecycle tracking apply to both methods. See the [`agent-browser` command reference at the embedded commit](https://github.com/vercel-labs/agent-browser/blob/eb05921bad874cd2a1b4fa5d1149f1ed26576cae/README.md#commands) for native action names and parameters.
 
 ## Confirmation
 
@@ -433,6 +457,8 @@ Typed operations raise `ConfirmationRequired` when the native policy pauses an a
 | `ReadResult` | URL, final URL, status, content type, source, truncation state, content, and raw data. |
 | `Screenshot` | Screenshot path, format, annotations, and image helpers. |
 | `SnapshotDiff` | Text diff, line counts for additions, removals, and unchanged content, plus a changed flag. |
+| `WebMCPTool` | Page tool metadata, input schema, origin, and frame identity. |
+| `WebMCPInvocation` | Tool invocation identity, lifecycle status, output, truncation metadata, and error. |
 | `TabInfo` | Tab id, stable CDP target id, URL, title, label, and active state. |
 | `TabSwitchResult` | Selected tab metadata plus its stable CDP target id, renderer reactivation, and blocking-dialog signals. |
 | `TabCloseResult` | Closed tab id, stable CDP target id, label, and observed successor reactivation. |

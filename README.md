@@ -24,7 +24,7 @@ print(page.text)
 
 `Snapshot` binds accessibility refs to the page state that produced them. Ref actions return an `ActionResult` containing the original snapshot, the resulting snapshot, and their diff.
 
-Use `browser.find` for live CSS, XPath, and semantic queries. Namespaces such as `browser.capture`, `browser.tabs`, `browser.network`, and `browser.cdp` expose focused browser capabilities. Every action in the pinned native engine remains available through `browser.native`.
+Use `browser.find` for live CSS, XPath, and semantic queries. Namespaces such as `browser.capture`, `browser.tabs`, `browser.network`, and `browser.webmcp` expose focused browser capabilities. Every action in the pinned native engine remains available through `browser.native`.
 
 ## Documentation
 

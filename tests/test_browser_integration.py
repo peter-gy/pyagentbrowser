@@ -531,6 +531,80 @@ def test_webgpu_launch_preset_renders_offscreen_pixels_across_native_boundary(
     assert result == {"stage": "pixel", "pixel": [255, 0, 0, 255]}
 
 
+def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
+    chrome_path: Path,
+    local_site: LocalSite,
+) -> None:
+    page_name = "webmcp.html"
+    (local_site.root / page_name).write_text(
+        """<!doctype html>
+<output id="result">idle</output>
+<script>
+  if (typeof document.modelContext?.registerTool !== "function") {
+    document.body.dataset.webmcpReady = "unavailable";
+  } else {
+    const setMessage = document.modelContext.registerTool({
+      name: "set_message",
+      description: "Sets the visible message",
+      inputSchema: {
+        type: "object",
+        properties: {message: {type: "string"}},
+        required: ["message"],
+        additionalProperties: false
+      },
+      annotations: {readOnlyHint: false},
+      execute: async ({message}) => {
+        document.getElementById("result").textContent = message;
+        return {message};
+      }
+    });
+    const waitForCancel = document.modelContext.registerTool({
+      name: "wait_for_cancel",
+      description: "Waits until canceled",
+      inputSchema: {type: "object", properties: {}},
+      annotations: {readOnlyHint: true},
+      execute: async () => new Promise(() => {})
+    });
+    Promise.all([setMessage, waitForCancel]).then(() => {
+      document.body.dataset.webmcpReady = "true";
+    });
+  }
+</script>
+"""
+    )
+
+    with _browser(chrome_path) as browser:
+        browser.open(f"{local_site.base_url}/{page_name}")
+        browser.page.wait_for_function("document.body.dataset.webmcpReady !== undefined")
+        if browser.evaluate("document.body.dataset.webmcpReady") == "unavailable":
+            assert sys.platform == "darwin"
+            try:
+                assert browser.webmcp.list() == ()
+            except BrowserError as error:
+                assert error.code == "webmcp_unsupported"
+            return
+
+        tools = browser.webmcp.list()
+        set_message = next(tool for tool in tools if tool.name == "set_message")
+        completed = browser.webmcp.invoke(
+            set_message.name,
+            {"message": "WebMCP works"},
+            timeout_ms=5000,
+        )
+        pending = browser.webmcp.invoke("wait_for_cancel", detach=True)
+        canceled = browser.webmcp.cancel(pending.invocation_id)
+
+        assert set_message.origin == local_site.base_url
+        assert set_message.input_schema["type"] == "object"
+        assert completed.status == "completed"
+        assert completed.output == {"message": "WebMCP works"}
+        assert browser.evaluate("document.getElementById('result').textContent") == "WebMCP works"
+        assert canceled.status == "canceled"
+        with pytest.raises(BrowserError) as missing:
+            browser.webmcp.invoke("missing_tool")
+        assert missing.value.code == "webmcp_tool_not_found"
+
+
 def test_private_ca_trust_and_clear_cross_the_native_browser_boundary(
     local_https_site: LocalHttpsSite,
     request: pytest.FixtureRequest,
