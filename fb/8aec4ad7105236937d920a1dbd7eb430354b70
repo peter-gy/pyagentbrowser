@@ -1,0 +1,23 @@
+src/agentbrowser/_version.py
+  s_8ef61467b958bb::t_afeb6e1c805bf3 7
+pyproject.toml
+  s_8ef61467b958bb::t_51e7f7199233db 3
+crates/pyagentbrowser/Cargo.toml
+  s_8ef61467b958bb::t_afeb6e1c805bf3 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "fb8aec4ad7105236937d920a1dbd7eb430354b70",
+  "prompts": {},
+  "sessions": {
+    "s_8ef61467b958bb": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a05be1-c03c-7c10-8ada-94f53e7cdc25",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
