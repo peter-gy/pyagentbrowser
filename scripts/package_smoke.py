@@ -90,7 +90,18 @@ SDIST_REQUIRED_BUILD_FILES = frozenset(
     }
 )
 SDIST_REQUIRED_DOCS_AND_EXAMPLES = frozenset(
-    {"README.md", "docs/api.md", "examples/basic_navigation.py"}
+    {
+        "README.md",
+        "docs/index.md",
+        "docs/getting-started.md",
+        "docs/concepts/runtime-model.md",
+        "docs/concepts/evidence.md",
+        "docs/reference/browser.md",
+        "docs/reference/namespaces.md",
+        "docs/reference/models.md",
+        "docs/troubleshooting.md",
+        "examples/basic_navigation.py",
+    }
 )
 SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
     {

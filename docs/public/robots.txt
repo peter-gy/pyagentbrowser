@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://peter-gy.github.io/pyagentbrowser/sitemap.xml

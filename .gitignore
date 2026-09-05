@@ -13,3 +13,9 @@ target/
 
 # Virtual environments
 .venv*
+
+# JavaScript and VitePress generated files
+node_modules/
+*.tsbuildinfo
+docs/.vitepress/cache/
+docs/.vitepress/dist/

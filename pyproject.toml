@@ -51,7 +51,7 @@ images = [
 "Homepage" = "https://github.com/peter-gy/pyagentbrowser"
 "Repository" = "https://github.com/peter-gy/pyagentbrowser"
 "Issues" = "https://github.com/peter-gy/pyagentbrowser/issues"
-"Documentation" = "https://github.com/peter-gy/pyagentbrowser#readme"
+"Documentation" = "https://peter-gy.github.io/pyagentbrowser/"
 "agent-browser docs" = "https://agent-browser.dev/"
 "agent-browser commands" = "https://agent-browser.dev/commands"
 "agent-browser CDP mode" = "https://agent-browser.dev/cdp-mode"
@@ -129,7 +129,7 @@ exclude = [
 include = [
     { path = "LICENSE", format = "sdist" },
     { path = "NOTICE", format = "sdist" },
-    { path = "docs/*.md", format = "sdist" },
+    { path = "docs/**/*.md", format = "sdist" },
     { path = "examples/*.py", format = "sdist" },
     { path = "Cargo.lock", format = "sdist" },
     { path = "crates/pyagentbrowser/**", format = "sdist" },

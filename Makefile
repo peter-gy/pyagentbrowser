@@ -24,6 +24,9 @@ help:
 		'make test-native       Run PyO3 and generated-adapter boundary tests' \
 		'make test-package      Run wheel, sdist, version, and provenance contracts' \
 		'make test-integration  Run curated real-Chrome seams' \
+		'make docs-install      Install the VitePress documentation dependencies' \
+		'make docs-dev          Serve docs at a stable Portless URL' \
+		'make docs-check        Type-check, build, and verify the documentation site' \
 		'make check             Run the normal handoff gate' \
 		'make package           Build and clean-install the wheel and sdist' \
 		'make check-release     Run the full release gate'
@@ -95,6 +98,19 @@ test-integration: native-dev
 	PYAGENTBROWSER_CHROME="$$chrome_path" \
 	PYAGENTBROWSER_FAIL_ON_SKIP=1 \
 	$(UV_RUN) pytest -q -m integration
+
+.PHONY: docs-install
+docs-install:
+	pnpm --dir docs install --frozen-lockfile
+
+.PHONY: docs-dev
+docs-dev:
+	pnpm --dir docs dev
+
+.PHONY: docs-check
+docs-check:
+	$(UV_RUN) python scripts/check_development_docs.py
+	pnpm --dir docs check
 
 .PHONY: rust-check
 rust-check: submodule-init

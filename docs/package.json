@@ -1,0 +1,29 @@
+{
+  "name": "@pyagentbrowser/docs",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "packageManager": "pnpm@11.10.0",
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "dev": "portless",
+    "dev:server": "vitepress dev",
+    "build": "vitepress build && node scripts/verify-build.ts",
+    "preview": "vitepress preview --port 4173",
+    "typecheck": "tsc --noEmit",
+    "check": "pnpm typecheck && pnpm build"
+  },
+  "devDependencies": {
+    "@types/node": "22.17.2",
+    "portless": "0.15.6",
+    "typescript": "5.9.2",
+    "vitepress": "2.0.0-alpha.19",
+    "vitepress-plugin-llms": "1.13.5"
+  },
+  "portless": {
+    "name": "docs.pyagentbrowser",
+    "script": "dev:server"
+  }
+}
