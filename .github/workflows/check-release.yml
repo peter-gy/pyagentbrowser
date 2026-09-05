@@ -18,8 +18,56 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  changes:
+    name: Classify changes
+    runs-on: ubuntu-latest
+    outputs:
+      source: ${{ steps.classify.outputs.source }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Detect source changes
+        id: classify
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          EVENT_NAME: ${{ github.event_name }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          if [ "$EVENT_NAME" = workflow_dispatch ]; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if ! git cat-file -e "$BASE_SHA^{commit}"; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          changed_files="$RUNNER_TEMP/release-check-changed-files"
+          git diff --name-only --no-renames -z "$BASE_SHA" "$HEAD_SHA" > "$changed_files"
+          if [ ! -s "$changed_files" ]; then
+            echo "source=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          source=false
+          while IFS= read -r -d '' path; do
+            case "$path" in
+              .github/workflows/pages.yml|README.md|CONTRIBUTING.md|docs/*|development_docs/*|scripts/check_development_docs.py)
+                ;;
+              *)
+                source=true
+                break
+                ;;
+            esac
+          done < "$changed_files"
+          echo "source=$source" >> "$GITHUB_OUTPUT"
+
   build-linux:
     name: Build Linux distributions
+    needs: changes
+    if: needs.changes.outputs.source == 'true'
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: ubuntu-latest
@@ -31,6 +79,8 @@ jobs:
 
   build-macos:
     name: Build macOS distribution
+    needs: changes
+    if: needs.changes.outputs.source == 'true'
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: macos-14
@@ -40,6 +90,8 @@ jobs:
 
   build-windows:
     name: Build Windows distribution
+    needs: changes
+    if: needs.changes.outputs.source == 'true'
     uses: ./.github/workflows/build-wheel.yml
     with:
       os: windows-latest
@@ -49,6 +101,8 @@ jobs:
 
   quality:
     name: Quality and owned contracts
+    needs: changes
+    if: needs.changes.outputs.source == 'true'
     runs-on: ubuntu-latest
     env:
       BUILD_PYTHON: "3.14"
@@ -74,6 +128,7 @@ jobs:
   sdk:
     name: SDK on Python ${{ matrix.python }}
     needs: build-linux
+    if: needs.build-linux.result == 'success'
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -101,6 +156,10 @@ jobs:
   native:
     name: Native and browser seams on ${{ matrix.os }}
     needs: [build-linux, build-macos, build-windows]
+    if: >-
+      needs.build-linux.result == 'success' &&
+      needs.build-macos.result == 'success' &&
+      needs.build-windows.result == 'success'
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -151,10 +210,19 @@ jobs:
   gate:
     name: Required gate
     if: always()
-    needs: [build-linux, build-macos, build-windows, quality, sdk, native]
+    needs: [changes, build-linux, build-macos, build-windows, quality, sdk, native]
     runs-on: ubuntu-latest
     steps:
       - name: Require every release check
         env:
           RESULTS: ${{ toJSON(needs) }}
-        run: jq --exit-status 'all(.[]; .result == "success")' <<<"$RESULTS"
+          SOURCE_CHANGES: ${{ needs.changes.outputs.source }}
+        run: |
+          jq --exit-status --arg source "$SOURCE_CHANGES" '
+            .changes.result == "success" and
+            if $source == "true" then
+              all(to_entries[]; .key == "changes" or .value.result == "success")
+            else
+              all(to_entries[]; .key == "changes" or .value.result == "skipped")
+            end
+          ' <<<"$RESULTS"
