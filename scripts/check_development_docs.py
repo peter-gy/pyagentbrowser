@@ -11,14 +11,14 @@ MARKDOWN_LINK = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 
 def main() -> None:
     pages = sorted(DOCS.glob("*.md"))
-    index_text = INDEX.read_text()
+    index_text = INDEX.read_text(encoding="utf-8")
     errors: list[str] = []
 
     for page in pages:
         if page != INDEX and f"({page.name})" not in index_text:
             errors.append(f"{page.relative_to(ROOT)} is not linked from development_docs/index.md")
 
-        for target in MARKDOWN_LINK.findall(page.read_text()):
+        for target in MARKDOWN_LINK.findall(page.read_text(encoding="utf-8")):
             path = target.split("#", 1)[0]
             if not path or "://" in path:
                 continue
