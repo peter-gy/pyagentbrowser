@@ -1,0 +1,21 @@
+scripts/package_smoke.py
+  s_9046c6e8d198a8::t_f098ec99c1db8d 180,497
+scripts/check_development_docs.py
+  s_9046c6e8d198a8::t_f098ec99c1db8d 14,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f9e2d20c265a7f78578ede46fadb5b668fdc7524",
+  "prompts": {},
+  "sessions": {
+    "s_9046c6e8d198a8": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07333-27e0-72d0-a65f-9df542572d80",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
