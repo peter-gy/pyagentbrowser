@@ -9,37 +9,46 @@ Use the `agentbrowser` Python package to control the native `agent-browser`
 engine. Inspect the page before acting, keep one controller for a task, and
 close the controller when the task ends.
 
-Call `help(agentbrowser.agent)` for a short installed-package example and the
-paths to these version-matched resources.
+Import the capability module and inspect its installed-package example:
+
+```python
+import agentbrowser.agent as browser_agent
+
+help(browser_agent)
+```
 
 ## Core loop
 
 ```python
 import agentbrowser as ab
 
-browser = ab.Browser()
-browser.open("https://example.com")
+with ab.Browser() as browser:
+    browser.page.set_content(
+        '<button onclick="this.textContent=\'Saved\'; this.disabled=true">Save</button>'
+    )
+    before = browser.observe()
+    print(before.text)
 
-before = browser.observe()
-print(before.text)
-
-result = before.one(role="link", name="More information...").click(
-    wait=ab.Wait.loaded()
-)
-print(result.after.text)
-print(result.diff)
-
-browser.close()
+    result = before.one(role="button", name="Save").click(
+        wait=ab.Wait.text("Saved")
+    )
+    print(result.after.url)
+    print(result.after.text)
+    print(result.diff.text)
 ```
 
 `Browser` starts lazily when the first operation needs a browser. A `Snapshot`
-is immutable. Each `Ref` belongs to the snapshot that created it. Use
+is immutable and exposes the captured page as both `snapshot.origin` and
+`snapshot.url`. Each `Ref` belongs to the snapshot that created it. Use
 `result.after`, `snapshot.refresh()`, or `browser.observe()` after a page change.
+The default `SnapshotSpec` emphasizes interactive elements. Pass
+`ab.SnapshotSpec(interactive=False)` when the task needs surrounding content.
 
 Marimo scratchpad locals expire after each code-mode kernel call. The capability
 module can own a controller across calls:
 
 ```python
+import agentbrowser as ab
 import agentbrowser.agent as browser_agent
 
 browser = browser_agent.connect("research")
@@ -48,7 +57,9 @@ browser = browser_agent.connect("research")
 Use `browser_agent.connect("research")` again in later calls. End the task with
 `browser_agent.disconnect("research")`. Pass `session=ab.SessionOptions(...)` on
 the first `connect()` call when the task needs an allowlist, confirmation
-policy, timeout, pinned tab, restore policy, or dashboard stream.
+policy, timeout, pinned tab, restore policy, or dashboard stream. Use
+`browser_agent.connections()` to inspect retained names and
+`browser_agent.disconnect_all()` when a task created several connections.
 
 ## Choose an element interface
 
@@ -59,7 +70,7 @@ retain before-and-after evidence:
 page = browser.observe()
 submit = page.one(role="button", name="Submit")
 result = submit.click(wait=ab.Wait.text("Saved"))
-print(result.diff)
+print(result.diff.text)
 ```
 
 Use live semantic queries when the target is already known and transition
@@ -101,7 +112,7 @@ For live queries and namespace calls, use `browser.page.wait_for_text()`,
 Read an explicit URL as agent-oriented text:
 
 ```python
-document = browser.read("https://example.com/docs", filter="Authentication")
+document = browser.read("https://example.com", filter="Example Domain")
 print(document.content)
 ```
 
@@ -109,9 +120,12 @@ Read the rendered active tab by omitting the URL. Capture visual evidence with
 the capture namespace:
 
 ```python
-screenshot = browser.capture.screenshot("page.png", full_page=True)
+screenshot = browser.capture.screenshot("artifacts/page.png", full_page=True)
 print(screenshot.path)
 ```
+
+Choose an explicit task artifact directory to keep captures separate from
+project source.
 
 ## Use focused namespaces
 
@@ -125,6 +139,7 @@ The controller groups stable operations by domain:
   and accessibility audits.
 - `browser.cookies`, `browser.storage`, and `browser.state` own persisted browser
   data.
+- `browser.session` reports native session identity and lifecycle state.
 - `browser.webmcp` owns tools registered by pages through WebMCP.
 - `browser.cdp` owns direct Chrome DevTools Protocol sessions.
 
@@ -169,17 +184,18 @@ an `AsyncBrowser`.
 
 ## Reach the complete native action surface
 
-Use typed controller and namespace methods for stable workflows. Call the raw
-native interface when the pinned engine supports an action that has no typed
-Python method:
+Use typed controller and namespace methods for stable workflows. The native
+interface exposes the complete response envelope for debugging and covers
+pinned-engine actions that have no typed Python method:
 
 ```python
 response = browser.native.execute("session_info")
-data = browser.native.data("session_info")
+print(response.success, response.data)
 ```
 
-Both paths use the same ordered native session, lifecycle, safety policy, and
-confirmation handling as the typed SDK. Print
+Use `browser.session.status()` for routine session inspection. Raw calls use the
+same ordered native session, lifecycle, safety policy, and confirmation handling
+as the typed SDK. Print
 `agentbrowser.__agent_browser_commit__` before consulting upstream source for an
 action name or payload shape.
 
@@ -191,7 +207,9 @@ import agentbrowser.agent as browser_agent
 plugin = browser_agent.agent_plugin()
 skill = browser_agent.agent_skill()
 print(plugin)
-print(skill.body)
+print(skill.tree(max_depth=2))
+print(skill.file("SKILL.md"))
+instructions = skill.body
 ```
 
 Read [API map](references/api-map.md) for task-to-namespace routing and

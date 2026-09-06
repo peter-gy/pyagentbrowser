@@ -39,7 +39,7 @@ keywords = [
     "snapshots",
 ]
 dependencies = [
-    "agent-plugins==0.1.1",
+    "agent-plugins==0.2.0",
 ]
 
 [project.optional-dependencies]
@@ -64,7 +64,7 @@ images = [
 pyagentbrowser = "agentbrowser.agent"
 
 [build-system]
-requires = ["agent-plugins==0.1.1", "maturin==1.14.1"]
+requires = ["agent-plugins==0.2.0", "maturin==1.14.1"]
 backend-path = ["."]
 build-backend = "_agent_plugins_maturin"
 
@@ -90,7 +90,6 @@ module-name = "agentbrowser._native"
 python-source = "src"
 manifest-path = "crates/pyagentbrowser/Cargo.toml"
 exclude = [
-    "_agent_plugin_artifact.py",
     ".gitattributes",
     ".github/**",
     ".venv*/**",

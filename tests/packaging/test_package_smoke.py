@@ -16,19 +16,10 @@ from scripts import package_smoke
 pytestmark = pytest.mark.packaging
 ROOT = Path(__file__).resolve().parents[2]
 VERIFY_INSTALL = ROOT / "scripts/verify-install-artifacts.py"
-ATTACH_AGENT_PLUGIN = ROOT / "scripts/attach_agent_plugin.py"
 
 
 def _load_verifier() -> ModuleType:
     spec = importlib.util.spec_from_file_location("verify_install_artifacts", VERIFY_INSTALL)
-    assert spec is not None and spec.loader is not None
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
-
-def _load_agent_plugin_attacher() -> ModuleType:
-    spec = importlib.util.spec_from_file_location("attach_agent_plugin", ATTACH_AGENT_PLUGIN)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -161,11 +152,20 @@ def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: 
     wheel = tmp_path / "pyagentbrowser-0.36.0-cp311-abi3-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("pyagentbrowser-0.36.0.dist-info/WHEEL", "Wheel-Version: 1.0\n")
+        archive.writestr(
+            "pyagentbrowser-0.36.0.dist-info/METADATA",
+            "Metadata-Version: 2.4\nName: pyagentbrowser\nVersion: 0.36.0\n",
+        )
         archive.writestr("pyagentbrowser-0.36.0.dist-info/RECORD", "")
 
-    _load_agent_plugin_attacher().attach_agent_plugin(wheel)
+    attachment = agent_plugins.attach_wheel(wheel, project=ROOT)
     names = package_smoke.wheel_names(wheel)
 
+    assert attachment.output == wheel.resolve()
+    assert attachment.plugin_root.as_posix() == "pyagentbrowser-0.36.0.agent-plugin"
+    assert {path.as_posix() for path in attachment.files} == set(package_smoke.AGENT_PLUGIN_FILES)
+    assert attachment.replaced_existing_plugin is False
+    assert attachment.removed_signatures == ()
     package_smoke.assert_wheel_agent_plugin(wheel, names)
     package_smoke.assert_wheel_record(wheel)
     assert "pyagentbrowser-0.36.0.dist-info/agent_plugins.json" in names
@@ -174,6 +174,7 @@ def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: 
 def test_agent_plugin_build_plan_contains_only_authored_resources() -> None:
     plan = agent_plugins.build_plan(ROOT)
 
+    assert plan.root == ROOT
     assert {mapping.target.as_posix() for mapping in plan.files} == set(
         package_smoke.AGENT_PLUGIN_FILES
     )

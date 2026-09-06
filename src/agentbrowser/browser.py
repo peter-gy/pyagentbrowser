@@ -356,7 +356,9 @@ class Browser:
     """Synchronous owner for one native browser session.
 
     Use `launch()` for a local process, `attach()` for an existing CDP target,
-    and `observe()` for browser-bound snapshots and refs.
+    and `observe()` for browser-bound snapshots and refs. Focused operations
+    live under `page`, `find`, `tabs`, `capture`, `network`, `diagnostics`,
+    `session`, `webmcp`, `cdp`, and `native`.
     """
 
     def __init__(
@@ -495,6 +497,9 @@ class Browser:
             return
         with suppress(BaseException):
             self.close()
+
+    def __repr__(self) -> str:
+        return f"Browser(launched={self.is_launched!r}, closed={self.closed!r})"
 
     @property
     def is_launched(self) -> bool:

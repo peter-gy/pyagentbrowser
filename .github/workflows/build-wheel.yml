@@ -127,8 +127,8 @@ jobs:
 
       - name: Attach Agent Plugin resources
         run: >-
-          uv run --no-project --with "agent-plugins==0.1.1"
-          python -m scripts.attach_agent_plugin dist
+          uv run --no-project --with "agent-plugins==0.2.0"
+          agent-plugins attach-wheel dist/*.whl --project .
 
       - name: Check built distributions
         env:

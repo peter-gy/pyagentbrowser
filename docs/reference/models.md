@@ -12,13 +12,15 @@ Public result models are frozen dataclasses unless this page states otherwise. M
 | Model | Fields and contract |
 | --- | --- |
 | `SnapshotSpec` | `selector`, `interactive`, `compact`, `max_depth`, and `urls` define one accessibility capture. |
-| `Snapshot` | `text`, `origin`, `spec`, `refs`, and `raw`, plus ref lookup, refresh, and diff operations. |
+| `Snapshot` | `text`, `origin`, `url`, `spec`, `refs`, and `raw`, plus ref lookup, refresh, and diff operations. |
 | `Ref` | Snapshot-scoped `id`, selector, role, name, source snapshot, browser, and native metadata. |
 | `ActionResult` | `action`, `target`, `before`, `after`, and `diff` for one completed ref mutation. |
 | `SnapshotDiff` | Unified `text`, addition, removal, and unchanged counts, `changed`, and raw source values. |
 | `Wait` | One post-action text, URL, load, or ordered combined condition. |
 
-`Snapshot.one()` raises `LookupError` when criteria match zero or several refs. `Snapshot.ref()` raises `KeyError` for an unknown ID.
+`Snapshot.one()` raises `LookupError` with the failed criteria and bounded
+candidate refs when criteria match zero or several refs. `Snapshot.ref()` raises
+`KeyError` for an unknown ID.
 
 `SnapshotSpec(selector=None, interactive=True, compact=False, max_depth=None, urls=False)` accepts a non-negative maximum depth. A negative value raises `ValueError`.
 
@@ -28,6 +30,7 @@ Public result models are frozen dataclasses unless this page states otherwise. M
 | --- | --- |
 | `text` | Human-readable accessibility tree. |
 | `origin` | Page URL or origin reported by the native engine. |
+| `url` | Alias for `origin`. |
 | `spec` | `SnapshotSpec` reused by refresh and ref mutations. |
 | `refs` | Mapping of ref IDs to bound `Ref` objects. |
 | `raw` | Native snapshot response mapping. |
@@ -36,6 +39,10 @@ Public result models are frozen dataclasses unless this page states otherwise. M
 | `all(*, role=None, name=None, contains=None, exact=False)` | Return every matching ref as a tuple. |
 | `refresh()` | Capture the same `SnapshotSpec` again. |
 | `diff()` | Compare this snapshot with the active page and return `SnapshotDiff`. |
+
+Interactive representations keep snapshots, refs, action results, diffs, browser
+controllers, and close results bounded. Read `.text`, `.raw`, or the explicit
+fields when a code-mode task needs their complete content.
 
 ### `Ref`
 

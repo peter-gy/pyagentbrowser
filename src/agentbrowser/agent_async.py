@@ -80,6 +80,12 @@ class AsyncRef:
         """Native ref metadata."""
         return self._ref.raw
 
+    def __repr__(self) -> str:
+        return (
+            f"AsyncRef(selector={self.selector!r}, role={self.role!r}, name={self.name!r}, "
+            f"origin={self.snapshot.origin!r})"
+        )
+
     async def refresh(
         self,
         *,
@@ -346,6 +352,11 @@ class AsyncSnapshot:
         return self._data.origin
 
     @property
+    def url(self) -> str:
+        """Page URL reported by the native engine."""
+        return self.origin
+
+    @property
     def spec(self) -> SnapshotSpec:
         """Capture specification used for this snapshot."""
         return self._data.spec
@@ -354,6 +365,12 @@ class AsyncSnapshot:
     def raw(self) -> Mapping[str, Any]:
         """Native snapshot response data."""
         return self._data.raw
+
+    def __repr__(self) -> str:
+        return (
+            f"AsyncSnapshot(origin={self.origin!r}, refs={len(self._data.refs)!r}, "
+            f"spec={self.spec!r})"
+        )
 
     @property
     def refs(self) -> Mapping[str, AsyncRef]:
@@ -373,13 +390,15 @@ class AsyncSnapshot:
         exact: bool = False,
     ) -> AsyncRef:
         """Return one ref matching accessible metadata."""
-        matches = self.all(role=role, name=name, contains=contains, exact=exact)
-        if not matches:
-            raise LookupError("snapshot contains no matching ref")
-        if len(matches) > 1:
-            selectors = ", ".join(match.selector for match in matches)
-            raise LookupError(f"snapshot criteria matched multiple refs: {selectors}")
-        return matches[0]
+        return AsyncRef(
+            self,
+            self._data.one_ref(
+                role=role,
+                name=name,
+                contains=contains,
+                exact=exact,
+            ),
+        )
 
     def all(
         self,

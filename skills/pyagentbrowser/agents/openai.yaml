@@ -1,0 +1,4 @@
+interface:
+  display_name: "pyagentbrowser"
+  short_description: "Control native browser sessions from Python"
+  default_prompt: "Use $pyagentbrowser to inspect and interact with a page from Python."

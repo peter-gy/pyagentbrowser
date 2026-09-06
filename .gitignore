@@ -13,6 +13,7 @@ target/
 
 # Virtual environments
 .venv*
+/.agent-plugin/
 
 # JavaScript and VitePress generated files
 node_modules/

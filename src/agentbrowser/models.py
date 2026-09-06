@@ -127,6 +127,13 @@ class CloseResult:
     save_error: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
+    def __repr__(self) -> str:
+        return (
+            f"CloseResult(closed={self.closed!r}, restore_status={self.restore_status!r}, "
+            f"save_status={self.save_status!r}, state_path={self.state_path!r}, "
+            f"save_error={self.save_error!r})"
+        )
+
 
 def _is_valid_session_component(value: str) -> bool:
     return bool(value) and all(char.isalnum() or char in {"-", "_"} for char in value)
@@ -618,6 +625,41 @@ class SnapshotData:
             if _matches_ref(ref, role=role, name=name, contains=contains, exact=exact)
         ]
 
+    def one_ref(
+        self,
+        *,
+        role: str | None = None,
+        name: str | None = None,
+        contains: str | None = None,
+        exact: bool = False,
+    ) -> SnapshotRef:
+        """Return one matching ref or raise with bounded recovery context."""
+        matches = self.find_refs(
+            role=role,
+            name=name,
+            contains=contains,
+            exact=exact,
+        )
+        criteria = _ref_criteria(
+            role=role,
+            name=name,
+            contains=contains,
+            exact=exact,
+        )
+        if not matches:
+            available = ", ".join(
+                f"{ref.selector} {ref.role} {ref.name!r}"
+                for ref in (self.ref(ref_id) for ref_id in tuple(self.refs)[:8])
+            )
+            suffix = f". Available refs: {available}" if available else ". Snapshot has no refs"
+            raise LookupError(f"snapshot contains no matching ref for {criteria}{suffix}")
+        if len(matches) > 1:
+            selectors = ", ".join(match.selector for match in matches[:8])
+            raise LookupError(
+                f"snapshot criteria matched multiple refs for {criteria}: {selectors}"
+            )
+        return matches[0]
+
 
 @dataclass(frozen=True, slots=True)
 class SnapshotRef:
@@ -675,6 +717,15 @@ class SnapshotDiff:
     changed: bool
     raw: Mapping[str, Any]
 
+    def __str__(self) -> str:
+        return self.text
+
+    def __repr__(self) -> str:
+        return (
+            f"SnapshotDiff(changed={self.changed!r}, additions={self.additions!r}, "
+            f"removals={self.removals!r}, unchanged={self.unchanged!r})"
+        )
+
 
 @dataclass(frozen=True, slots=True)
 class ActionResult(Generic[RefT, SnapshotT]):
@@ -685,6 +736,12 @@ class ActionResult(Generic[RefT, SnapshotT]):
     before: SnapshotT
     after: SnapshotT
     diff: SnapshotDiff
+
+    def __repr__(self) -> str:
+        return (
+            f"ActionResult(action={self.action!r}, target={self.target!r}, "
+            f"before={self.before!r}, after={self.after!r}, diff={self.diff!r})"
+        )
 
 
 class ActionTransitionError(AgentBrowserError, Generic[RefT, SnapshotT]):
@@ -1569,6 +1626,29 @@ def _optional_float(value: Any) -> float | None:
 
 def _float(value: Any) -> float:
     return float(value if value is not None else 0)
+
+
+def _ref_criteria(
+    *,
+    role: str | None,
+    name: str | None,
+    contains: str | None,
+    exact: bool,
+) -> str:
+    values = {
+        "role": role,
+        "name": name,
+        "contains": contains,
+        "exact": exact,
+    }
+    return (
+        ", ".join(
+            f"{key}={value!r}"
+            for key, value in values.items()
+            if value is not None and (key != "exact" or value)
+        )
+        or "any ref"
+    )
 
 
 def _matches_ref(

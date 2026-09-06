@@ -334,7 +334,9 @@ class AsyncBrowser:
     """Async owner for one ordered native browser session.
 
     Native calls run on a dedicated owner thread so the event loop can keep
-    scheduling unrelated work.
+    scheduling unrelated work. Focused operations live under `page`, `find`,
+    `tabs`, `capture`, `network`, `diagnostics`, `session`, `webmcp`, `cdp`,
+    and `native`.
     """
 
     def __init__(
@@ -476,6 +478,9 @@ class AsyncBrowser:
             return
         with suppress(BaseException):
             await self.close()
+
+    def __repr__(self) -> str:
+        return f"AsyncBrowser(launched={self.is_launched!r}, closed={self.closed!r})"
 
     @property
     def is_launched(self) -> bool:

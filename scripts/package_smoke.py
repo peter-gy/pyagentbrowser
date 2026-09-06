@@ -37,6 +37,7 @@ AGENT_PLUGIN_FILES = frozenset(
     {
         "plugin.json",
         "skills/pyagentbrowser/SKILL.md",
+        "skills/pyagentbrowser/agents/openai.yaml",
         "skills/pyagentbrowser/references/api-map.md",
         "skills/pyagentbrowser/references/lifecycle-and-safety.md",
     }
