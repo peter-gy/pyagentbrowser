@@ -1,0 +1,174 @@
+:root {
+  --vp-font-family-base: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --vp-font-family-mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  --vp-c-brand-1: #2d6f9f;
+  --vp-c-brand-2: #3776ab;
+  --vp-c-brand-3: #245a83;
+  --vp-c-brand-soft: #eaf3fa;
+  --vp-c-bg-alt: #f6f7f8;
+  --vp-c-bg-soft: #f1f3f5;
+  --vp-c-divider: #e2e5e8;
+  --vp-button-brand-bg: #2d6f9f;
+  --vp-button-brand-border: #2d6f9f;
+  --vp-button-brand-hover-bg: #245a83;
+  --vp-button-brand-hover-border: #245a83;
+  --vp-home-hero-name-color: #3776ab;
+  --vp-code-block-bg: #f6f7f8;
+}
+
+.dark {
+  --vp-c-brand-1: #7db8e8;
+  --vp-c-brand-2: #97c8ef;
+  --vp-c-brand-3: #5b9fd6;
+  --vp-c-brand-soft: #182b3a;
+  --vp-c-bg: #0a0a0a;
+  --vp-c-bg-alt: #111315;
+  --vp-c-bg-elv: #17191b;
+  --vp-c-bg-soft: #17191b;
+  --vp-c-divider: #292d31;
+  --vp-c-gutter: #292d31;
+  --vp-code-block-bg: #141618;
+}
+
+.VPNav {
+  border-bottom: 1px solid var(--vp-c-divider);
+}
+
+.VPNavBar {
+  background: var(--vp-c-bg);
+}
+
+.VPNavBarTitle .logo {
+  width: 164px;
+  height: auto;
+  margin-right: 0;
+}
+
+.VPHomeHero {
+  padding-top: 72px;
+  padding-bottom: 40px;
+}
+
+.VPHomeHero .container {
+  max-width: 1120px;
+}
+
+.VPHomeHero .main,
+.VPHomeHero .text {
+  max-width: 670px;
+}
+
+.VPHomeHero .name {
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.VPHomeHero .text {
+  font-size: clamp(40px, 5vw, 58px);
+  font-weight: 600;
+  letter-spacing: -0.045em;
+  line-height: 1.04;
+  text-wrap: balance;
+}
+
+.VPHomeHero .tagline {
+  max-width: 650px;
+  margin-top: 22px;
+  color: var(--vp-c-text-2);
+  font-size: 18px;
+  line-height: 1.6;
+}
+
+.VPHomeHero .image-bg {
+  display: none;
+}
+
+.VPHomeHero .image-container {
+  width: 300px;
+  height: 300px;
+}
+
+.VPHomeHero .image-src {
+  max-width: 220px;
+  max-height: 220px;
+}
+
+.VPButton {
+  border-radius: 6px;
+  font-weight: 600;
+}
+
+.VPFeatures .VPFeature {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-c-bg-elv);
+  box-shadow: none;
+}
+
+.VPFeatures .VPFeature.link:hover,
+.VPFeatures .VPFeature.link:focus-visible {
+  border-color: var(--vp-c-brand-1);
+  background: var(--vp-c-bg-soft);
+}
+
+.VPFeatures .VPFeature .icon {
+  width: 40px;
+  height: 40px;
+  margin-bottom: 18px;
+  background: var(--vp-c-brand-soft);
+}
+
+.VPFeatures .VPFeature .link-text {
+  padding-top: 14px;
+}
+
+.vp-doc h1,
+.vp-doc h2,
+.vp-doc h3 {
+  letter-spacing: -0.025em;
+}
+
+.vp-doc h1 {
+  font-size: 2.25rem;
+}
+
+.vp-doc a {
+  text-underline-offset: 3px;
+}
+
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 8px;
+  background: var(--vp-code-block-bg);
+}
+
+.vp-doc :not(pre) > code {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: 4px;
+}
+
+.vp-doc table {
+  width: 100%;
+}
+
+@media (max-width: 700px) {
+  .VPHomeHero {
+    padding-top: 40px;
+  }
+
+  .VPHomeHero .image-container {
+    width: 180px;
+    height: 180px;
+  }
+
+  .VPHomeHero .image {
+    margin-bottom: 1rem;
+  }
+
+  .VPHomeHero .image-src {
+    max-width: 138px;
+    max-height: 138px;
+  }
+
+}

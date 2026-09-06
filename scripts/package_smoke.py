@@ -90,7 +90,18 @@ SDIST_REQUIRED_BUILD_FILES = frozenset(
     }
 )
 SDIST_REQUIRED_DOCS_AND_EXAMPLES = frozenset(
-    {"README.md", "docs/api.md", "examples/basic_navigation.py"}
+    {
+        "README.md",
+        "docs/index.md",
+        "docs/getting-started.md",
+        "docs/concepts/runtime-model.md",
+        "docs/concepts/evidence.md",
+        "docs/reference/browser.md",
+        "docs/reference/namespaces.md",
+        "docs/reference/models.md",
+        "docs/troubleshooting.md",
+        "examples/basic_navigation.py",
+    }
 )
 SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
     {
@@ -166,7 +177,7 @@ def _normalized_newlines(text: str) -> str:
 
 
 def project_metadata() -> Mapping[str, object]:
-    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text())
+    pyproject = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
     project = pyproject.get("project")
     if not isinstance(project, Mapping):
         _fail("pyproject.toml is missing [project]")
@@ -483,7 +494,7 @@ def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:
     description = metadata.get_payload()
     if not isinstance(description, str):
         _fail(f"{artifact_name} metadata is missing the README long description")
-    readme = (ROOT / str(project["readme"])).read_text()
+    readme = (ROOT / str(project["readme"])).read_text(encoding="utf-8")
     if _normalized_newlines(description).strip() != _normalized_newlines(readme).strip():
         _fail(f"{artifact_name} metadata long description does not match README.md")
 

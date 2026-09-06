@@ -3,6 +3,14 @@
 The Makefile is the executable command index. This guide records the ordering
 and evidence behind upstream updates, package releases, and CI.
 
+Read [the generated adapter contract](generated-adapter.md) before changing a
+rewrite. Read [the packaging contract](packaging.md) before changing artifact
+contents or build inputs.
+
+The [downstream wrapper model](repository-model.md) defines why an upstream
+update changes a source pin, generated compatibility assumptions, provenance,
+and distribution inputs as one reviewed unit.
+
 ## Update the embedded engine
 
 Pin the latest commit from the official upstream branch with:
@@ -32,6 +40,18 @@ version, updates `src/agentbrowser/_upstream.json`, synchronizes the adapter
 entry in `Cargo.lock`, and prints the inspected `old..new` range. Supporting
 Python dependency changes refresh `uv.lock` through the normal project workflow.
 
+Before applying the update, classify the candidate diff:
+
+| Upstream area                     | Downstream consequence                                                           |
+| --------------------------------- | -------------------------------------------------------------------------------- |
+| Registered Rust module            | Re-audit adapter module registry and rewrite anchors                             |
+| Command or response contract      | Check raw compatibility, typed decoding, safety, and lifecycle                   |
+| Browser process or state behavior | Check PyO3 ownership and integration seams                                       |
+| Protocol schema                   | Regenerate and compile adapter protocol types                                    |
+| `skill-data`                      | Verify embedded resource parsing and package payload                             |
+| Cargo dependencies or features    | Reconcile adapter dependencies, refresh the root lock, and re-audit build inputs |
+| License or third-party notice     | Update packaged license material                                                 |
+
 Then:
 
 1. Run `git diff --submodule=log -- third_party/agent-browser` to confirm the
@@ -41,41 +61,40 @@ Then:
    anchor that moved or changed cardinality.
 3. Repair the narrow rewrite in `crates/agent-browser-adapter/build.rs`. Keep the
    upstream submodule clean.
-4. Add or update Python APIs when the upstream capability belongs in a stable
+4. Reconcile upstream dependencies and features with
+   `crates/agent-browser-adapter/Cargo.toml`. The updater aligns its version and
+   refreshes the root lock, but dependency declarations remain a reviewed
+   downstream contract.
+5. Add or update Python APIs when the upstream capability belongs in a stable
    typed workflow. The raw native path already exposes the complete command set.
-5. Run `make check-release`.
+6. Run `make check-release`.
 
 An upstream update normally changes the submodule pointer, provenance, adapter
 version, and lockfiles. Adapter and Python changes depend on the upstream diff.
 
+The submodule pointer is the source identity. `_upstream.json` is installed
+provenance. The adapter manifest describes compatibility. All three must agree
+before release.
+
 ## Generated adapter source
 
-The adapter build script copies selected upstream modules into Cargo `OUT_DIR`,
-normalizes source text, applies explicit rewrites, and compiles the generated
-module tree. Rewrites are build contracts:
-
-- Each anchor names an upstream construct that was inspected at the pinned
-  commit.
-- The expected match count is checked.
-- Generated output remains outside the tracked source tree.
-- Adapter smoke tests and native smoke tests exercise the resulting boundary.
-
-When an anchor fails, inspect the pinned upstream source before changing the
-match. Broadening a pattern until the build passes can silently adapt the wrong
-code.
+The [generated adapter contract](generated-adapter.md) owns the module registry,
+rewrite-anchor, confirmation, namespace, tab-binding, protocol-generation,
+stream, and dashboard rules. Follow its audit and validation sequence after an
+upstream pin changes.
 
 ## Package versions
 
-The Python distribution and PyO3 crate share one release version. Cargo uses its
+The Python distribution and [PyO3](https://pyo3.rs/) Rust extension crate share one release version. Cargo uses its
 native prerelease spelling.
 
-| Source | Example |
-| --- | --- |
-| `pyproject.toml` | `1.2.3rc4` |
-| `src/agentbrowser/_version.py` | `1.2.3rc4` |
-| `uv.lock` | `1.2.3rc4` |
+| Source                             | Example      |
+| ---------------------------------- | ------------ |
+| `pyproject.toml`                   | `1.2.3rc4`   |
+| `src/agentbrowser/_version.py`     | `1.2.3rc4`   |
+| `uv.lock`                          | `1.2.3rc4`   |
 | `crates/pyagentbrowser/Cargo.toml` | `1.2.3-rc.4` |
-| `Cargo.lock` | `1.2.3-rc.4` |
+| `Cargo.lock`                       | `1.2.3-rc.4` |
 
 The adapter crate follows the embedded upstream version. Set `RELEASE_TAG` to
 the planned tag, then verify all version and provenance sources with:
@@ -87,7 +106,7 @@ make prerelease-version-check
 
 ## Release state machine
 
-1. Update the five SDK version sources and refresh both locks.
+1. Update the three SDK version declarations and refresh both lockfiles.
 2. Run `make check-release`.
 3. Commit and push the version change to `main`.
 4. Wait for a successful push-event `Release Check` on the exact commit SHA.
@@ -95,7 +114,7 @@ make prerelease-version-check
 6. Follow the tag-triggered `Publish` workflow through public verification.
 
 The publish workflow requires successful exact-SHA release evidence before it
-accepts a tag. It builds five ABI3 wheels and one sdist, validates every payload,
+accepts a tag. It builds five wheels against Python's stable application binary interface and one sdist, validates every payload,
 publishes through PyPI trusted publishing, installs the public wheel on Linux
 and Windows, and verifies the public artifact set plus GitHub prerelease state.
 
@@ -104,21 +123,26 @@ fails, fix forward with a new version and tag.
 
 ## Validation ladder
 
-| Evidence | Command | Use when |
-| --- | --- | --- |
-| Python public contract | `make test-sdk` | API, models, policy, lifecycle, refs, async behavior |
-| Native embedding | `make test-native` | PyO3, generated adapter, sidecars, provenance |
-| Rust ownership | `make rust-check rust-test` | Rust source or generator logic |
-| Real browser | `make test-integration` | Chrome, CDP, process, or page-transition behavior |
-| Distribution | `make test-package` | Metadata, payload, version, provenance rules |
-| Installed artifacts | `make package` | Build inputs, extras, ABI, wheel, or sdist changes |
-| Release | `make check-release` | Upstream pins, versions, CI, publishing, release work |
+| Evidence               | Command                     | Use when                                                                 |
+| ---------------------- | --------------------------- | ------------------------------------------------------------------------ |
+| Python public contract | `make test-sdk`             | API, models, policy, lifecycle, refs, async behavior                     |
+| Native embedding       | `make test-native`          | PyO3, generated adapter, sidecars, provenance                            |
+| Rust ownership         | `make rust-check rust-test` | Rust source or generator logic                                           |
+| Real browser           | `make test-integration`     | Chrome, CDP, process, or page-transition behavior                        |
+| Documentation site     | `make docs-check`           | TypeScript config, build, links, navigation, metadata, and public assets |
+| Distribution           | `make test-package`         | Metadata, payload, version, provenance rules                             |
+| Installed artifacts    | `make package`              | Build inputs, extras, ABI, wheel, or sdist changes                       |
+| Release                | `make check-release`        | Upstream pins, versions, CI, publishing, release work                    |
 
 CI uses the same ownership boundaries. `Release Check` separates quality, SDK
 versions, platform builds, and real-browser seams. `Publish` reuses the wheel
 builder, then verifies the public index from clean environments. `Required
 gate` reports one aggregate result after every `Release Check` job group
 finishes.
+
+[Testing](testing.md) defines which marker and runtime boundary should carry a
+new contract. [Documentation](documentation.md) defines the public-site build
+and browser checks.
 
 ## Cross-platform source
 
