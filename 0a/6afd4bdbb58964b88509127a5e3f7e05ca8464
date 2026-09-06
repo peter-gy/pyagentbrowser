@@ -1,0 +1,101 @@
+README.md
+  s_698492a8ee03c4::t_4f7e5097665bad 95
+.github/workflows/build-wheel.yml
+  s_698492a8ee03c4::t_d67b02f8aaa79b 83,128-130
+  s_698492a8ee03c4::t_fd70937ad55de2 131
+Makefile
+  s_698492a8ee03c4::t_bb78c68de40751 49,138
+  s_698492a8ee03c4::t_78d0f87e4652ee 14-15,48,136-137,139
+  s_698492a8ee03c4::t_112b6ea323ecbc 16,140-142
+plugin.json
+  s_698492a8ee03c4::t_f39fd5b0d11cef 1-11
+skills/pyagentbrowser/references/lifecycle-and-safety.md
+  s_698492a8ee03c4::t_f39fd5b0d11cef 1-4,7-9,11,16-18,20-21,24-25,36-82
+  s_698492a8ee03c4::t_2736ee8f5b79a6 5-6,10,12-15,19,23,29-35
+  s_698492a8ee03c4::t_ce91cf5c87e594 22,26-28
+development_docs/evidence-and-refs.md
+  s_698492a8ee03c4::t_4f7e5097665bad 3
+tests/packaging/test_package_smoke.py
+  s_698492a8ee03c4::t_5fc5ab545ef179 19,30-37,160-169,171,180-186
+  s_698492a8ee03c4::t_2c5d9d4d25f6ee 4-5,13,170,187-214
+  s_698492a8ee03c4::t_e54936efd90c72 10,172-179
+src/agentbrowser/AGENTS.md
+  s_698492a8ee03c4::t_4f7e5097665bad 9-11
+pyproject.toml
+  s_698492a8ee03c4::t_1342f2ef5f4eb7 93
+  s_698492a8ee03c4::t_f6e9a90717f13b 41-43,63-65,67-69,73,98-99,140,156-157
+scripts/verify-install-artifacts.py
+  s_698492a8ee03c4::t_bc07d98e287382 73-74
+  s_698492a8ee03c4::t_fd3956d4f1fb93 69
+  s_698492a8ee03c4::t_3f29ce4596769a 21,24,26,48-68
+src/agentbrowser/_evidence.py
+  s_698492a8ee03c4::t_8e7aa52ad7499b 1-452
+  s_698492a8ee03c4::t_5b8edc5959ac4d 453-459
+development_docs/architecture.md
+  s_698492a8ee03c4::t_4f7e5097665bad 63-64,72
+development_docs/packaging.md
+  s_698492a8ee03c4::t_4f7e5097665bad 24,30,41,54
+src/agentbrowser/agent.py
+  s_698492a8ee03c4::t_20ff44a352fb8f 12-13
+  s_698492a8ee03c4::t_5b8edc5959ac4d 6,14,53,57-58,62-63,93-97,187,189-195
+  s_698492a8ee03c4::t_93dbd08c1b9561 10,20-22
+  s_698492a8ee03c4::t_e2d9c417265bb3 1-2,5,7-9,11,15-17,24-26,30-52,54-56,59-60,64-66,68-71,74-76,79-80,82-86,90-92,99,102-104,107-111,113,116-118,121-122,124-125,127-128,130-133,135-139,141-145,147,149-150,153-160,162-164,166,168-169,171,173,175,177,179-183,186,197-200,202-204,207
+  s_698492a8ee03c4::t_c2e1631663fce6 87,112
+  s_698492a8ee03c4::t_ce91cf5c87e594 61,67,73
+_agent_plugins_maturin.py
+  s_698492a8ee03c4::t_bc07d98e287382 80
+  s_698492a8ee03c4::t_fd70937ad55de2 1-79,81-108
+development_docs/embedded-resources.md
+  s_698492a8ee03c4::t_ad00038db19e08 46-49
+  s_698492a8ee03c4::t_4f7e5097665bad 14,37-45
+_agent_plugin_artifact.py
+  s_698492a8ee03c4::t_f54705e8fdcedc 1-15
+scripts/package_smoke.py
+  s_698492a8ee03c4::t_c2e1631663fce6 407
+  s_698492a8ee03c4::t_5f25d4ec4943a7 330-335
+  s_698492a8ee03c4::t_72e5e91aeb6296 8,36-43,89,318-329,336-349,384-392,645,655
+  s_698492a8ee03c4::t_507a4b9122ef99 4-7,350-383,393-406,408-409,646,656
+docs/.vitepress/routes.ts
+  s_698492a8ee03c4::t_faedd58c8bf054 49
+src/agentbrowser/__init__.py
+  s_698492a8ee03c4::t_c2e1631663fce6 5
+docs/guides/agent-skills.md
+  s_698492a8ee03c4::t_faedd58c8bf054 2-3,6,8,10,13-24,44-57,68
+  s_698492a8ee03c4::t_4f7e5097665bad 12,25-43
+skills/pyagentbrowser/SKILL.md
+  s_698492a8ee03c4::t_2736ee8f5b79a6 9-10,39-40,43-45,48-51,177-178
+  s_698492a8ee03c4::t_48e071eab06213 41-42,46-47
+  s_698492a8ee03c4::t_f39fd5b0d11cef 1-8,11-38,52-176,179-199
+scripts/attach_agent_plugin.py
+  s_698492a8ee03c4::t_d67b02f8aaa79b 1-5,7-10,12-20,28-31
+  s_698492a8ee03c4::t_f54705e8fdcedc 6
+  s_698492a8ee03c4::t_fd70937ad55de2 11,21-27
+skills/pyagentbrowser/references/api-map.md
+  s_698492a8ee03c4::t_f39fd5b0d11cef 1-40
+tests/test_agent_capability.py
+  s_698492a8ee03c4::t_ebf088ab7a8f21 1-5,8-13,15-25,64,68,120-149,151-181,183-187,192-200,202-203
+  s_698492a8ee03c4::t_08754d3d3f8f10 150
+  s_698492a8ee03c4::t_c03b1687e21817 188-191
+  s_698492a8ee03c4::t_06197fcc2cf3ab 14,52-54,80-117
+  s_698492a8ee03c4::t_e54936efd90c72 6,26-45,55-60,62-63,65-67,69-72,74,76-79,118-119,182,201
+  s_698492a8ee03c4::t_c16145a8a44ecd 46-51
+  s_698492a8ee03c4::t_b12c2f2af29d0e 7,61,73,75
+src/agentbrowser/browser.py
+  s_698492a8ee03c4::t_9de635552d0c03 24
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0a6afd4bdbb58964b88509127a5e3f7e05ca8464",
+  "prompts": {},
+  "sessions": {
+    "s_698492a8ee03c4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07547-d724-7021-94a8-389a151edc90",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
