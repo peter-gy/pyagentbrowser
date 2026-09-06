@@ -42,11 +42,10 @@ Maturin Python build backend so editable installs, wheels, and source
 distributions carry the Agent Plugin marker and exact resource inventory.
 
 The cross-platform wheel workflow invokes Maturin directly inside platform
-builders, then calls `scripts/attach_agent_plugin.py` once before artifact
-validation. `_agent_plugin_artifact.py` keeps that direct-wheel seam independent
-from the Maturin Python build backend. Package smoke tests verify the marker,
-payload, wheel record, staged source resources, and normalized
-source-distribution timestamps.
+builders, then runs `agent-plugins attach-wheel` before artifact validation.
+Direct and PEP 517 wheel builds use the same `agent_plugins.attach_wheel()`
+implementation. Package smoke tests verify the marker, payload, wheel record,
+staged source resources, and normalized source-distribution timestamps.
 
 ## Protocol-generation inputs
 

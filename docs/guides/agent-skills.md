@@ -28,7 +28,9 @@ Use a named module-owned connection when browser work spans code-mode calls:
 ```python
 browser = browser_agent.connect("research")
 browser.open("https://example.com")
-print(browser.observe().text)
+page = browser.observe()
+print(page.origin)
+print(page.text)
 
 # In a later code-mode call
 browser = browser_agent.connect("research")
@@ -37,17 +39,24 @@ browser = browser_agent.connect("research")
 browser_agent.disconnect("research")
 ```
 
+Use `browser_agent.connections()` to inspect every retained name and controller.
+Call `browser_agent.disconnect_all()` after a task that created several named
+connections.
+
 Pass `session=agentbrowser.SessionOptions(...)` on the first `connect()` call
 when the task needs domain restrictions, confirmation policy, or another
 session option. Supplying different options for the same live connection raises
-`ValueError`.
+`ValueError` with the `disconnect()` recovery call. If user code closes the
+controller directly, the next optionless `connect()` preserves those session
+options. `disconnect()` is the explicit boundary for forgetting them.
 
 ```python
 plugin = browser_agent.agent_plugin()
 skill = browser_agent.agent_skill()
 
 print(plugin)
-print(skill.body)
+print(skill.file("SKILL.md"))
+instructions = skill.body
 ```
 
 The packaged `pyagentbrowser` skill uses `Browser`, `AsyncBrowser`, typed namespaces, and `browser.native` directly. These Python operations share the embedded native action service with the upstream engine.

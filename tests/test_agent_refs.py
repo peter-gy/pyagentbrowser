@@ -178,14 +178,37 @@ def test_snapshot_binds_refs_and_expresses_cardinality() -> None:
     page = _browser(TransitionNative()).observe()
 
     assert isinstance(page, Snapshot)
+    assert page.url == page.origin == "https://example.com/form"
     assert page.ref("@e1").selector == "@e1"
     assert page.one(role="textbox").name == "Email"
     assert tuple(ref.id for ref in page.all(contains="m")) == ("e1", "e2")
 
-    with pytest.raises(LookupError, match="multiple"):
+    with pytest.raises(LookupError, match=r"multiple.*contains='m'.*@e1, @e2"):
         page.one(contains="m")
-    with pytest.raises(LookupError, match="no matching"):
+    with pytest.raises(
+        LookupError,
+        match=r"no matching ref.*name='Missing'.*@e1 button 'Submit'.*@e2 textbox 'Email'",
+    ):
         page.one(name="Missing")
+
+
+def test_agent_evidence_representations_are_bounded_and_task_focused() -> None:
+    page = _browser(TransitionNative()).observe()
+    ref = page.one(role="button")
+    result = ref.click()
+
+    assert repr(page) == (
+        "Snapshot(origin='https://example.com/form', refs=2, "
+        "spec=SnapshotSpec(selector=None, interactive=True, compact=False, "
+        "max_depth=None, urls=False))"
+    )
+    assert repr(ref) == (
+        "Ref(selector='@e1', role='button', name='Submit', origin='https://example.com/form')"
+    )
+    assert repr(result.diff) == ("SnapshotDiff(changed=True, additions=1, removals=1, unchanged=2)")
+    assert str(result.diff) == result.diff.text
+    assert len(repr(result)) < 600
+    assert "'raw':" not in repr(result)
 
 
 @pytest.mark.parametrize(
@@ -300,6 +323,9 @@ def test_async_snapshot_and_action_match_the_sync_contract() -> None:
             _native_session=AsyncNativeSession(native=native),
         )
         page = await browser.observe(SnapshotSpec(compact=True))
+        assert page.url == page.origin
+        assert repr(page).startswith("AsyncSnapshot(origin=")
+        assert repr(page.one(role="button")).startswith("AsyncRef(selector='@e1'")
         result = await page.one(name="Submit").click(wait=Wait.text("Saved"))
 
         assert isinstance(page, AsyncSnapshot)

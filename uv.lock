@@ -4,11 +4,11 @@ requires-python = ">=3.11, <3.15"
 
 [[package]]
 name = "agent-plugins"
-version = "0.1.1"
+version = "0.2.0"
 source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/50/89/aee7155b3abe61d3a30175613ef24fc7a93cfe0f69ac64a8b61ff6783f7e/agent_plugins-0.1.1.tar.gz", hash = "sha256:803a4ddf26f5d4eb50101c408296d3e09020dee7e3d2990396659c6da55cb84a", size = 26872, upload-time = "2026-08-31T21:25:47.452Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/c1/e0/469183aa746fa3917e99901654d4daa245e1aa4009a4d08d8614964104b0/agent_plugins-0.2.0.tar.gz", hash = "sha256:99d26f86c16385276f4030735923c9dee604db66e2e5cd0095fa08541b82aeeb", size = 33641, upload-time = "2026-09-06T11:52:44.782Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/d1/21/3ebab3b138cf09e262321b4faa17a6e94fb23148d5be755f393c8e3869ea/agent_plugins-0.1.1-py3-none-any.whl", hash = "sha256:30a4129ba7c8bdebb24fbf15a3ddbea346dc13c1ec5dcc69df0c9a48c091f67a", size = 41236, upload-time = "2026-08-31T21:25:46.626Z" },
+    { url = "https://files.pythonhosted.org/packages/24/43/03d7b1d3e22e0665e54feb63a50765f53611be050b3720cabafab74a1d6e/agent_plugins-0.2.0-py3-none-any.whl", hash = "sha256:94dd4f5d15f8688691c3628f2848fbe92d110baf96e7314c147fcc775ce45a50", size = 48706, upload-time = "2026-09-06T11:52:43.701Z" },
 ]
 
 [[package]]
@@ -184,7 +184,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
-    { name = "agent-plugins", specifier = "==0.1.1" },
+    { name = "agent-plugins", specifier = "==0.2.0" },
     { name = "pillow", marker = "extra == 'images'", specifier = ">=12.0" },
     { name = "websockets", marker = "extra == 'cdp'", specifier = ">=15.0" },
 ]

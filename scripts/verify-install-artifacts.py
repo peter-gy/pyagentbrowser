@@ -59,10 +59,18 @@ plugin = browser_agent.agent_plugin()
 agent_skill = browser_agent.agent_skill()
 assert plugin == agent_plugins.locate("pyagentbrowser")
 assert plugin.manifest.name == "pyagentbrowser"
+assert plugin.skill("pyagentbrowser") is plugin.skill("pyagentbrowser")
+assert plugin.skill("pyagentbrowser") == agent_skill
 assert agent_skill.path.name == "pyagentbrowser"
+assert agent_skill.file("SKILL.md").is_file()
+assert agent_skill.file("agents/openai.yaml").is_file()
+assert agent_skill.file("references/api-map.md").is_file()
+assert agent_skill.file("references/lifecycle-and-safety.md").is_file()
+assert agent_skill.source.startswith("---\nname: pyagentbrowser\n")
 assert {path.relative_to(plugin.path).as_posix() for path in plugin.files} == {
     "plugin.json",
     "skills/pyagentbrowser/SKILL.md",
+    "skills/pyagentbrowser/agents/openai.yaml",
     "skills/pyagentbrowser/references/api-map.md",
     "skills/pyagentbrowser/references/lifecycle-and-safety.md",
 }

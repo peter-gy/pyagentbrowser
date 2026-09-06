@@ -25,14 +25,18 @@ print(browser.observe().text)
 
 Pass session options on the first call. A later call can omit them. Supplying a
 mismatched configuration raises `ValueError` before it can act on another
-controller. Close and forget the connection once the task ends:
+controller and includes the `disconnect()` recovery call. Closing the controller
+directly preserves its session options for the next optionless `connect()`.
+Close and forget the connection once the task ends:
 
 ```python
 browser_agent.disconnect("research")
 ```
 
-`disconnect()` is idempotent. Use `Browser` as a context manager when the
-complete task fits in one kernel call.
+`disconnect()` is idempotent. Inspect retained controllers with
+`browser_agent.connections()`. Call `browser_agent.disconnect_all()` when the
+task used several names. Use `Browser` as a context manager when the complete
+task fits in one kernel call.
 
 ## Snapshot identity
 

@@ -25,6 +25,18 @@ _DISTRIBUTION_NAME = "pyagentbrowser"
 _SKILL_NAME = "pyagentbrowser"
 _DEFAULT_CONNECTION = "default"
 
+__all__ = [
+    "Ref",
+    "Snapshot",
+    "StaleRefError",
+    "agent_plugin",
+    "agent_skill",
+    "connect",
+    "connections",
+    "disconnect",
+    "disconnect_all",
+]
+
 
 @dataclass(frozen=True, slots=True)
 class _Connection:
@@ -44,7 +56,7 @@ def connect(
     """Return a module-owned browser that persists across code-mode calls.
 
     The first call creates a lazy `Browser`. Later calls with the same name and
-    session options return that controller. Call `disconnect()` when the task
+    session options return that controller. Call `disconnect(name)` when the task
     ends.
 
     Args:
@@ -55,7 +67,7 @@ def connect(
     Raises:
         TypeError: `name` is not a string or `session` is not `SessionOptions`.
         ValueError: `name` is not a valid session component or an existing
-            connection uses other session options.
+            connection uses different session options.
     """
     connection_name = _connection_name(name)
     requested = None if session is None else normalize_session(session)
@@ -66,25 +78,50 @@ def connect(
         if existing is not None and not existing.browser.closed:
             if requested is not None and existing.session != requested:
                 raise ValueError(
-                    f"connection {connection_name!r} already uses other session options"
+                    f"Connection {connection_name!r} already uses different session options. "
+                    f"Call disconnect({connection_name!r}) before reconnecting with new options"
                 )
             return existing.browser
 
-        options = requested or SessionOptions(session_id=connection_name)
+        options = (
+            requested
+            or (existing.session if existing is not None else None)
+            or SessionOptions(session_id=connection_name)
+        )
         browser = Browser(session=options)
         _CONNECTIONS[connection_name] = _Connection(browser, options)
         return browser
 
 
+def connections() -> dict[str, Browser]:
+    """Return a name-sorted copy of the module-owned browser registry.
+
+    Closed controllers remain registered until `connect()` replaces them or
+    `disconnect()` forgets them. Inspect `browser.closed` and
+    `browser.is_launched` for each returned controller.
+    """
+    with _CONNECTIONS_LOCK:
+        return {name: connection.browser for name, connection in sorted(_CONNECTIONS.items())}
+
+
 def disconnect(name: str = _DEFAULT_CONNECTION) -> CloseResult:
     """Close and forget one module-owned code-mode browser.
 
-    Closing a missing connection succeeds and returns an already-closed result.
+    The default closes the connection named `"default"`. Closing a missing
+    connection succeeds and returns an already-closed result.
     """
     connection_name = _connection_name(name)
     with _CONNECTIONS_LOCK:
         connection = _CONNECTIONS.pop(connection_name, None)
-        return CloseResult(closed=True) if connection is None else connection.browser.close()
+    return CloseResult(closed=True) if connection is None else connection.browser.close()
+
+
+def disconnect_all() -> dict[str, CloseResult]:
+    """Close and forget every module-owned code-mode browser."""
+    with _CONNECTIONS_LOCK:
+        connections = sorted(_CONNECTIONS.items())
+        _CONNECTIONS.clear()
+    return {name: connection.browser.close() for name, connection in connections}
 
 
 def _connection_name(name: str) -> str:
@@ -104,18 +141,9 @@ def agent_plugin() -> agent_plugins.Plugin:
     return agent_plugins.locate(_DISTRIBUTION_NAME)
 
 
-def _agent_skill(plugin: agent_plugins.Plugin) -> agent_plugins.Skill:
-    for skill in plugin.skills:
-        if skill.path.name == _SKILL_NAME:
-            return skill
-    raise agent_plugins.AgentPluginError(
-        "The pyagentbrowser Agent Plugin has no pyagentbrowser skill. Reinstall pyagentbrowser."
-    )
-
-
 def agent_skill() -> agent_plugins.Skill:
     """Return the packaged pyagentbrowser Agent Skill."""
-    return _agent_skill(agent_plugin())
+    return agent_plugin().skill(_SKILL_NAME)
 
 
 def _sdk_help(summary: str) -> str:
@@ -128,21 +156,31 @@ code-mode scratchpad calls:
     import agentbrowser.agent as browser_agent
 
     browser = browser_agent.connect("research")
-    browser.open("https://example.com")
+    browser.page.set_content(
+        '<button onclick="this.textContent=\'Saved\'; this.disabled=true">Save</button>'
+    )
     before = browser.observe()
     print(before.text)
 
-    result = before.one(role="link", name="More information...").click(
-        wait=ab.Wait.loaded()
+    result = before.one(role="button", name="Save").click(
+        wait=ab.Wait.text("Saved")
     )
+    print(result.after.url)
     print(result.after.text)
-    print(result.diff)
+    print(result.diff.text)
 
 In a later kernel call, `browser_agent.connect("research")` returns the same
-controller. End the task with `browser_agent.disconnect("research")`. Use the
-public Browser directly when the complete lifecycle fits in one call. The typed
-namespaces and `browser.native.execute()` use the same ordered native action
-service as the pinned agent-browser engine.
+controller. Inspect retained names with `browser_agent.connections()`. End the
+task with `browser_agent.disconnect("research")`, or call
+`browser_agent.disconnect_all()` after a task that used several names. Use the
+public Browser directly when the complete lifecycle fits in one call.
+
+Discover focused APIs from the live controller:
+
+    help(browser.page)
+    help(browser.find)
+    help(browser.tabs)
+    help(browser.capture)
 
 Browse the published documentation map at:
 
@@ -154,8 +192,8 @@ def _module_help(summary: str) -> str:
     sdk = _sdk_help(summary)
     try:
         plugin = agent_plugin()
-        skill = _agent_skill(plugin)
-        tree = indent(plugin.tree(max_depth=3, max_files=50), "    ")
+        skill = plugin.skill(_SKILL_NAME)
+        tree = indent(plugin.tree(max_depth=4, max_files=50), "    ")
     except agent_plugins.AgentPluginError as error:
         return f"""{sdk}
 
@@ -172,14 +210,15 @@ resources that match this package version:
 
 Read the pyagentbrowser skill instructions at:
 
-    {skill / "SKILL.md"}
+    {skill.file("SKILL.md")}
 
 Traverse the same resources programmatically:
 
     resources = browser_agent.agent_plugin()
     skill = browser_agent.agent_skill()
     print(resources)
-    print(skill.body)
+    print(skill.tree(max_depth=2))
+    instructions = skill.body
 """
 
 
@@ -202,6 +241,22 @@ class _AgentModule(ModuleType):
     @__doc__.setter
     def __doc__(self, value: str | None) -> None:
         self.__dict__["__doc__"] = value
+
+    def __dir__(self) -> list[str]:
+        return sorted(
+            {
+                "__doc__",
+                "__name__",
+                "__package__",
+                "__spec__",
+                "agent_plugin",
+                "agent_skill",
+                "connect",
+                "connections",
+                "disconnect",
+                "disconnect_all",
+            }
+        )
 
 
 sys.modules[__name__].__class__ = _AgentModule
