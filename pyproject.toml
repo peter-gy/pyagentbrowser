@@ -38,6 +38,9 @@ keywords = [
     "refs",
     "snapshots",
 ]
+dependencies = [
+    "agent-plugins==0.1.1",
+]
 
 [project.optional-dependencies]
 cdp = [
@@ -57,13 +60,17 @@ images = [
 "agent-browser CDP mode" = "https://agent-browser.dev/cdp-mode"
 "Upstream agent-browser" = "https://github.com/vercel-labs/agent-browser"
 
+[project.entry-points."marimo.agent.capability"]
+pyagentbrowser = "agentbrowser.agent"
+
 [build-system]
-requires = ["maturin>=1.11,<2"]
-build-backend = "maturin"
+requires = ["agent-plugins==0.1.1", "maturin==1.14.1"]
+backend-path = ["."]
+build-backend = "_agent_plugins_maturin"
 
 [dependency-groups]
 dev = [
-    "maturin>=1.11.5",
+    "maturin==1.14.1",
     "pillow>=12.0",
     "pytest>=9.0.3",
     "pytest-timeout>=2.4.0",
@@ -83,10 +90,13 @@ module-name = "agentbrowser._native"
 python-source = "src"
 manifest-path = "crates/pyagentbrowser/Cargo.toml"
 exclude = [
+    "_agent_plugin_artifact.py",
     ".gitattributes",
     ".github/**",
     ".venv*/**",
     "AGENTS.md",
+    "plugin.json",
+    "skills/**",
     "Cargo.toml.orig",
     "CLAUDE.md",
     "crates/AGENTS.md",
@@ -127,6 +137,7 @@ exclude = [
     "wheels/**",
 ]
 include = [
+    { path = "_agent_plugins_maturin.py", format = "sdist" },
     { path = "LICENSE", format = "sdist" },
     { path = "NOTICE", format = "sdist" },
     { path = "docs/**/*.md", format = "sdist" },
@@ -141,6 +152,9 @@ include = [
     { path = "third_party/agent-browser/cli/src/**/*", format = "sdist" },
     { path = "third_party/agent-browser/skill-data/**/*", format = "sdist" },
 ]
+
+[tool.agent-plugins]
+root = "."
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

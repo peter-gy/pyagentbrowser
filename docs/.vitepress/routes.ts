@@ -46,7 +46,7 @@ export const guideItems = [
   { text: "Async applications", link: routes.async },
   { text: "WebMCP tools", link: routes.webmcp },
   { text: "Dashboard observation", link: routes.dashboard },
-  { text: "Embedded agent skills", link: routes.agentSkills },
+  { text: "Agent skills and code mode", link: routes.agentSkills },
   { text: "Raw native protocol", link: routes.nativeProtocol },
 ] satisfies DefaultTheme.SidebarItem[];
 

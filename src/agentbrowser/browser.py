@@ -21,7 +21,7 @@ from agentbrowser._browser_common import (
     response_data_mapping,
     snapshot_diff_from_data,
 )
-from agentbrowser.agent import Snapshot
+from agentbrowser._evidence import Snapshot
 from agentbrowser.command_params import (
     geolocation_params,
     media_params,

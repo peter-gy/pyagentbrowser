@@ -2,9 +2,9 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
+from agentbrowser._evidence import Ref, Snapshot, StaleRefError
 from agentbrowser._native import __agent_browser_version__ as __upstream_version__
 from agentbrowser._version import PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM_COMMIT
-from agentbrowser.agent import Ref, Snapshot, StaleRefError
 from agentbrowser.agent_async import AsyncRef, AsyncSnapshot, AsyncStaleRefError
 from agentbrowser.browser import Browser, PendingAction
 from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction

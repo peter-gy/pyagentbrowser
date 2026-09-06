@@ -6,8 +6,9 @@ This package owns the public Python contract around the embedded engine.
 
 - `browser.py` and `browser_async.py` own controller lifecycle, confirmation
   continuations, typed decoding, and namespace composition.
-- `agent.py` and `agent_async.py` own snapshots, refs, transition evidence, and
-  stale-ref recovery.
+- `_evidence.py` and `agent_async.py` own snapshots, refs, transition evidence,
+  and stale-ref recovery. `agent.py` owns marimo code-mode discovery, durable
+  browser connections, and installed Agent Plugin resources.
 - `domains.py` and `domains_async.py` own focused capability namespaces.
 - `session.py` and `session_async.py` own ordered JSON protocol execution.
 - `models.py` owns public values and errors. `command_params.py` owns native

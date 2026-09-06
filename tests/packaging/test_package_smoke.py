@@ -1,21 +1,34 @@
 from __future__ import annotations
 
 import importlib.util
+import io
+import tarfile
 import zipfile
 from pathlib import Path
 from types import ModuleType
 
+import agent_plugins
 import pytest
 
+import _agent_plugins_maturin as agent_plugin_backend
 from scripts import package_smoke
 
 pytestmark = pytest.mark.packaging
 ROOT = Path(__file__).resolve().parents[2]
 VERIFY_INSTALL = ROOT / "scripts/verify-install-artifacts.py"
+ATTACH_AGENT_PLUGIN = ROOT / "scripts/attach_agent_plugin.py"
 
 
 def _load_verifier() -> ModuleType:
     spec = importlib.util.spec_from_file_location("verify_install_artifacts", VERIFY_INSTALL)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _load_agent_plugin_attacher() -> ModuleType:
+    spec = importlib.util.spec_from_file_location("attach_agent_plugin", ATTACH_AGENT_PLUGIN)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -142,6 +155,63 @@ def test_native_artifact_scan_allows_dependency_io_modules(tmp_path: Path) -> No
         )
 
     package_smoke.assert_native_extension_excludes_local_build_paths(wheel)
+
+
+def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: Path) -> None:
+    wheel = tmp_path / "pyagentbrowser-0.36.0-cp311-abi3-any.whl"
+    with zipfile.ZipFile(wheel, "w") as archive:
+        archive.writestr("pyagentbrowser-0.36.0.dist-info/WHEEL", "Wheel-Version: 1.0\n")
+        archive.writestr("pyagentbrowser-0.36.0.dist-info/RECORD", "")
+
+    _load_agent_plugin_attacher().attach_agent_plugin(wheel)
+    names = package_smoke.wheel_names(wheel)
+
+    package_smoke.assert_wheel_agent_plugin(wheel, names)
+    package_smoke.assert_wheel_record(wheel)
+    assert "pyagentbrowser-0.36.0.dist-info/agent_plugins.json" in names
+
+
+def test_agent_plugin_build_plan_contains_only_authored_resources() -> None:
+    plan = agent_plugins.build_plan(ROOT)
+
+    assert {mapping.target.as_posix() for mapping in plan.files} == set(
+        package_smoke.AGENT_PLUGIN_FILES
+    )
+
+
+def test_sdist_agent_plugin_check_rejects_an_incomplete_inventory() -> None:
+    with pytest.raises(package_smoke.PackageSmokeError, match="payload drifted"):
+        package_smoke.assert_sdist_agent_plugin(
+            {".agent-plugin/plugin.json", ".agent-plugin/skills/pyagentbrowser/SKILL.md"}
+        )
+
+
+def test_agent_plugin_backend_preserves_maturin_metadata_hooks() -> None:
+    assert callable(agent_plugin_backend.prepare_metadata_for_build_wheel)
+    assert callable(agent_plugin_backend.prepare_metadata_for_build_editable)
+
+
+def test_agent_plugin_backend_normalizes_sdist_member_timestamps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    sdist = tmp_path / "pyagentbrowser-1.0.0.tar.gz"
+    content = b"content"
+    with tarfile.open(sdist, "w:gz") as archive:
+        member = tarfile.TarInfo("pyagentbrowser-1.0.0/plugin.json")
+        member.size = len(content)
+        member.mtime = 123
+        archive.addfile(member, io.BytesIO(content))
+    monkeypatch.setenv("SOURCE_DATE_EPOCH", "456")
+
+    agent_plugin_backend._normalize_sdist(sdist)
+
+    with tarfile.open(sdist) as archive:
+        members = archive.getmembers()
+        assert [member.mtime for member in members] == [456]
+        extracted = archive.extractfile(members[0])
+        assert extracted is not None
+        assert extracted.read() == content
 
 
 def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:

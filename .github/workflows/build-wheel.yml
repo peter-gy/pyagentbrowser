@@ -80,7 +80,7 @@ jobs:
 
       - name: Build source distribution
         if: inputs.sdist
-        run: uvx --from "maturin==1.14.1" maturin sdist --out dist
+        run: uv build --sdist --force-pep517 --out-dir dist
 
       - name: Build Linux wheel
         if: runner.os == 'Linux'
@@ -124,6 +124,11 @@ jobs:
             --compatibility pypi
             --out dist
             --interpreter python
+
+      - name: Attach Agent Plugin resources
+        run: >-
+          uv run --no-project --with "agent-plugins==0.1.1"
+          python -m scripts.attach_agent_plugin dist
 
       - name: Check built distributions
         env:
