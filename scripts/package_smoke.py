@@ -1,6 +1,11 @@
 from __future__ import annotations
 
 import argparse
+import base64
+import csv
+import hashlib
+import io
+import json
 import os
 import re
 import sys
@@ -28,6 +33,14 @@ CONTAINER_BUILD_PATHS = (
     b"/usr/local/cargo/",
 )
 AXE_CORE_SOURCE_URL = "https://github.com/dequelabs/axe-core/tree/v4.12.1"
+AGENT_PLUGIN_FILES = frozenset(
+    {
+        "plugin.json",
+        "skills/pyagentbrowser/SKILL.md",
+        "skills/pyagentbrowser/references/api-map.md",
+        "skills/pyagentbrowser/references/lifecycle-and-safety.md",
+    }
+)
 
 
 WHEEL_REQUIRED_FILES = frozenset(
@@ -73,6 +86,7 @@ WHEEL_FORBIDDEN_PREFIXES = (
 
 SDIST_REQUIRED_BUILD_FILES = frozenset(
     {
+        "_agent_plugins_maturin.py",
         "pyproject.toml",
         "LICENSE",
         "NOTICE",
@@ -299,6 +313,100 @@ def assert_wheel_excludes_source_and_junk(names: set[str]) -> None:
             _fail(f"wheel contains forbidden payload: {name}")
         if name.endswith((".pth", ".pyc", ".pyo")) or "__pycache__/" in name:
             _fail(f"wheel contains development artifact: {name}")
+
+
+def assert_wheel_agent_plugin(path: Path, names: set[str]) -> None:
+    marker_names = [name for name in names if name.endswith(".dist-info/agent_plugins.json")]
+    if len(marker_names) != 1:
+        _fail(f"wheel should contain one Agent Plugin marker: {marker_names}")
+    marker_name = marker_names[0]
+    dist_info = marker_name.rsplit("/", 1)[0]
+    expected_root = f"{dist_info.removesuffix('.dist-info')}.agent-plugin"
+    with zipfile.ZipFile(path) as archive:
+        marker = json.loads(archive.read(marker_name))
+    if marker.get("root") != expected_root:
+        _fail(f"wheel Agent Plugin marker has wrong root: {marker.get('root')!r}")
+    files = marker.get("files")
+    if (
+        not isinstance(files, list)
+        or not all(isinstance(name, str) for name in files)
+        or len(files) != len(AGENT_PLUGIN_FILES)
+        or set(files) != AGENT_PLUGIN_FILES
+    ):
+        _fail(
+            "wheel Agent Plugin marker file inventory drifted: "
+            f"expected={sorted(AGENT_PLUGIN_FILES)}, actual={files!r}"
+        )
+    payload = {
+        name.removeprefix(f"{expected_root}/")
+        for name in names
+        if name.startswith(f"{expected_root}/")
+    }
+    if payload != AGENT_PLUGIN_FILES:
+        _fail(
+            "wheel Agent Plugin payload drifted: "
+            f"expected={sorted(AGENT_PLUGIN_FILES)}, actual={sorted(payload)}"
+        )
+    unmanaged = sorted(
+        name for name in names if name == "plugin.json" or name.startswith("skills/")
+    )
+    if unmanaged:
+        _fail(f"wheel contains unmanaged Agent Plugin files: {unmanaged}")
+
+
+def assert_wheel_record(path: Path) -> None:
+    with zipfile.ZipFile(path) as archive:
+        names = {info.filename for info in archive.infolist() if not info.is_dir()}
+        record_names = [name for name in names if name.endswith(".dist-info/RECORD")]
+        if len(record_names) != 1:
+            _fail(f"wheel should contain one RECORD file: {record_names}")
+        record_name = record_names[0]
+        rows = {
+            name: (digest, size)
+            for name, digest, size in csv.reader(
+                io.StringIO(archive.read(record_name).decode("utf-8"))
+            )
+        }
+        if set(rows) != names:
+            _fail(
+                "wheel RECORD inventory drifted: "
+                f"missing={sorted(names - set(rows))}, extra={sorted(set(rows) - names)}"
+            )
+        for name in sorted(names - {record_name}):
+            content = archive.read(name)
+            encoded = base64.urlsafe_b64encode(hashlib.sha256(content).digest()).rstrip(b"=")
+            expected_digest = f"sha256={encoded.decode('ascii')}"
+            digest, size = rows[name]
+            if digest != expected_digest or size != str(len(content)):
+                _fail(f"wheel RECORD entry does not match {name}")
+        if rows[record_name] != ("", ""):
+            _fail("wheel RECORD self-entry must have empty hash and size")
+
+
+def assert_sdist_agent_plugin(names: set[str]) -> None:
+    prefix = ".agent-plugin/"
+    payload = {name.removeprefix(prefix) for name in names if name.startswith(prefix)}
+    if payload != AGENT_PLUGIN_FILES:
+        _fail(
+            "sdist Agent Plugin payload drifted: "
+            f"expected={sorted(AGENT_PLUGIN_FILES)}, actual={sorted(payload)}"
+        )
+    unmanaged = sorted(
+        name for name in names if name == "plugin.json" or name.startswith("skills/")
+    )
+    if unmanaged:
+        _fail(f"sdist contains unmanaged Agent Plugin files: {unmanaged}")
+
+
+def assert_sdist_reproducible_timestamps(path: Path) -> None:
+    value = os.environ.get("SOURCE_DATE_EPOCH")
+    if value is None:
+        return
+    expected = int(value)
+    with tarfile.open(path) as archive:
+        drifted = sorted(member.name for member in archive.getmembers() if member.mtime != expected)
+    if drifted:
+        _fail(f"sdist members do not use SOURCE_DATE_EPOCH: {drifted}")
 
 
 def assert_native_extension_excludes_local_build_paths(path: Path) -> None:
@@ -534,6 +642,8 @@ def check_wheel(path: Path) -> None:
     assert_wheel_python_modules_are_nonempty(sizes)
     assert_wheel_license_files(path, names)
     assert_wheel_excludes_source_and_junk(names)
+    assert_wheel_agent_plugin(path, names)
+    assert_wheel_record(path)
     assert_native_extension_excludes_local_build_paths(path)
     assert_metadata_invariants(_metadata_from_wheel(path), path.name)
 
@@ -542,6 +652,8 @@ def check_sdist(path: Path) -> None:
     names = sdist_names(path)
     assert_sdist_required_categories(names)
     assert_sdist_excludes_junk_and_dashboard_payload(names)
+    assert_sdist_agent_plugin(names)
+    assert_sdist_reproducible_timestamps(path)
     assert_metadata_invariants(_metadata_from_sdist(path), path.name)
 
 

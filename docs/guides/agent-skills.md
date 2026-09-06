@@ -1,13 +1,60 @@
 ---
-title: Load embedded agent skills
-description: Read the agent-browser instruction files embedded in the installed pyagentbrowser wheel.
+title: Load agent skills and code-mode guidance
+description: Discover pyagentbrowser from marimo code mode and read the instruction files installed with the wheel.
 ---
 
-# Load embedded agent skills
+# Load agent skills and code-mode guidance
 
-An agent skill is a Markdown instruction set with optional supporting files. The pyagentbrowser wheel embeds the skills from its pinned `agent-browser` engine so an application can supply version-matched browser guidance to an agent.
+The pyagentbrowser wheel registers an importable marimo code-mode capability and carries an Agent Plugin with Python-specific browser instructions. It also embeds the skills from its pinned `agent-browser` engine for hosts that consume the native engine's instruction set.
 
-## Read the main instruction file
+## Discover pyagentbrowser in marimo code mode
+
+[Marimo](https://marimo.io/) 0.24.0 or later discovers installed code-mode capabilities through Python package entry points. Install pyagentbrowser in the notebook environment, then inspect the registered module:
+
+```python
+import marimo._code_mode as cm
+
+print(cm.capabilities()["pyagentbrowser"])
+
+import agentbrowser.agent as browser_agent
+
+help(browser_agent)
+```
+
+`help(browser_agent)` renders a short SDK workflow and the paths to the Agent Plugin resources installed with the same pyagentbrowser version.
+
+Use a named module-owned connection when browser work spans code-mode calls:
+
+```python
+browser = browser_agent.connect("research")
+browser.open("https://example.com")
+print(browser.observe().text)
+
+# In a later code-mode call
+browser = browser_agent.connect("research")
+
+# After the final call
+browser_agent.disconnect("research")
+```
+
+Pass `session=agentbrowser.SessionOptions(...)` on the first `connect()` call
+when the task needs domain restrictions, confirmation policy, or another
+session option. Supplying different options for the same live connection raises
+`ValueError`.
+
+```python
+plugin = browser_agent.agent_plugin()
+skill = browser_agent.agent_skill()
+
+print(plugin)
+print(skill.body)
+```
+
+The packaged `pyagentbrowser` skill uses `Browser`, `AsyncBrowser`, typed namespaces, and `browser.native` directly. These Python operations share the embedded native action service with the upstream engine.
+
+## Read the embedded native instruction files
+
+An agent skill is a Markdown instruction set with optional supporting files. The embedded native skills let an application supply version-matched upstream guidance to an agent.
 
 ```python
 import agentbrowser.skills as skills
@@ -18,7 +65,7 @@ print(skills.read("core"))
 
 The `core` skill teaches the engine's browser interaction workflow. `read(name)` returns its `SKILL.md` content.
 
-## Inspect supporting parts
+### Inspect supporting parts
 
 | Function | Result |
 | --- | --- |

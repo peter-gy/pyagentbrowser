@@ -18,9 +18,12 @@ from __future__ import annotations
 import importlib.metadata as metadata
 import importlib.util
 import importlib.resources as resources
+import pydoc
 from pathlib import Path
 
+import agent_plugins
 import agentbrowser as ab
+import agentbrowser.agent as browser_agent
 import agentbrowser.skills as skills
 from agentbrowser import (
     AccessibilityAudit,
@@ -42,8 +45,33 @@ assert ab.__agent_browser_version__
 assert importlib.util.find_spec("pyagentbrowser") is None
 assert resources.files("agentbrowser").joinpath("py.typed").is_file()
 
+capabilities = [
+    entry
+    for entry in metadata.distribution("pyagentbrowser").entry_points
+    if entry.group == "marimo.agent.capability"
+]
+assert [(entry.name, entry.value) for entry in capabilities] == [
+    ("pyagentbrowser", "agentbrowser.agent")
+]
+assert capabilities[0].load() is browser_agent
+
+plugin = browser_agent.agent_plugin()
+agent_skill = browser_agent.agent_skill()
+assert plugin == agent_plugins.locate("pyagentbrowser")
+assert plugin.manifest.name == "pyagentbrowser"
+assert agent_skill.path.name == "pyagentbrowser"
+assert {path.relative_to(plugin.path).as_posix() for path in plugin.files} == {
+    "plugin.json",
+    "skills/pyagentbrowser/SKILL.md",
+    "skills/pyagentbrowser/references/api-map.md",
+    "skills/pyagentbrowser/references/lifecycle-and-safety.md",
+}
+assert 'browser = browser_agent.connect("research")' in pydoc.render_doc(browser_agent)
+
 browser = Browser()
 assert isinstance(browser.session.status(), SessionStatus)
+assert browser.native.execute("session_info").success
+assert browser.native.data("session_info")["session"]
 assert isinstance(browser.close(), CloseResult)
 
 assert "core" in skills.available()

@@ -92,7 +92,7 @@ transition evidence.
 - [Evaluate targets, frames, and contexts through the Chrome DevTools Protocol](https://peter-gy.github.io/pyagentbrowser/guides/cdp.html)
 - [Invoke page-provided WebMCP tools](https://peter-gy.github.io/pyagentbrowser/guides/webmcp.html)
 - [Observe a Python-owned browser session in the dashboard](https://peter-gy.github.io/pyagentbrowser/guides/dashboard.html)
-- [Load embedded agent skills](https://peter-gy.github.io/pyagentbrowser/guides/agent-skills.html)
+- [Use agent skills and marimo code mode](https://peter-gy.github.io/pyagentbrowser/guides/agent-skills.html)
 - [Call the raw native protocol](https://peter-gy.github.io/pyagentbrowser/guides/native-protocol.html)
 
 ## Choose a runtime

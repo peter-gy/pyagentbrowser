@@ -21,13 +21,13 @@ The stable-ABI baseline is Python 3.11. Release verification exercises Python 3.
 
 ## Wheel contract
 
-A wheel contains the `agentbrowser` package, one nonempty native extension, `py.typed`, embedded engine provenance, embedded skill data, project licensing, and required upstream notices.
+A wheel contains the `agentbrowser` package, one nonempty native extension, `py.typed`, embedded engine provenance, embedded skill data, the pyagentbrowser Agent Plugin, project licensing, and required upstream notices. Its `marimo.agent.capability` entry point resolves to `agentbrowser.agent`.
 
 Package smoke tests reject source trees, development instructions, caches, duplicate native extensions, and local build-path leaks.
 
 ## Source distribution contract
 
-The source distribution contains the Python source, root Cargo lock, Rust toolchain file, PyO3 crate, adapter crate, pinned upstream engine source required by the build, user-facing Markdown docs, examples, and license material.
+The source distribution contains the Python source, root Cargo lock, Rust toolchain file, PyO3 crate, adapter crate, pinned upstream engine source required by the build, the Agent Plugin build backend and staged resources, user-facing Markdown docs, examples, and license material.
 
 The manifest excludes repository automation, local artifacts, and upstream
 project tooling outside the source set selected for downstream builds. Package
@@ -38,7 +38,7 @@ source-distribution inclusion and package smoke allowlists in the same change.
 
 ## Reproducibility
 
-Package builds set `SOURCE_DATE_EPOCH` from the repository commit and remap the workspace and Cargo home paths in Rust debug metadata. CI repeats the same remapping inside native and manylinux builders.
+Package builds set `SOURCE_DATE_EPOCH` from the repository commit, clamp source-distribution member timestamps to that value, and remap the workspace and Cargo home paths in Rust debug metadata. CI repeats the same timestamp and path normalization inside native and manylinux builders.
 
 Inspect built binaries and archive members for checkout paths before accepting the artifact.
 
@@ -51,6 +51,7 @@ Inspect built binaries and archive members for checkout paths before accepting t
 - Missing-extra diagnostics.
 - The `images` and `cdp` optional packages.
 - Embedded skill reads.
+- Marimo capability metadata, dynamic help, and Agent Plugin resource lookup.
 - Wheel installation across supported Python endpoints.
 - Source-distribution build and install.
 - `pip check` dependency consistency.

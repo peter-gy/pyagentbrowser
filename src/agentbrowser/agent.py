@@ -1,452 +1,207 @@
+"""Use pyagentbrowser from notebook and code-mode agents."""
+
 from __future__ import annotations
 
-from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
+import sys
+from dataclasses import dataclass, replace
+from textwrap import indent
+from threading import RLock
+from types import ModuleType
+from typing import TYPE_CHECKING
+
+import agent_plugins
+
+from agentbrowser import _evidence
+from agentbrowser.browser import Browser
+from agentbrowser.launch import SessionOptions, normalize_session
+from agentbrowser.models import CloseResult
 
 if TYPE_CHECKING:
-    from agentbrowser.browser import Browser
+    from agentbrowser._evidence import Ref as Ref
+    from agentbrowser._evidence import Snapshot as Snapshot
+    from agentbrowser._evidence import StaleRefError as StaleRefError
 
-from agentbrowser._browser_common import is_stale_ref_error_code
-from agentbrowser.command_params import click_params, wait_params
-from agentbrowser.models import (
-    ActionResult,
-    ActionTransitionError,
-    BrowserError,
-    ConfirmationRequired,
-    LoadState,
-    MouseButton,
-    NativeParseError,
-    SnapshotData,
-    SnapshotDiff,
-    SnapshotRef,
-    SnapshotSpec,
-    Wait,
-    diff_snapshot_data,
-)
-
-
-class StaleRefError(BrowserError):
-    """Raised when an action targets a ref from an expired snapshot."""
-
-    def __init__(self, ref: Ref, error: BrowserError) -> None:
-        super().__init__(
-            error.action,
-            f"stale snapshot ref {ref.selector}: {error}",
-            error.response,
-            code=error.code,
-        )
-        self.ref = ref
-
-    def refresh(self, **criteria: Any) -> Ref:
-        """Resolve the ref again from a fresh snapshot."""
-        return self.ref.refresh(**criteria)
+_DISTRIBUTION_NAME = "pyagentbrowser"
+_SKILL_NAME = "pyagentbrowser"
+_DEFAULT_CONNECTION = "default"
 
 
 @dataclass(frozen=True, slots=True)
-class Ref:
-    """Element identity bound to one accessibility snapshot."""
-
-    snapshot: Snapshot
-    _ref: SnapshotRef
-
-    @property
-    def browser(self) -> Browser:
-        """Browser that captured this ref."""
-        return self.snapshot.browser
-
-    @property
-    def id(self) -> str:
-        """Ref id without the leading ``@``."""
-        return self._ref.id
-
-    @property
-    def selector(self) -> str:
-        """Native selector for this ref."""
-        return self._ref.selector
-
-    @property
-    def role(self) -> str:
-        """Accessible role captured in the snapshot."""
-        return self._ref.role
-
-    @property
-    def name(self) -> str:
-        """Accessible name captured in the snapshot."""
-        return self._ref.name
-
-    @property
-    def raw(self) -> Mapping[str, Any]:
-        """Native ref metadata."""
-        return self._ref.raw
-
-    def refresh(
-        self,
-        *,
-        role: str | None = None,
-        name: str | None = None,
-        contains: str | None = None,
-        exact: bool = True,
-    ) -> Ref:
-        """Resolve this element from a fresh snapshot."""
-        return self.snapshot.refresh().one(
-            role=self.role if role is None else role,
-            name=self.name if name is None and contains is None else name,
-            contains=contains,
-            exact=exact,
-        )
-
-    def click(
-        self,
-        *,
-        button: MouseButton = "left",
-        click_count: int = 1,
-        new_tab: bool = False,
-        wait: Wait | None = None,
-    ) -> ActionResult[Ref, Snapshot]:
-        """Click the ref and return transition evidence."""
-        return self._act(
-            "click",
-            click_params(
-                self.selector,
-                button=button,
-                click_count=click_count,
-                new_tab=new_tab,
-            ),
-            wait=wait,
-        )
-
-    def fill(self, value: str, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Fill the ref and return transition evidence."""
-        return self._act(
-            "fill",
-            {"selector": self.selector, "value": value},
-            wait=wait,
-        )
-
-    def type(self, text: str, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Type into the ref and return transition evidence."""
-        return self._act(
-            "type",
-            {"selector": self.selector, "text": text},
-            wait=wait,
-        )
-
-    def hover(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Hover the ref and return transition evidence."""
-        return self._act("hover", {"selector": self.selector}, wait=wait)
-
-    def tap(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Tap the ref and return transition evidence."""
-        return self._act("tap", {"selector": self.selector}, wait=wait)
-
-    def focus(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Focus the ref and return transition evidence."""
-        return self._act("focus", {"selector": self.selector}, wait=wait)
-
-    def clear(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Clear the ref and return transition evidence."""
-        return self._act("clear", {"selector": self.selector}, wait=wait)
-
-    def select(self, value: str, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Select an option and return transition evidence."""
-        return self._act(
-            "select",
-            {"selector": self.selector, "value": value},
-            wait=wait,
-        )
-
-    def check(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Check the ref and return transition evidence."""
-        return self._act("check", {"selector": self.selector}, wait=wait)
-
-    def uncheck(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Uncheck the ref and return transition evidence."""
-        return self._act("uncheck", {"selector": self.selector}, wait=wait)
-
-    def scroll_into_view(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
-        """Scroll the ref into view and return transition evidence."""
-        return self._act("scrollintoview", {"selector": self.selector}, wait=wait)
-
-    def text(self) -> str:
-        """Return text content for the ref."""
-        return self.browser._command(
-            "gettext",
-            _decode=lambda data: _string_field(data, "text", action="gettext"),
-            selector=self.selector,
-        )
-
-    def inner_text(self) -> str:
-        """Return rendered text for the ref."""
-        return self.browser._command(
-            "innertext",
-            _decode=lambda data: _string_field(data, "text", action="innertext"),
-            selector=self.selector,
-        )
-
-    def input_value(self) -> str:
-        """Return the current form value."""
-        return self.browser._command(
-            "inputvalue",
-            _decode=lambda data: _string_field(data, "value", action="inputvalue"),
-            selector=self.selector,
-        )
-
-    def attribute(self, name: str) -> str | None:
-        """Return one attribute value."""
-        return self.browser._command(
-            "getattribute",
-            _decode=_optional_attribute,
-            selector=self.selector,
-            attribute=name,
-        )
-
-    def is_visible(self) -> bool:
-        """Return whether the ref is visible."""
-        return self.browser._command(
-            "isvisible",
-            _decode=lambda data: _bool_field(data, "visible", action="isvisible"),
-            selector=self.selector,
-        )
-
-    def is_enabled(self) -> bool:
-        """Return whether the ref is enabled."""
-        return self.browser._command(
-            "isenabled",
-            _decode=lambda data: _bool_field(data, "enabled", action="isenabled"),
-            selector=self.selector,
-        )
-
-    def is_checked(self) -> bool:
-        """Return whether the ref is checked."""
-        return self.browser._command(
-            "ischecked",
-            _decode=lambda data: _bool_field(data, "checked", action="ischecked"),
-            selector=self.selector,
-        )
-
-    def _act(
-        self,
-        action: str,
-        params: Mapping[str, Any],
-        *,
-        wait: Wait | None,
-    ) -> ActionResult[Ref, Snapshot]:
-        return self._transition(
-            action,
-            lambda: self.browser._command(action, **params),
-            wait=wait,
-        )
-
-    def _transition(
-        self,
-        action: str,
-        run: Any,
-        *,
-        wait: Wait | None,
-    ) -> ActionResult[Ref, Snapshot]:
-        try:
-            run()
-        except ConfirmationRequired as error:
-            if error.pending is not None:
-                error.pending = error.pending.map(lambda _value: self._result(action, wait=wait))
-            raise
-        except BrowserError as error:
-            if is_stale_ref_error_code(error.code):
-                raise StaleRefError(self, error) from error
-            raise
-        return self._result(action, wait=wait)
-
-    def _result(self, action: str, *, wait: Wait | None) -> ActionResult[Ref, Snapshot]:
-        try:
-            _apply_wait(self.browser, wait)
-        except ConfirmationRequired as error:
-            if error.pending is not None:
-                error.pending = error.pending.map(lambda _value: self._capture_result(action))
-            raise
-        except Exception as cause:
-            raise ActionTransitionError(
-                action=action,
-                target=self,
-                stage="wait",
-                before=self.snapshot,
-                after=None,
-                cause=cause,
-            ) from cause
-        return self._capture_result(action)
-
-    def _capture_result(self, action: str) -> ActionResult[Ref, Snapshot]:
-        try:
-            after = self.snapshot.refresh()
-        except ConfirmationRequired as error:
-            if error.pending is not None:
-                error.pending = error.pending.map(
-                    lambda captured: self._finish_result(action, captured)
-                )
-            raise
-        except Exception as cause:
-            raise ActionTransitionError(
-                action=action,
-                target=self,
-                stage="snapshot",
-                before=self.snapshot,
-                after=None,
-                cause=cause,
-            ) from cause
-        return self._finish_result(action, after)
-
-    def _finish_result(self, action: str, after: Snapshot) -> ActionResult[Ref, Snapshot]:
-        try:
-            diff = diff_snapshot_data(self.snapshot._data, after._data)
-        except Exception as cause:
-            raise ActionTransitionError(
-                action=action,
-                target=self,
-                stage="diff",
-                before=self.snapshot,
-                after=after,
-                cause=cause,
-            ) from cause
-        return ActionResult(
-            action=action,
-            target=self,
-            before=self.snapshot,
-            after=after,
-            diff=diff,
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class Snapshot:
-    """Immutable accessibility snapshot bound to its browser."""
-
+class _Connection:
     browser: Browser
-    _data: SnapshotData
+    session: SessionOptions
 
-    @property
-    def text(self) -> str:
-        """Human-readable accessibility tree."""
-        return self._data.text
 
-    @property
-    def origin(self) -> str:
-        """Page URL reported by the native engine."""
-        return self._data.origin
+_CONNECTIONS: dict[str, _Connection] = {}
+_CONNECTIONS_LOCK = RLock()
 
-    @property
-    def spec(self) -> SnapshotSpec:
-        """Capture specification used for this snapshot."""
-        return self._data.spec
 
-    @property
-    def raw(self) -> Mapping[str, Any]:
-        """Native snapshot response data."""
-        return self._data.raw
+def connect(
+    name: str = _DEFAULT_CONNECTION,
+    *,
+    session: SessionOptions | None = None,
+) -> Browser:
+    """Return a module-owned browser that persists across code-mode calls.
 
-    @property
-    def refs(self) -> Mapping[str, Ref]:
-        """Bound refs keyed by ref id."""
-        return {ref_id: self.ref(ref_id) for ref_id in self._data.refs}
+    The first call creates a lazy `Browser`. Later calls with the same name and
+    session options return that controller. Call `disconnect()` when the task
+    ends.
 
-    def ref(self, ref_id: str) -> Ref:
-        """Bind one snapshot ref to this browser."""
-        return Ref(self, self._data.ref(ref_id))
+    Args:
+        name: Connection name within the current Python process.
+        session: Browser session options. The default uses `name` as the native
+            session identifier when `session.session_id` is unset.
 
-    def one(
-        self,
-        *,
-        role: str | None = None,
-        name: str | None = None,
-        contains: str | None = None,
-        exact: bool = False,
-    ) -> Ref:
-        """Return one ref matching accessible metadata."""
-        matches = self.all(role=role, name=name, contains=contains, exact=exact)
-        if not matches:
-            raise LookupError("snapshot contains no matching ref")
-        if len(matches) > 1:
-            selectors = ", ".join(match.selector for match in matches)
-            raise LookupError(f"snapshot criteria matched multiple refs: {selectors}")
-        return matches[0]
+    Raises:
+        TypeError: `name` is not a string or `session` is not `SessionOptions`.
+        ValueError: `name` is not a valid session component or an existing
+            connection uses other session options.
+    """
+    connection_name = _connection_name(name)
+    requested = None if session is None else normalize_session(session)
+    if requested is not None and requested.session_id is None:
+        requested = replace(requested, session_id=connection_name)
+    with _CONNECTIONS_LOCK:
+        existing = _CONNECTIONS.get(connection_name)
+        if existing is not None and not existing.browser.closed:
+            if requested is not None and existing.session != requested:
+                raise ValueError(
+                    f"connection {connection_name!r} already uses other session options"
+                )
+            return existing.browser
 
-    def all(
-        self,
-        *,
-        role: str | None = None,
-        name: str | None = None,
-        contains: str | None = None,
-        exact: bool = False,
-    ) -> tuple[Ref, ...]:
-        """Return all refs matching accessible metadata."""
-        return tuple(
-            Ref(self, snapshot_ref)
-            for snapshot_ref in self._data.find_refs(
-                role=role,
-                name=name,
-                contains=contains,
-                exact=exact,
-            )
+        options = requested or SessionOptions(session_id=connection_name)
+        browser = Browser(session=options)
+        _CONNECTIONS[connection_name] = _Connection(browser, options)
+        return browser
+
+
+def disconnect(name: str = _DEFAULT_CONNECTION) -> CloseResult:
+    """Close and forget one module-owned code-mode browser.
+
+    Closing a missing connection succeeds and returns an already-closed result.
+    """
+    connection_name = _connection_name(name)
+    with _CONNECTIONS_LOCK:
+        connection = _CONNECTIONS.pop(connection_name, None)
+        return CloseResult(closed=True) if connection is None else connection.browser.close()
+
+
+def _connection_name(name: str) -> str:
+    if not isinstance(name, str):
+        raise TypeError("connection name must be a string")
+    if not 1 <= len(name) <= 64 or any(
+        not char.isalnum() and char not in {"-", "_"} for char in name
+    ):
+        raise ValueError(
+            "connection name must contain 1 to 64 alphanumeric, hyphen, or underscore characters"
         )
-
-    def refresh(self) -> Snapshot:
-        """Capture the same snapshot specification again."""
-        return self.browser.observe(self.spec)
-
-    def diff(self) -> SnapshotDiff:
-        """Compare this snapshot with the current page state."""
-        return self.browser._diff_snapshot(self._data)
+    return name
 
 
-def _apply_wait(browser: Any, wait: Wait | None) -> None:
-    if wait is None:
-        return
-    if wait.kind == "all":
-        _apply_waits(browser, wait.conditions)
-        return
-    browser._command(
-        "wait",
-        _decode=lambda _data: None,
-        **wait_params(
-            None,
-            text=wait.value if wait.kind == "text" else None,
-            url=wait.value if wait.kind == "url" else None,
-            load_state=cast(LoadState, wait.value) if wait.kind == "load" else None,
-            timeout_ms=wait.timeout_ms,
-        ),
+def agent_plugin() -> agent_plugins.Plugin:
+    """Return the Agent Plugin installed with this pyagentbrowser version."""
+    return agent_plugins.locate(_DISTRIBUTION_NAME)
+
+
+def _agent_skill(plugin: agent_plugins.Plugin) -> agent_plugins.Skill:
+    for skill in plugin.skills:
+        if skill.path.name == _SKILL_NAME:
+            return skill
+    raise agent_plugins.AgentPluginError(
+        "The pyagentbrowser Agent Plugin has no pyagentbrowser skill. Reinstall pyagentbrowser."
     )
 
 
-def _apply_waits(browser: Any, conditions: tuple[Wait, ...]) -> None:
-    for index, condition in enumerate(conditions):
+def agent_skill() -> agent_plugins.Skill:
+    """Return the packaged pyagentbrowser Agent Skill."""
+    return _agent_skill(agent_plugin())
+
+
+def _sdk_help(summary: str) -> str:
+    return f"""{summary}
+
+Start with a module-owned browser. Its connection survives between marimo
+code-mode scratchpad calls:
+
+    import agentbrowser as ab
+    import agentbrowser.agent as browser_agent
+
+    browser = browser_agent.connect("research")
+    browser.open("https://example.com")
+    before = browser.observe()
+    print(before.text)
+
+    result = before.one(role="link", name="More information...").click(
+        wait=ab.Wait.loaded()
+    )
+    print(result.after.text)
+    print(result.diff)
+
+In a later kernel call, `browser_agent.connect("research")` returns the same
+controller. End the task with `browser_agent.disconnect("research")`. Use the
+public Browser directly when the complete lifecycle fits in one call. The typed
+namespaces and `browser.native.execute()` use the same ordered native action
+service as the pinned agent-browser engine.
+
+Browse the published documentation map at:
+
+    https://peter-gy.github.io/pyagentbrowser/llms.txt
+"""
+
+
+def _module_help(summary: str) -> str:
+    sdk = _sdk_help(summary)
+    try:
+        plugin = agent_plugin()
+        skill = _agent_skill(plugin)
+        tree = indent(plugin.tree(max_depth=3, max_files=50), "    ")
+    except agent_plugins.AgentPluginError as error:
+        return f"""{sdk}
+
+The installed Agent Plugin could not be resolved: {error}
+Reinstall pyagentbrowser to restore its version-matched skill resources.
+"""
+
+    return f"""{sdk}
+
+The installed Agent Plugin carries the complete Python browser workflow and
+resources that match this package version:
+
+{tree}
+
+Read the pyagentbrowser skill instructions at:
+
+    {skill / "SKILL.md"}
+
+Traverse the same resources programmatically:
+
+    resources = browser_agent.agent_plugin()
+    skill = browser_agent.agent_skill()
+    print(resources)
+    print(skill.body)
+"""
+
+
+class _AgentModule(ModuleType):
+    def __getattr__(self, name: str) -> object:
         try:
-            _apply_wait(browser, condition)
-        except ConfirmationRequired as error:
-            remaining = conditions[index + 1 :]
-            if remaining and error.pending is not None:
-                error.pending = error.pending.map(
-                    lambda _value, remaining=remaining: _apply_waits(browser, remaining)
-                )
-            raise
+            return {
+                "Ref": _evidence.Ref,
+                "Snapshot": _evidence.Snapshot,
+                "StaleRefError": _evidence.StaleRefError,
+            }[name]
+        except KeyError:
+            raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
+
+    @property
+    def __doc__(self) -> str | None:
+        summary = self.__dict__.get("__doc__")
+        return _module_help(summary) if isinstance(summary, str) else None
+
+    @__doc__.setter
+    def __doc__(self, value: str | None) -> None:
+        self.__dict__["__doc__"] = value
 
 
-def _string_field(data: Mapping[str, Any], field: str, *, action: str) -> str:
-    value = data.get(field)
-    if not isinstance(value, str):
-        raise NativeParseError(f"{action} field '{field}' must be a string")
-    return value
-
-
-def _bool_field(data: Mapping[str, Any], field: str, *, action: str) -> bool:
-    value = data.get(field)
-    if not isinstance(value, bool):
-        raise NativeParseError(f"{action} field '{field}' must be a boolean")
-    return value
-
-
-def _optional_attribute(data: Mapping[str, Any]) -> str | None:
-    value = data.get("value")
-    if value is None:
-        return None
-    if not isinstance(value, str):
-        raise NativeParseError("getattribute field 'value' must be a string or null")
-    return value
+sys.modules[__name__].__class__ = _AgentModule

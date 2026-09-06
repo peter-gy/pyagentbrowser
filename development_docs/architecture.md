@@ -60,7 +60,8 @@ invalidate cached direct CDP frame and execution-context handles. Read
 | Surface               | Owner                                                                          | Responsibility                                                                      |
 | --------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | Public controller     | `browser.py`, `browser_async.py`                                               | Startup, close, namespaces, confirmation continuations, result decoding             |
-| Agent evidence        | `agent.py`, `agent_async.py`, `models.py`                                      | Snapshots, refs, waits, diffs, transition results, typed errors                     |
+| Agent evidence        | `_evidence.py`, `agent_async.py`, `models.py`                                  | Snapshots, refs, waits, diffs, transition results, typed errors                     |
+| Code-mode capability  | `agent.py`, Agent Plugin resources                                             | Durable scratchpad connections, dynamic help, and version-matched Python guidance  |
 | Capability namespaces | `domains.py`, `domains_async.py`, `query.py`, `query_async.py`                 | Stable Python workflows over native actions                                         |
 | Browser installation  | `install.py`                                                                   | Executable discovery and isolated Chrome for Testing preparation                    |
 | Safety boundary       | `launch.py`, `_allowlist.py`, `session.py`, `session_async.py`, native adapter | Launch constraints, domain containment, confirmation replay, and response filtering |
@@ -68,7 +69,7 @@ invalidate cached direct CDP frame and execution-context handles. Read
 | Native extension      | `crates/pyagentbrowser`                                                        | PyO3 module, native sessions, embedded skills, and sidecar lifecycle                |
 | Upstream adaptation   | `crates/agent-browser-adapter`                                                 | Build-time module registry and narrow compatibility rewrites                        |
 | Native engine         | `third_party/agent-browser`                                                    | Pinned upstream implementation                                                      |
-| Artifact proof        | `scripts/package_smoke.py`, `scripts/verify-install-artifacts.py`              | Payload, metadata, ABI, extras, and clean-install contracts                         |
+| Artifact proof        | `scripts/package_smoke.py`, `scripts/verify-install-artifacts.py`              | Payload, metadata, ABI, Agent Plugin, extras, and clean-install contracts           |
 
 [Native extension](native-extension.md) expands the Rust runtime and helper
 resource ownership. [Embedded resources](embedded-resources.md) traces skill

@@ -11,6 +11,7 @@ exact upstream pin.
 | Upstream Rust modules                | Adapter build script       | Native browser engine                           |
 | Browser and JavaScript protocol JSON | Adapter build script       | Generated CDP Rust types                        |
 | `skill-data` tree                    | PyO3 build script          | Agent-facing skill files exposed through Python |
+| pyagentbrowser Agent Plugin          | Python build backend       | Marimo code-mode discovery and Python guidance  |
 | Upstream version and commit          | Update and release scripts | Runtime provenance                              |
 | Upstream and axe-core notices        | Packaging manifest         | License compliance                              |
 
@@ -32,6 +33,20 @@ skill's frontmatter name.
 The pinned upstream files are the content source. Python owns the stable read
 API and its validation. A skill-data change therefore requires upstream-diff
 review, native embedding proof, Python API proof, and package proof.
+
+## Agent Plugin pipeline
+
+The root `plugin.json` and `skills/pyagentbrowser/` tree provide Python-specific
+instructions for marimo code-mode agents. `_agent_plugins_maturin.py` wraps the
+Maturin Python build backend so editable installs, wheels, and source
+distributions carry the Agent Plugin marker and exact resource inventory.
+
+The cross-platform wheel workflow invokes Maturin directly inside platform
+builders, then calls `scripts/attach_agent_plugin.py` once before artifact
+validation. `_agent_plugin_artifact.py` keeps that direct-wheel seam independent
+from the Maturin Python build backend. Package smoke tests verify the marker,
+payload, wheel record, staged source resources, and normalized
+source-distribution timestamps.
 
 ## Protocol-generation inputs
 

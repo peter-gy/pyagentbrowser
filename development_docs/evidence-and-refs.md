@@ -1,6 +1,6 @@
 # Evidence and refs
 
-`agent.py`, `agent_async.py`, and `models.py` turn native accessibility
+`_evidence.py`, `agent_async.py`, and `models.py` turn native accessibility
 snapshots into action-scoped evidence. They own snapshot capture, ref lookup,
 wait composition, transition diffs, stale-ref recovery, and partial-failure
 reporting.

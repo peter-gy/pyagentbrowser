@@ -11,6 +11,9 @@ RUST_CARGO = $(RUST_ENV) cargo
 UV_RUN = uv run --no-sync
 PYTHON_RUN = uv run --no-project --python $(BUILD_PYTHON) python
 DIST_DIR = target/wheels
+EDITABLE_DIST_DIR = target/editable-wheels
+MATURIN_DIST_DIR = target/maturin-dist
+PEP517_DIST_DIR = target/pep517-dist
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '315532800')
 CARGO_HOME ?= $(HOME)/.cargo
 REPRODUCIBLE_RUSTFLAGS = --remap-path-prefix=$(CURDIR)=/src/pyagentbrowser --remap-path-prefix=$(CARGO_HOME)=/cargo
@@ -42,7 +45,8 @@ sync:
 
 .PHONY: native-dev
 native-dev: submodule-init sync
-	$(RUST_ENV) $(UV_RUN) maturin develop --locked
+	$(RUST_ENV) MATURIN_PEP517_ARGS='--locked --out $(EDITABLE_DIST_DIR)' uv pip install \
+		--python .venv --no-build-isolation --editable .
 
 .PHONY: install
 install: native-dev
@@ -129,10 +133,13 @@ package: export RUSTFLAGS := $(strip $(RUSTFLAGS) $(REPRODUCIBLE_RUSTFLAGS))
 package: export SOURCE_DATE_EPOCH := $(SOURCE_DATE_EPOCH)
 package: export UV_PROJECT_ENVIRONMENT := .venvbuild$(subst .,,$(BUILD_PYTHON))
 package: submodule-init
-	rm -rf $(DIST_DIR)
-	mkdir -p $(DIST_DIR)
-	$(RUST_ENV) uv run --no-project --python $(BUILD_PYTHON) --with "maturin>=1.11.5" maturin build --release --locked --compatibility pypi --out $(DIST_DIR)
-	uv run --no-project --python $(BUILD_PYTHON) --with "maturin>=1.11.5" maturin sdist --out $(DIST_DIR)
+	rm -rf $(DIST_DIR) $(MATURIN_DIST_DIR) $(PEP517_DIST_DIR)
+	mkdir -p $(DIST_DIR) $(MATURIN_DIST_DIR) $(PEP517_DIST_DIR)
+	$(RUST_ENV) uv build --wheel --force-pep517 --python $(BUILD_PYTHON) \
+		--config-setting 'maturin.build-args=--profile release --locked --compatibility pypi --out $(MATURIN_DIST_DIR)' \
+		--out-dir $(PEP517_DIST_DIR)
+	uv build --sdist --force-pep517 --python $(BUILD_PYTHON) --out-dir $(PEP517_DIST_DIR)
+	mv $(PEP517_DIST_DIR)/* $(DIST_DIR)/
 	$(PYTHON_RUN) scripts/package_smoke.py $(DIST_DIR)
 	$(PYTHON_RUN) scripts/verify-install-artifacts.py $(DIST_DIR)
 
