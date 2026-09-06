@@ -1,0 +1,84 @@
+scripts/check_release.py
+  s_d19cbc97385bd4::t_44ace37e126826 9,12-13,19-22,25,27,29,34-37,39-46,48-52,54-80,84-89,92-102,105-108,110,112,115,117-121,123,125-139,142,144-146
+  s_d19cbc97385bd4::t_c404962a4a261d 81-83,90-91
+  s_d19cbc97385bd4::t_e433d236f572f0 11,33,38,53
+tests/packaging/test_release_version.py
+  s_d19cbc97385bd4::t_680e7f293402c9 3,33-71,148-165,167
+  s_d19cbc97385bd4::t_bd6a9605ff4ef6 5,25
+  s_d19cbc97385bd4::t_d57957fd06e553 166
+  s_d19cbc97385bd4::t_8a0e8e82fee802 185-188,190-194,196
+  s_d19cbc97385bd4::t_2fa68ea10a6b74 197
+  s_d19cbc97385bd4::t_ff7855c7a8392e 10,125,131-147
+  s_d19cbc97385bd4::t_c404962a4a261d 170-177,198-199
+  s_d19cbc97385bd4::t_d34499a3d1674b 1-2,4,6-9,11,13-24,26-32,89-124,126-130,168-169,200-221
+  s_d19cbc97385bd4::t_2b8109954f9a22 12,178-182,184
+  s_d19cbc97385bd4::t_69d8431a3a2409 72-88,183,189,195
+scripts/package_smoke.py
+  s_d19cbc97385bd4::t_d34499a3d1674b 21-22,532-535
+crates/pyagentbrowser/Cargo.toml
+  s_d19cbc97385bd4::t_f6b19aee1a8851 3
+docs/reference/environment.md
+  s_d19cbc97385bd4::t_f97dd047a0f48f 88
+development_docs/maintenance.md
+  s_d19cbc97385bd4::t_42bddd9dd5d6bf 88-103,108-115,117-122,125-126,129-130,137-138
+  s_d19cbc97385bd4::t_8a0e8e82fee802 149-151
+  s_d19cbc97385bd4::t_c404962a4a261d 131-133
+  s_d19cbc97385bd4::t_5d693c1c25b216 104-106
+.agents/skills/upgrade-agent-browser-release/references/release-workflow.md
+  s_d19cbc97385bd4::t_8a0e8e82fee802 327-328
+  s_d19cbc97385bd4::t_1ede764aebc3e0 7-10,14-16,234-236,241-242
+development_docs/architecture.md
+  s_d19cbc97385bd4::t_ff7855c7a8392e 6
+scripts/release_version.py
+  s_d19cbc97385bd4::t_f6614e0cbee7c8 37
+  s_d19cbc97385bd4::t_ff7855c7a8392e 6,9
+  s_d19cbc97385bd4::t_44ace37e126826 1,3-4,7-8,10-11,14-15,18-22,24-36,38,40-47,49-56,58-60,62-69,71-72
+tests/packaging/test_upstream_contract.py
+  s_d19cbc97385bd4::t_d34499a3d1674b 11,76
+  s_d19cbc97385bd4::t_ff7855c7a8392e 61
+src/agentbrowser/_version.py
+  s_d19cbc97385bd4::t_f6b19aee1a8851 7
+Makefile
+  s_d19cbc97385bd4::t_f97dd047a0f48f 35,144,147-149,156
+.github/workflows/check-release.yml
+  s_d19cbc97385bd4::t_c404962a4a261d 114,116-117
+  s_d19cbc97385bd4::t_f97dd047a0f48f 127
+development_docs/repository-model.md
+  s_d19cbc97385bd4::t_b1eed84e0bc0bf 54,119
+  s_d19cbc97385bd4::t_f97dd047a0f48f 60,64-72,75-76
+  s_d19cbc97385bd4::t_ff7855c7a8392e 3-4
+crates/AGENTS.md
+  s_d19cbc97385bd4::t_f97dd047a0f48f 25-26
+pyproject.toml
+  s_d19cbc97385bd4::t_682dde83c8167b 3
+scripts/previous_release_tag.py
+  s_d19cbc97385bd4::t_8a0e8e82fee802 13-31,34,50,54
+  s_d19cbc97385bd4::t_2b8109954f9a22 3,5,8-12,32-33,35-38,42-48,51-53,55-62
+  s_d19cbc97385bd4::t_6969be99ebf742 39-41
+.github/workflows/publish.yml
+  s_d19cbc97385bd4::t_2b8109954f9a22 172,176-178
+  s_d19cbc97385bd4::t_c404962a4a261d 46,49-50
+  s_d19cbc97385bd4::t_f97dd047a0f48f 60,146,296
+  s_d19cbc97385bd4::t_8a0e8e82fee802 173-175
+tests/packaging/test_package_smoke.py
+  s_d19cbc97385bd4::t_d34499a3d1674b 227-230
+development_docs/packaging.md
+  s_d19cbc97385bd4::t_f97dd047a0f48f 9-10
+  s_d19cbc97385bd4::t_b1eed84e0bc0bf 7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b0e0803c0060cea3a22ee3e97e0959de06cfa0a0",
+  "prompts": {},
+  "sessions": {
+    "s_d19cbc97385bd4": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a076a4-603c-7563-a4e4-9c386caba375",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
