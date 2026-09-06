@@ -4,7 +4,10 @@ pyagentbrowser ships one Python distribution, one import package, one pinned nat
 
 The artifact is the final output of the [downstream wrapper model](repository-model.md).
 It binds one Python SDK release to one exact upstream commit while preserving
-their independent version identities.
+distinct package and source identities.
+
+A package version such as `0.36.0.2` embeds upstream tag `v0.36.0`. The fourth
+component identifies the second downstream update on that tag.
 
 ## Artifact set
 

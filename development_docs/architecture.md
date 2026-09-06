@@ -3,7 +3,7 @@
 pyagentbrowser is a downstream wrapper that embeds a pinned `agent-browser`
 engine inside a Python process and gives Python callers a typed, agent-oriented
 browser contract. The [downstream wrapper model](repository-model.md) defines
-the upstream pin, independent versions, and ownership rules.
+the upstream pin, linked version identities, and ownership rules.
 [PyO3](https://pyo3.rs/) provides the Rust bindings that expose the native
 extension to Python.
 

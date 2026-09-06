@@ -32,6 +32,7 @@ help:
 		'make docs-check        Type-check, build, and verify the documentation site' \
 		'make check             Run the normal handoff gate' \
 		'make package           Build and clean-install the wheel and sdist' \
+		'make release-version-check  Verify release and upstream version identities' \
 		'make check-release     Run the full release gate'
 
 .PHONY: submodule-init
@@ -140,16 +141,16 @@ package: submodule-init
 		--out-dir $(PEP517_DIST_DIR)
 	uv build --sdist --force-pep517 --python $(BUILD_PYTHON) --out-dir $(PEP517_DIST_DIR)
 	mv $(PEP517_DIST_DIR)/* $(DIST_DIR)/
-	$(PYTHON_RUN) scripts/package_smoke.py $(DIST_DIR)
+	$(PYTHON_RUN) -m scripts.package_smoke $(DIST_DIR)
 	$(PYTHON_RUN) scripts/verify-install-artifacts.py $(DIST_DIR)
 
-.PHONY: prerelease-version-check
-prerelease-version-check: submodule-init
-	$(PYTHON_RUN) scripts/prepare_prerelease.py --check
+.PHONY: release-version-check
+release-version-check: submodule-init
+	$(PYTHON_RUN) -m scripts.check_release
 	$(PYTHON_RUN) scripts/update_upstream.py --check
 
 .PHONY: check
 check: lint typecheck test rust-check rust-test
 
 .PHONY: check-release
-check-release: prerelease-version-check check test-integration package
+check-release: release-version-check check test-integration package

@@ -85,28 +85,57 @@ upstream pin changes.
 
 ## Package versions
 
-The Python distribution and [PyO3](https://pyo3.rs/) Rust extension crate share one release version. Cargo uses its
-native prerelease spelling.
+The Python release uses `X.Y.Z[.N][rcN]`. `X.Y.Z` matches the embedded
+`agent-browser` tag. The baseline pyagentbrowser release uses `X.Y.Z`. Another
+release on the same upstream tag appends a downstream revision beginning with
+`.1`. Moving to a new upstream tag resets the downstream revision.
 
-| Source                             | Example      |
-| ---------------------------------- | ------------ |
-| `pyproject.toml`                   | `1.2.3rc4`   |
-| `src/agentbrowser/_version.py`     | `1.2.3rc4`   |
-| `uv.lock`                          | `1.2.3rc4`   |
-| `crates/pyagentbrowser/Cargo.toml` | `1.2.3-rc.4` |
-| `Cargo.lock`                       | `1.2.3-rc.4` |
+For example:
 
-The adapter crate follows the embedded upstream version. Set `RELEASE_TAG` to
-the planned tag, then verify all version and provenance sources with:
+```text
+pyagentbrowser 0.36.0      -> agent-browser v0.36.0, baseline release
+pyagentbrowser 0.36.0.1    -> agent-browser v0.36.0, downstream revision 1
+pyagentbrowser 0.36.0.2rc4 -> release candidate 4 for downstream revision 2
+pyagentbrowser 0.37.0      -> agent-browser v0.37.0, baseline release
+```
+
+Python package metadata uses the public version. Cargo requires three numeric
+release components, so the unpublished PyO3 crate carries the downstream
+revision as build metadata. The PyO3 crate is a path dependency, so the Cargo
+version records build identity while Python package metadata owns release
+ordering.
+
+| Source                             | Example                |
+| ---------------------------------- | ---------------------- |
+| `pyproject.toml`                   | `0.36.0.2rc4`          |
+| `src/agentbrowser/_version.py`     | `0.36.0.2rc4`          |
+| `uv.lock`                          | `0.36.0.2rc4`          |
+| `crates/pyagentbrowser/Cargo.toml` | `0.36.0-rc.4+py.2`     |
+| `Cargo.lock`                       | `0.36.0-rc.4+py.2`     |
+| `src/agentbrowser/_upstream.json`  | `0.36.0` plus exact SHA |
+
+`scripts/release_version.py` owns the public grammar and Cargo mapping. The
+adapter crate follows the embedded upstream version because it compiles that
+source.
+
+Set `RELEASE_TAG` to the planned pyagentbrowser tag, then verify the package,
+Cargo, and upstream identities with:
 
 ```bash
-make prerelease-version-check
-./scripts/release.sh check-version "$RELEASE_TAG"
+make release-version-check
+python -m scripts.check_release --tag "$RELEASE_TAG"
 ```
+
+The release tag must include `v`. The checker verifies that the package version
+matches the tag and that the encoded upstream tag resolves to the pinned
+upstream commit. Fetch upstream tags when a shallow clone lacks the encoded
+tag. The checker also requires a clean upstream worktree because its files enter
+the source distribution.
 
 ## Release state machine
 
-1. Update the three SDK version declarations and refresh both lockfiles.
+1. Set the Python package version and derived Cargo version, then refresh both
+   lockfiles.
 2. Run `make check-release`.
 3. Commit and push the version change to `main`.
 4. Wait for a successful push-event `Release Check` on the exact commit SHA.
@@ -117,6 +146,9 @@ The publish workflow requires successful exact-SHA release evidence before it
 accepts a tag. It builds five wheels against Python's stable application binary interface and one sdist, validates every payload,
 publishes through PyPI trusted publishing, installs the public wheel on Linux
 and Windows, and verifies the public artifact set plus GitHub prerelease state.
+Release candidate notes compare with the nearest ancestor release tag. Final
+release notes compare with the nearest final tag, preserving the complete
+change set across a release candidate series.
 
 Published artifacts are immutable. If publication starts and a later gate
 fails, fix forward with a new version and tag.

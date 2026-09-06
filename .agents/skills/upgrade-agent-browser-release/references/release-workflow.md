@@ -4,13 +4,16 @@ Use this workflow for a requested official upstream release tag. Keep three
 values distinct until the repository contract proves they should match:
 
 - `UPSTREAM_TAG`: the official `agent-browser` tag to embed.
-- `PACKAGE_VERSION`: the pyagentbrowser version to publish.
-- `RELEASE_TAG`: the Git tag accepted by `scripts/release.sh`.
+- `PACKAGE_VERSION`: the pyagentbrowser version to publish. Its first three
+  components match `UPSTREAM_TAG`, and its optional fourth component is the
+  downstream revision.
+- `RELEASE_TAG`: `v$PACKAGE_VERSION`.
 - `PUBLIC_VERIFY_PYTHON_VERSION`: one currently supported Python version from
   `pyproject.toml` and the live release matrix.
 
-Set each value from the request and current version policy. Do not infer that
-the package version must equal the upstream version.
+Use the upstream version for the baseline package release. Append `.1`, `.2`,
+and later revisions when publishing more pyagentbrowser releases on the same
+upstream tag.
 
 ## 1. Establish the live contract
 
@@ -228,15 +231,15 @@ gh stack add "$RELEASE_BRANCH"
 ```
 
 Re-discover the synchronized release files from
-`development_docs/maintenance.md`, `scripts/prepare_prerelease.py`, and the
-latest release commit. Update them with structured edits, then refresh both
-locks through their native tools. Verify the planned tag:
+`development_docs/maintenance.md`, `scripts/release_version.py`, and the latest
+release commit. Update them with structured edits, then refresh both locks
+through their native tools. Verify the planned tag:
 
 ```bash
 uv lock
 cargo update --package pyagentbrowser
-make prerelease-version-check
-./scripts/release.sh check-version "$RELEASE_TAG"
+make release-version-check
+python -m scripts.check_release --tag "$RELEASE_TAG"
 ```
 
 Run the strongest local gate once at the final stack head:
@@ -321,7 +324,8 @@ Resolve the tag-triggered `Publish` run and require every job:
 - current platform wheel builds and source distribution
 - architecture-specific wheel tests
 - artifact validation and trusted PyPI publishing
-- GitHub release notes
+- GitHub release notes compared with the nearest ancestor tag for a release
+  candidate or the nearest final tag for a final release
 - public installs on the configured operating systems
 - final PyPI artifact and GitHub release verification
 

@@ -111,7 +111,10 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           submodules: recursive
+      - name: Fetch upstream release tags
+        run: git -C third_party/agent-browser fetch --force --tags origin
       - uses: astral-sh/setup-uv@v8.2.0
         with:
           python-version: "3.14"
@@ -121,7 +124,7 @@ jobs:
       - name: Install quality dependencies
         run: uv sync --locked --no-install-project --extra cdp --python 3.14
       - name: Check release metadata, Python, and Rust
-        run: make prerelease-version-check lint typecheck rust-check rust-test
+        run: make release-version-check lint typecheck rust-check rust-test
       - name: Test packaging contracts
         run: make test-package
 

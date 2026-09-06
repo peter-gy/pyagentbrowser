@@ -18,6 +18,8 @@ from email.parser import Parser
 from pathlib import Path
 from typing import NoReturn
 
+from scripts.release_version import ReleaseVersion, ReleaseVersionError
+
 
 class PackageSmokeError(AssertionError):
     pass
@@ -527,10 +529,10 @@ def _project_url_pairs(metadata: Message) -> set[tuple[str, str]]:
 
 
 def _assert_release_version(version: str, artifact_name: str) -> None:
-    if "+" in version:
-        _fail(f"{artifact_name} uses a local version label: {version}")
-    if not re.fullmatch(r"\d+\.\d+\.\d+(?:(?:a|b|rc)\d+)?", version):
-        _fail(f"{artifact_name} has an unsupported release version: {version}")
+    try:
+        ReleaseVersion.parse(version)
+    except ReleaseVersionError as error:
+        _fail(f"{artifact_name} has an invalid release version: {error}")
 
 
 def assert_metadata_invariants(metadata: Message, artifact_name: str) -> None:

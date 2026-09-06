@@ -1,7 +1,7 @@
 # Downstream wrapper model
 
-pyagentbrowser is an independently versioned Python product built around an
-exact revision of the upstream
+pyagentbrowser is an upstream-aligned Python product built around an exact
+revision of the upstream
 [`agent-browser`](https://github.com/vercel-labs/agent-browser) engine. Git calls
 the repository that records a submodule pin the _superproject_. This guide uses
 _downstream wrapper_ because it also describes the product boundary.
@@ -51,20 +51,29 @@ embedding constraint, Python contract, or distribution concern belongs here.
 When a downstream requirement changes upstream source, encode it as a
 fail-closed generated adaptation and keep the pinned checkout clean.
 
-## Three independent identities
+## Three linked identities
 
 The repository tracks three related identities with different meanings:
 
 | Identity               | Meaning                                         | Recorded in                                                 |
 | ---------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
-| pyagentbrowser version | Python product and PyO3 extension release       | `pyproject.toml`, `_version.py`, PyO3 Cargo manifest, locks |
+| pyagentbrowser version | Upstream release plus downstream revision       | `pyproject.toml`, `_version.py`, PyO3 Cargo manifest, locks |
 | Upstream version       | Version declared by the pinned engine           | upstream Cargo manifest and adapter Cargo manifest          |
 | Upstream commit        | Exact source revision embedded by this checkout | submodule gitlink and `_upstream.json`                      |
 
-The Python release version can advance while the upstream version stays fixed.
+The Python release uses `X.Y.Z[.N][rcN]`. `X.Y.Z` is the embedded upstream tag
+without its leading `v`. The optional fourth component is the downstream
+revision for another pyagentbrowser release on that tag. An omitted revision is
+the baseline release, and later releases increment from `.1`.
+
+For example, pyagentbrowser `0.36.0.2` embeds upstream tag `v0.36.0` and is the
+second downstream update on that source. A move to upstream tag `v0.37.0`
+resets the public version to `0.37.0`.
+
 The adapter crate follows the upstream version because it describes
 compatibility with that source. `src/agentbrowser/_upstream.json` records the
-version and commit exposed to installed Python callers.
+version and commit exposed to installed Python callers. Release validation
+requires the recorded commit to resolve from the encoded upstream tag.
 
 ## Classify a change
 
@@ -107,7 +116,7 @@ an installed artifact.
 - The submodule worktree remains clean.
 - Every adaptation is generated and fails when its inspected anchor drifts.
 - Installed provenance matches both the gitlink and upstream manifest.
-- Python and upstream versions remain independently meaningful.
+- Python release, upstream version, and upstream commit remain distinct.
 - Source distributions contain every upstream input required to build without
   a Git submodule checkout.
 - Tests assert downstream ownership. Generic upstream behavior remains an
