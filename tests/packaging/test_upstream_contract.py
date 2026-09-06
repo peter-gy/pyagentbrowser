@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from scripts import update_upstream
+from scripts import check_release, update_upstream
 
 ROOT = Path(__file__).resolve().parents[2]
 pytestmark = pytest.mark.packaging
@@ -58,11 +58,10 @@ def test_extension_and_adapter_resolve_in_one_locked_workspace() -> None:
     assert Path(metadata["workspace_root"]).resolve() == ROOT.resolve()
 
 
-def test_sdk_version_and_upstream_provenance_are_independent_and_consistent() -> None:
+def test_sdk_version_encodes_upstream_and_preserves_exact_provenance() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     py_cargo = tomllib.loads((ROOT / "crates/pyagentbrowser/Cargo.toml").read_text())
     release = runpy.run_path(str(ROOT / "src/agentbrowser/_version.py"))
-    release_tool = runpy.run_path(str(ROOT / "scripts/prepare_prerelease.py"))
     upstream = ROOT / "third_party/agent-browser"
     commit = subprocess.check_output(
         ["git", "rev-parse", "HEAD"],
@@ -74,30 +73,12 @@ def test_sdk_version_and_upstream_provenance_are_independent_and_consistent() ->
     ]
     assert project["name"] == "pyagentbrowser"
     assert project["version"] == release["PACKAGE_VERSION"]
-    assert py_cargo["package"]["version"] == release_tool["_cargo_version"](project["version"])
+    assert py_cargo["package"]["version"] == check_release.check_metadata().package.cargo
     assert release["UPSTREAM_COMMIT"] == commit
     assert release["UPSTREAM_VERSION"] == upstream_version
     provenance = json.loads((ROOT / "src/agentbrowser/_upstream.json").read_text())
     assert provenance == {"commit": commit, "version": upstream_version}
     assert project["urls"]["Upstream agent-browser"].endswith("vercel-labs/agent-browser")
-
-
-@pytest.mark.parametrize(
-    "python_version,cargo_version",
-    [
-        ("1.2.3", "1.2.3"),
-        ("1.2.3a4", "1.2.3-alpha.4"),
-        ("1.2.3b5", "1.2.3-beta.5"),
-        ("1.2.3rc6", "1.2.3-rc.6"),
-    ],
-)
-def test_python_package_versions_map_to_cargo_versions(
-    python_version: str,
-    cargo_version: str,
-) -> None:
-    release_tool = runpy.run_path(str(ROOT / "scripts/prepare_prerelease.py"))
-
-    assert release_tool["_cargo_version"](python_version) == cargo_version
 
 
 def _temporary_upstream(tmp_path: Path) -> tuple[Path, dict[str, str]]:

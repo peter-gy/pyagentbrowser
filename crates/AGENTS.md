@@ -22,7 +22,8 @@ The native layer embeds a pinned engine behind the Python API.
 - Treat paths, text encoding, line endings, process identity, and cleanup as
   cross-platform contracts. Validate Windows and Unix behavior when they differ.
 - Keep the adapter package version aligned with the embedded upstream version.
-  Keep the PyO3 package version aligned with the Python distribution version.
+  Derive the PyO3 package version from the Python release through
+  `scripts/release_version.py`.
 
 ## Validation
 

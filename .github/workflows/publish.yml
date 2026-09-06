@@ -3,10 +3,7 @@ name: Publish
 on:
   push:
     tags:
-      - "[0-9]*.[0-9]*.[0-9]*"
-      - "[0-9]*.[0-9]*.[0-9]*rc[0-9]*"
       - "v[0-9]*.[0-9]*.[0-9]*"
-      - "v[0-9]*.[0-9]*.[0-9]*rc[0-9]*"
 
 permissions:
   contents: read
@@ -46,7 +43,11 @@ jobs:
 
       - uses: actions/checkout@v6
         with:
+          fetch-depth: 0
           submodules: recursive
+
+      - name: Fetch upstream release tags
+        run: git -C third_party/agent-browser fetch --force --tags origin
 
       - uses: actions/setup-python@v6
         with:
@@ -56,8 +57,7 @@ jobs:
         env:
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          ./scripts/release.sh check-version "$RELEASE_TAG"
-          python scripts/prepare_prerelease.py --check
+          python -m scripts.check_release --tag "$RELEASE_TAG"
           python scripts/update_upstream.py --check
 
   build:
@@ -143,7 +143,7 @@ jobs:
 
       - name: Validate release artifacts
         run: |
-          python scripts/package_smoke.py --release dist
+          python -m scripts.package_smoke --release dist
           uvx twine check --strict dist/*
 
       - name: Publish distributions
@@ -169,7 +169,13 @@ jobs:
           node-version: "24"
 
       - name: Update release notes
-        run: npx --yes changelogithub@14.0.0
+        run: |
+          previous_tag=$(python -m scripts.previous_release_tag \
+            --current "$GITHUB_SHA" \
+            --current-tag "$GITHUB_REF_NAME")
+          npx --yes changelogithub@14.0.0 \
+            --from "$previous_tag" \
+            --to "$GITHUB_REF_NAME"
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
@@ -287,7 +293,7 @@ jobs:
         run: |
           version="${VERSION#v}"
           expected_prerelease=false
-          if [[ "$version" =~ (a|b|rc)[0-9]+$ ]]; then
+          if [[ "$version" =~ rc[0-9]+$ ]]; then
             expected_prerelease=true
           fi
           actual_prerelease=$(gh release view "$VERSION" --json isDraft,isPrerelease --jq '.isPrerelease')

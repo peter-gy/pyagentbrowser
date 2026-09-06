@@ -85,6 +85,6 @@ print(agentbrowser.__agent_browser_version__)
 print(agentbrowser.__agent_browser_commit__)
 ```
 
-The Python package version and embedded `agent-browser` engine version are separate identities. Each release records the exact upstream commit in the installed package.
+The Python package version and embedded `agent-browser` engine version are separate identities. A package version such as `0.36.0.2` embeds upstream tag `v0.36.0` and identifies the second downstream update on that tag. Each release records the exact upstream commit in the installed package.
 
 The current package is classified as Alpha. Pin the package version for production workflows and review changes before upgrading.

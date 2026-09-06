@@ -224,6 +224,9 @@ def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:
             package_smoke.assert_sdist_excludes_junk_and_dashboard_payload({forbidden})
 
 
-@pytest.mark.parametrize("version", ["0.32.0", "0.32.0a1", "0.32.0b1", "0.32.0rc1"])
+@pytest.mark.parametrize(
+    "version",
+    ["0.32.0", "0.32.0rc1", "0.32.0.1", "0.32.0.2rc1"],
+)
 def test_package_gate_accepts_supported_release_versions(version: str) -> None:
     package_smoke._assert_release_version(version, "artifact")
