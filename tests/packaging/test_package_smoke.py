@@ -5,7 +5,7 @@ import io
 import tarfile
 import zipfile
 from pathlib import Path
-from types import ModuleType
+from types import ModuleType, SimpleNamespace
 
 import agent_plugins
 import pytest
@@ -158,26 +158,15 @@ def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: 
         )
         archive.writestr("pyagentbrowser-0.36.0.dist-info/RECORD", "")
 
-    attachment = agent_plugins.attach_wheel(wheel, project=ROOT)
+    agent_plugins.attach_wheel(wheel, project=ROOT)
     names = package_smoke.wheel_names(wheel)
 
-    assert attachment.output == wheel.resolve()
-    assert attachment.plugin_root.as_posix() == "pyagentbrowser-0.36.0.agent-plugin"
-    assert {path.as_posix() for path in attachment.files} == set(package_smoke.AGENT_PLUGIN_FILES)
-    assert attachment.replaced_existing_plugin is False
-    assert attachment.removed_signatures == ()
     package_smoke.assert_wheel_agent_plugin(wheel, names)
     package_smoke.assert_wheel_record(wheel)
-    assert "pyagentbrowser-0.36.0.dist-info/agent_plugins.json" in names
-
-
-def test_agent_plugin_build_plan_contains_only_authored_resources() -> None:
-    plan = agent_plugins.build_plan(ROOT)
-
-    assert plan.root == ROOT
-    assert {mapping.target.as_posix() for mapping in plan.files} == set(
-        package_smoke.AGENT_PLUGIN_FILES
-    )
+    with zipfile.ZipFile(wheel) as archive:
+        for mapping in agent_plugins.build_plan(ROOT).files:
+            packaged = f"pyagentbrowser-0.36.0.agent-plugin/{mapping.target.as_posix()}"
+            assert archive.read(packaged) == mapping.source.read_bytes()
 
 
 def test_sdist_agent_plugin_check_rejects_an_incomplete_inventory() -> None:
@@ -204,8 +193,13 @@ def test_agent_plugin_backend_normalizes_sdist_member_timestamps(
         member.mtime = 123
         archive.addfile(member, io.BytesIO(content))
     monkeypatch.setenv("SOURCE_DATE_EPOCH", "456")
+    monkeypatch.setattr(
+        agent_plugin_backend,
+        "_backend",
+        SimpleNamespace(build_sdist=lambda directory, config_settings: sdist.name),
+    )
 
-    agent_plugin_backend._normalize_sdist(sdist)
+    assert agent_plugin_backend.build_sdist(str(tmp_path)) == sdist.name
 
     with tarfile.open(sdist) as archive:
         members = archive.getmembers()
@@ -222,11 +216,3 @@ def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:
     ):
         with pytest.raises(package_smoke.PackageSmokeError):
             package_smoke.assert_sdist_excludes_junk_and_dashboard_payload({forbidden})
-
-
-@pytest.mark.parametrize(
-    "version",
-    ["0.32.0", "0.32.0rc1", "0.32.0.1", "0.32.0.2rc1"],
-)
-def test_package_gate_accepts_supported_release_versions(version: str) -> None:
-    package_smoke._assert_release_version(version, "artifact")

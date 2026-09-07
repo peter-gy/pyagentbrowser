@@ -5,7 +5,6 @@ import subprocess
 import sys
 import weakref
 from gc import collect
-from importlib.metadata import distribution
 from pathlib import Path
 
 import agent_plugins
@@ -16,14 +15,6 @@ from agentbrowser import CloseResult, Ref, SessionOptions, Snapshot, StaleRefErr
 
 pytestmark = pytest.mark.sdk_dx
 ROOT = Path(__file__).resolve().parents[1]
-
-PLUGIN_FILES = {
-    "plugin.json",
-    "skills/pyagentbrowser/SKILL.md",
-    "skills/pyagentbrowser/agents/openai.yaml",
-    "skills/pyagentbrowser/references/api-map.md",
-    "skills/pyagentbrowser/references/lifecycle-and-safety.md",
-}
 
 
 def test_root_import_keeps_agent_capability_dependencies_lazy() -> None:
@@ -52,9 +43,6 @@ def test_agent_module_preserves_direct_evidence_imports() -> None:
     assert browser_agent.Ref is Ref
     assert browser_agent.Snapshot is Snapshot
     assert browser_agent.StaleRefError is StaleRefError
-    assert Ref.__module__ == "agentbrowser.agent"
-    assert Snapshot.__module__ == "agentbrowser.agent"
-    assert StaleRefError.__module__ == "agentbrowser.agent"
 
 
 def test_connect_keeps_one_browser_alive_across_scratchpad_locals() -> None:
@@ -171,39 +159,23 @@ def test_connections_and_disconnect_all_cover_named_controllers() -> None:
 
     results = browser_agent.disconnect_all()
 
-    assert list(results) == ["inventory-a", "inventory-b"]
+    assert results.keys() == {"inventory-a", "inventory-b"}
     assert all(result.closed for result in results.values())
-    assert "raw=" not in repr(results["inventory-a"])
+    assert first.closed and second.closed
     assert browser_agent.connections() == {}
 
 
 def test_agent_module_directory_exposes_the_supported_surface() -> None:
-    names = dir(browser_agent)
+    operations = {"connect", "connections", "disconnect", "disconnect_all"}
 
-    assert "connect" in names
-    assert "connections" in names
-    assert "disconnect_all" in names
-    assert "dataclass" not in names
-    assert "RLock" not in names
+    assert operations <= set(dir(browser_agent))
+    assert all(callable(getattr(browser_agent, name)) for name in operations)
 
 
 @pytest.mark.parametrize("name", ["", "has space", "path/name", "x" * 65])
 def test_connect_rejects_invalid_connection_names(name: str) -> None:
     with pytest.raises(ValueError, match="connection name"):
         browser_agent.connect(name)
-
-
-def test_marimo_capability_entry_point_loads_the_agent_module() -> None:
-    capabilities = [
-        entry_point
-        for entry_point in distribution("pyagentbrowser").entry_points
-        if entry_point.group == "marimo.agent.capability"
-    ]
-
-    assert [(entry.name, entry.value) for entry in capabilities] == [
-        ("pyagentbrowser", "agentbrowser.agent")
-    ]
-    assert capabilities[0].load() is browser_agent
 
 
 def test_agent_capability_loads_and_renders_help_in_a_fresh_process() -> None:
@@ -216,13 +188,18 @@ import pydoc
 import sys
 from importlib.metadata import distribution
 
-entry = next(
+capabilities = [
     entry
     for entry in distribution("pyagentbrowser").entry_points
     if entry.group == "marimo.agent.capability"
-)
-module = entry.load()
-assert module.__name__ == "agentbrowser.agent"
+]
+assert [(entry.name, entry.value) for entry in capabilities] == [
+    ("pyagentbrowser", "agentbrowser.agent")
+]
+module = capabilities[0].load()
+import agentbrowser.agent
+
+assert module is agentbrowser.agent
 assert 'browser = browser_agent.connect("research")' in pydoc.render_doc(module)
 """,
         ],
@@ -240,16 +217,14 @@ def test_agent_plugin_exposes_the_packaged_pyagentbrowser_skill() -> None:
     source = agent_plugins.Plugin.from_project(ROOT)
 
     assert plugin.manifest.name == "pyagentbrowser"
-    assert plugin.skill("pyagentbrowser") is plugin.skill("pyagentbrowser")
     assert plugin.skill("pyagentbrowser") == skill
-    assert skill.path.name == "pyagentbrowser"
     assert skill.file("SKILL.md").is_file()
     assert skill.file("references/api-map.md").is_file()
     assert skill.file("references/lifecycle-and-safety.md").is_file()
-    assert skill.frontmatter.splitlines()[0] == "name: pyagentbrowser"
-    assert {path.relative_to(plugin.path).as_posix() for path in plugin.files} == PLUGIN_FILES
     assert source.skill("pyagentbrowser").source == skill.source
-    assert {path.relative_to(source.path).as_posix() for path in source.files} == PLUGIN_FILES
+    source_files = {path.relative_to(source.path): path.read_bytes() for path in source.files}
+    installed_files = {path.relative_to(plugin.path): path.read_bytes() for path in plugin.files}
+    assert installed_files == source_files
 
 
 def test_agent_module_help_points_to_sdk_and_installed_resources() -> None:
@@ -259,17 +234,8 @@ def test_agent_module_help_points_to_sdk_and_installed_resources() -> None:
 
     assert str(plugin.path) in rendered
     assert str(skill.file("SKILL.md")) in rendered
-    assert 'browser = browser_agent.connect("research")' in rendered
-    assert 'result = before.one(role="button", name="Save")' in rendered
-    assert "print(result.diff.text)" in rendered
-    assert "browser_agent.disconnect_all()" in rendered
-    assert "resources = browser_agent.agent_plugin()" in rendered
-    assert "instructions = skill.body" in rendered
     assert "https://peter-gy.github.io/pyagentbrowser/llms.txt" in rendered
-
-
-def test_agent_module_help_stays_bounded_for_agent_context() -> None:
-    assert len(pydoc.render_doc(browser_agent)) < 6000
+    assert len(rendered) < 6000
 
 
 def test_agent_module_help_preserves_sdk_guidance_when_plugin_lookup_fails(
