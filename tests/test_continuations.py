@@ -197,7 +197,7 @@ def test_sync_chained_confirmation_preserves_decoder_and_completion() -> None:
     browser = _browser(native)
 
     with pytest.raises(ConfirmationRequired) as first:
-        browser.tabs.open("example.com/new", label="work")
+        browser.tabs.open("example.com/new", label="work", wait_until="domcontentloaded")
     with pytest.raises(ConfirmationRequired) as second:
         first.value.pending.confirm()
 
@@ -212,6 +212,9 @@ def test_sync_chained_confirmation_preserves_decoder_and_completion() -> None:
         "confirm",
         "navigate",
     ]
+    assert native.commands[1]["tabId"] == "existing"
+    assert native.commands[4]["url"] == "https://example.com/new"
+    assert native.commands[4]["waitUntil"] == "domcontentloaded"
     browser.close()
 
 

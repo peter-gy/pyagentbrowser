@@ -5,14 +5,17 @@ import json
 from typing import Any
 
 import pytest
+from fakes import ScriptedNative
 
 from agentbrowser import (
     ActionResult,
     ActionTransitionError,
     AsyncBrowser,
+    AsyncRef,
     AsyncSnapshot,
     Browser,
     BrowserError,
+    CloseResult,
     ConfirmationRequired,
     NativeParseError,
     Snapshot,
@@ -192,23 +195,46 @@ def test_snapshot_binds_refs_and_expresses_cardinality() -> None:
         page.one(name="Missing")
 
 
-def test_agent_evidence_representations_are_bounded_and_task_focused() -> None:
-    page = _browser(TransitionNative()).observe()
-    ref = page.one(role="button")
-    result = ref.click()
+@pytest.mark.parametrize("asynchronous", [False, True], ids=["sync", "async"])
+def test_agent_evidence_representations_are_bounded_and_task_focused(asynchronous: bool) -> None:
+    native = ScriptedNative(
+        {
+            "snapshot": {**_snapshot(), "snapshot": "Page content " * 1_000},
+            "click": {},
+            "__agent_browser_internal_shutdown": {},
+        }
+    )
 
-    assert repr(page) == (
-        "Snapshot(origin='https://example.com/form', refs=2, "
-        "spec=SnapshotSpec(selector=None, interactive=True, compact=False, "
-        "max_depth=None, urls=False))"
-    )
-    assert repr(ref) == (
-        "Ref(selector='@e1', role='button', name='Submit', origin='https://example.com/form')"
-    )
-    assert repr(result.diff) == ("SnapshotDiff(changed=True, additions=1, removals=1, unchanged=2)")
+    async def run() -> tuple[AsyncSnapshot, AsyncRef, ActionResult[AsyncRef, AsyncSnapshot]]:
+        async with AsyncBrowser(_native_session=AsyncNativeSession(native=native)) as browser:
+            page = await browser.observe()
+            ref = page.one(role="button")
+            return page, ref, await ref.click()
+
+    if asynchronous:
+        page, ref, result = asyncio.run(run())
+    else:
+        with _browser(native) as browser:
+            page = browser.observe()
+            ref = page.one(role="button")
+            result = ref.click()
+
+    assert page.origin in repr(page)
+    assert ref.selector in repr(ref)
+    assert ref.name in repr(ref)
+    assert "changed=False" in repr(result.diff)
+    assert "click" in repr(result)
+    for value in (page, ref, result, result.diff):
+        assert len(repr(value)) < 600
     assert str(result.diff) == result.diff.text
+
+
+def test_close_result_representation_is_bounded() -> None:
+    result = CloseResult(closed=True, save_status="saved", raw={"details": "saved state " * 1_000})
+
+    assert "closed=True" in repr(result)
+    assert "saved" in repr(result)
     assert len(repr(result)) < 600
-    assert "'raw':" not in repr(result)
 
 
 @pytest.mark.parametrize(
@@ -324,8 +350,6 @@ def test_async_snapshot_and_action_match_the_sync_contract() -> None:
         )
         page = await browser.observe(SnapshotSpec(compact=True))
         assert page.url == page.origin
-        assert repr(page).startswith("AsyncSnapshot(origin=")
-        assert repr(page.one(role="button")).startswith("AsyncRef(selector='@e1'")
         result = await page.one(name="Submit").click(wait=Wait.text("Saved"))
 
         assert isinstance(page, AsyncSnapshot)

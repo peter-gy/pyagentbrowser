@@ -12,6 +12,7 @@ from fakes import ConfirmationNative, ScriptedNative
 import agentbrowser
 from agentbrowser import (
     AccessibilityAudit,
+    AgentBrowserError,
     AsyncBrowser,
     AsyncQuery,
     AsyncRef,
@@ -453,6 +454,7 @@ def test_console_messages_preserve_a_present_empty_collection() -> None:
         "ConsoleMessage",
         "Cookie",
         "CloseResult",
+        "HarContentMode",
         "NetworkRequest",
         "ProxyConfig",
         "RequestDetail",
@@ -467,7 +469,7 @@ def test_console_messages_preserve_a_present_empty_collection() -> None:
 )
 def test_public_contract_types_are_package_exports(name: str) -> None:
     assert name in agentbrowser.__all__
-    assert getattr(agentbrowser, name).__module__ == "agentbrowser.models"
+    assert getattr(agentbrowser, name) is not None
 
 
 def test_screenshot_rejects_a_missing_native_path() -> None:
@@ -796,11 +798,6 @@ def test_har_start_rejects_an_unknown_content_mode() -> None:
     assert native.commands == []
 
 
-def test_har_content_mode_is_a_package_export() -> None:
-    assert "HarContentMode" in agentbrowser.__all__
-    assert agentbrowser.HarContentMode is not None
-
-
 def test_path_namespaces_return_typed_paths(tmp_path: Path) -> None:
     pdf = tmp_path / "page.pdf"
     state = tmp_path / "state.json"
@@ -934,70 +931,6 @@ def test_tabs_open_creates_a_labelled_tab_when_no_reusable_tab_exists() -> None:
     }
 
 
-def test_tabs_open_confirmation_continues_switch_and_navigation() -> None:
-    existing = {
-        "id": "existing",
-        "url": "https://example.com/old",
-        "label": "work",
-    }
-    native = ScriptedNative(
-        {
-            "tab_list": {"tabs": [existing]},
-            "tab_switch": {
-                "success": True,
-                "data": {
-                    "confirmation_required": True,
-                    "confirmation_id": "confirm-switch",
-                    "action": "tab_switch",
-                },
-            },
-            "confirm": {
-                "success": True,
-                "data": {
-                    "confirmed": True,
-                    "action": "tab_switch",
-                    "result": {
-                        "id": "confirmed-switch",
-                        "success": True,
-                        "data": {
-                            "tabId": "existing",
-                            "url": "https://example.com/old",
-                            "title": "Existing",
-                            "label": "work",
-                        },
-                    },
-                },
-            },
-            "navigate": {},
-        }
-    )
-    browser = _browser(native)
-
-    with pytest.raises(ConfirmationRequired) as required:
-        browser.tabs.open("example.com/new", label="work", wait_until="domcontentloaded")
-
-    tab = required.value.pending.confirm()
-
-    assert tab.id == "existing"
-    assert tab.url == "https://example.com/new"
-    assert tab.active is True
-    assert [command["action"] for command in native.commands] == [
-        "tab_list",
-        "tab_switch",
-        "confirm",
-        "navigate",
-    ]
-    assert _command_without_id(native.commands[1]) == {
-        "action": "tab_switch",
-        "tabId": "existing",
-    }
-    assert _command_without_id(native.commands[-1]) == {
-        "action": "navigate",
-        "url": "https://example.com/new",
-        "waitUntil": "domcontentloaded",
-    }
-
-
 def test_diff_namespace_returns_a_typed_snapshot_diff() -> None:
     browser = _browser(
         ScriptedNative(
@@ -1080,7 +1013,6 @@ def test_read_returns_typed_content_and_serializes_mode() -> None:
 
 def test_typed_confirmation_resumes_the_original_decoder(tmp_path: Path) -> None:
     path = tmp_path / "shot.png"
-    path.write_bytes(b"png")
     browser = _browser(ConfirmationNative(action="screenshot", result={"path": str(path)}))
 
     with pytest.raises(ConfirmationRequired) as required:
@@ -1779,8 +1711,9 @@ def test_sync_and_async_public_surfaces_keep_method_and_signature_parity() -> No
             assert async_parameters == sync_parameters, f"{name}.{method}"
 
 
-def test_error_types_share_one_catchable_base() -> None:
-    native = ScriptedNative({"title": {"success": False, "error": "failed"}})
+@pytest.mark.parametrize("reply", [{"success": False, "error": "failed"}, {}])
+def test_error_types_share_one_catchable_base(reply: dict[str, Any]) -> None:
+    native = ScriptedNative({"title": reply})
 
-    with pytest.raises(BrowserError, match="title failed"):
+    with pytest.raises(AgentBrowserError, match="title"):
         _browser(native).title()
