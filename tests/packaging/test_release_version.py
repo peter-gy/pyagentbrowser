@@ -215,7 +215,9 @@ def test_release_check_rejects_invalid_tag(tag: str) -> None:
 
 
 def test_release_check_rejects_mismatched_package_tag() -> None:
-    result = run_release_check("v0.36.0.2")
+    version = package_version()
+    tag = f"v{Version(version).major + 1}.0.0"
+    result = run_release_check(tag)
 
     assert result.returncode == 1
-    assert "package version 0.36.0.1 must match release tag v0.36.0.2" in result.stderr
+    assert f"package version {version} must match release tag {tag}" in result.stderr
