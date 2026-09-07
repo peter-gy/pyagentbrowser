@@ -1,0 +1,25 @@
+crates/pyagentbrowser/Cargo.toml
+  s_ba7aa9dc3dab70::t_57b9df6adccfaf 3
+pyproject.toml
+  s_ba7aa9dc3dab70::t_57b9df6adccfaf 3
+src/agentbrowser/_version.py
+  s_ba7aa9dc3dab70::t_57b9df6adccfaf 7
+tests/packaging/test_release_version.py
+  s_ba7aa9dc3dab70::t_45253866923ddd 218-220,223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "4aec75ec1c06e50840b16e670167b3b4594531c7",
+  "prompts": {},
+  "sessions": {
+    "s_ba7aa9dc3dab70": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07cc5-d6db-74c1-acaf-e2d1184ef5df",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
