@@ -26,28 +26,24 @@
   <a href="LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/github/license/peter-gy/pyagentbrowser"></a>
 </p>
 
-pyagentbrowser embeds the native Rust
-[`agent-browser`](https://github.com/vercel-labs/agent-browser) engine in a
-Python process. A `Browser` controller owns startup, ordered native work,
-snapshot-scoped element refs, safety policy, direct browser capabilities, and
-terminal cleanup.
+Control browsers from Python with the native
+[`agent-browser`](https://github.com/vercel-labs/agent-browser) engine.
+Inspect a page, act on an element, and get the before-and-after snapshots
+with a diff of what changed.
 
 > **Alpha:** The public API and native integration can change between minor
 > releases. Pin a version for production automation.
 
-## Quickstart
-
-Install pyagentbrowser from the Python Package Index:
+## Get started
 
 ```bash
 python -m pip install pyagentbrowser
 ```
 
-The first local launch selects a configured, cached, or installed Chrome or
-[Chromium](https://www.chromium.org/chromium-projects/) executable. When
-discovery finds none, pyagentbrowser downloads
-[Chrome for Testing](https://developer.chrome.com/blog/chrome-for-testing/).
-Local browsers run headlessly by default.
+Requires Python 3.11 through 3.14. Local browsers run headlessly by default.
+The first launch finds Chrome or Chromium, or downloads
+[Chrome for Testing](https://developer.chrome.com/blog/chrome-for-testing/)
+when needed.
 
 ```python
 from agentbrowser import Browser
@@ -68,68 +64,35 @@ Done
 True
 ```
 
-## The evidence model
+`observe()` captures a `Snapshot` of the page's accessible elements. Selecting
+a button returns a `Ref`. Clicking it returns an `ActionResult` with `before`,
+`after`, and `diff`.
+Use [`browser.find`](docs/guides/interact.md) for live element queries.
 
-`Browser.observe()` returns an accessibility `Snapshot`. Each `Ref` identifies
-one element inside that snapshot. A ref mutation returns an `ActionResult` with
-the source snapshot, resulting snapshot, and their `SnapshotDiff`.
+## Browser workflows
 
-```text
-Snapshot A -> Ref -> action and wait -> Snapshot B -> SnapshotDiff
-```
+- **Inspect and act.** Navigate pages, fill forms, read documents, and capture
+  screenshots and PDFs through typed namespaces.
+- **Manage sessions.** Launch a browser or attach to an existing one. Work with
+  tabs, cookies, saved state, and explicit cleanup.
+- **Control actions.** Configure domain restrictions and confirmation policy
+  for operations through the native engine.
+- **Compose in Python.** Use synchronous or asynchronous controllers, agent
+  skills, and the complete engine protocol through `browser.native`.
 
-Use `browser.find` for live CSS, XPath, role, text, label, placeholder,
-alternative text, title, and test ID queries. Live queries resolve when each
-operation runs. Snapshot-scoped refs preserve the inspected page state and add
-transition evidence.
+## Documentation
 
-## What you can automate
+[Get started](docs/getting-started.md) ·
+[Concepts](docs/concepts/runtime-model.md) ·
+[Action evidence](docs/concepts/evidence.md) ·
+[Safety](docs/concepts/safety.md) ·
+[API reference](docs/reference/browser.md) ·
+[Troubleshooting](docs/troubleshooting.md)
 
-- [Navigate, inspect, and act on pages](https://peter-gy.github.io/pyagentbrowser/guides/interact.html)
-- [Read documents and capture screenshots, PDFs, diffs, and downloads](https://peter-gy.github.io/pyagentbrowser/guides/read-and-capture.html)
-- [Manage tabs, named sessions, cookies, Web Storage, and restored state](https://peter-gy.github.io/pyagentbrowser/guides/tabs-and-state.html)
-- [Route requests, record HTTP Archive files, and inspect diagnostics](https://peter-gy.github.io/pyagentbrowser/guides/network-and-diagnostics.html)
-- [Evaluate targets, frames, and contexts through the Chrome DevTools Protocol](https://peter-gy.github.io/pyagentbrowser/guides/cdp.html)
-- [Invoke page-provided WebMCP tools](https://peter-gy.github.io/pyagentbrowser/guides/webmcp.html)
-- [Observe a Python-owned browser session in the dashboard](https://peter-gy.github.io/pyagentbrowser/guides/dashboard.html)
-- [Use agent skills and marimo code mode](https://peter-gy.github.io/pyagentbrowser/guides/agent-skills.html)
-- [Call the raw native protocol](https://peter-gy.github.io/pyagentbrowser/guides/native-protocol.html)
-
-## Choose a runtime
-
-`Browser` is synchronous. `AsyncBrowser` mirrors its browser, snapshot, ref,
-query, policy, and capability APIs with awaitable native operations.
-
-`Browser.launch()` starts a local browser before returning. `Browser()` starts
-lazily. `Browser.attach(CDPTarget(...))` connects to an existing Chrome DevTools
-Protocol endpoint. All three paths share the same typed result and lifecycle
-model.
-
-## Installation options
-
-Wheels support Python 3.11 through 3.14 on macOS arm64 and x86-64,
-[manylinux 2.28](https://peps.python.org/pep-0600/)-compatible Linux arm64 and
-x86-64, and Windows x86-64.
-
-```bash
-uv add pyagentbrowser
-uv add "pyagentbrowser[images]"  # Pillow image loading for Screenshot
-uv add "pyagentbrowser[cdp]"     # Direct Chrome DevTools Protocol clients
-```
-
-## Learn and contribute
-
-- [What is pyagentbrowser?](https://peter-gy.github.io/pyagentbrowser/introduction.html)
-- [Runtime model](https://peter-gy.github.io/pyagentbrowser/concepts/runtime-model.html)
-- [Safety model](https://peter-gy.github.io/pyagentbrowser/concepts/safety.html)
-- [API reference](https://peter-gy.github.io/pyagentbrowser/reference/browser.html)
-- [Troubleshooting](https://peter-gy.github.io/pyagentbrowser/troubleshooting.html)
-- [Contributing](CONTRIBUTING.md)
-
-Serve the documentation through [Portless](https://portless.sh/) with
-`make docs-dev`. The main checkout uses
-`https://docs.pyagentbrowser.localhost/`, while linked worktrees receive a
-branch-prefixed subdomain.
+The [documentation site](https://peter-gy.github.io/pyagentbrowser/) covers
+browser workflows, optional packages, supported platforms, and integrations.
+See [examples](examples/) for Python scripts and
+[Contributing](CONTRIBUTING.md) for development setup and checks.
 
 ## License
 
