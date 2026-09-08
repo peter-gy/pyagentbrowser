@@ -1,0 +1,19 @@
+tests/test_browser_integration.py
+  s_88278d14a3e683::t_b4d646a211c4c3 17,724
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "002fe90b2d57d3de4dd0ec233e8ec3f00aa52f18",
+  "prompts": {},
+  "sessions": {
+    "s_88278d14a3e683": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07f58-589f-7dc3-b523-85b54ad30abf",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
