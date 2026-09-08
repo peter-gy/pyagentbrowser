@@ -14,6 +14,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
+from typing import Any, cast
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -720,7 +721,7 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
             return
 
         tools = browser.webmcp.list()
-        availability = navigation["webmcp"]
+        availability = cast(dict[str, Any], navigation["webmcp"])
         assert isinstance(availability, dict)
         assert availability["experimental"] is True
         assert availability["available"] is True
