@@ -81,6 +81,12 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 | `close(*, id=None, label=None, index=None)` | Close a selected or active tab and return `TabCloseResult`. Numeric `index` maps to the stable `tN` suffix. |
 
 Labels are unique within one session. They start with an ASCII letter and contain letters, digits, hyphens, or underscores.
+
+New tabs inherit configured session headers, credentials, user agent, locale,
+timezone, geolocation, offline mode, routes, color scheme, and init scripts
+before their first navigation. The native `click` action with `newTab=True`
+uses the same setup path.
+
 ## `browser.session`
 
 `session.status() -> SessionStatus` reports native session identity, process state, browser state, restore validation, and the latest persistence result. It can inspect a lazy session before Chrome launches.

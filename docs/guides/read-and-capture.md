@@ -61,6 +61,41 @@ Screenshots can target the page or one selector. Set `format` to `png` or `jpeg`
 
 Install `pyagentbrowser[images]` for `Screenshot.pil()` and `Screenshot.image`. Notebook frontends can display PNG and JPEG screenshot bytes directly. `Screenshot.marimo()` returns an image for a [marimo](https://marimo.io/) reactive Python notebook when marimo is installed.
 
+## Record the active page
+
+The native recorder captures the active tab at 30 frames per second by default.
+Install [FFmpeg](https://ffmpeg.org/download.html), the video encoder, and make
+`ffmpeg` available on `PATH` before starting a recording.
+The FFmpeg build needs `libvpx` for WebM or `libx264` for MP4 output.
+
+```python
+from agentbrowser import Browser
+
+with Browser.launch() as browser:
+    browser.page.set_content('<button id="start">Start</button>')
+    browser.native.data("recording_start", path="take.webm", fps=30)
+    browser.evaluate("""
+      document.getElementById('start').animate(
+        [{transform: 'translateX(0)'}, {transform: 'translateX(200px)'}],
+        {duration: 1000, fill: 'forwards'}
+      ).finished.then(() => { document.body.dataset.done = 'true' })
+    """)
+    browser.page.wait_for_function("document.body.dataset.done === 'true'")
+    recording = browser.native.data("recording_stop")
+    print(recording["path"], recording["fps"])
+```
+
+`recording_start` and `recording_restart` accept integer `fps` values from 1
+through 60. Use a `.webm` or `.mp4` output path. `recording_restart` stops the
+current take and starts another at the requested path. Invalid frame rates or
+extensionless paths are rejected before replacing an active take.
+
+Pass `url="https://example.com"` to either action to navigate the active tab
+before recording. These URL calls invalidate direct CDP frame and
+execution-context handles. Omit `url` to capture the current page and its live
+state. Open a tab with `browser.tabs.new()` first when the recording needs a
+separate page.
+
 ## Write a PDF
 
 ```python

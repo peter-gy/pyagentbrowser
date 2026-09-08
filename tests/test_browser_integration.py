@@ -14,6 +14,7 @@ from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
+from typing import Any, cast
 from urllib.parse import quote
 from urllib.request import urlopen
 
@@ -468,6 +469,141 @@ def test_implicit_accessible_roles_resolve_through_live_queries(
         assert browser.find.role("heading", name="skills").text() == "Skills"
 
 
+def test_recording_retains_the_active_page_and_survives_invalid_restart(
+    chrome_path: Path,
+    tmp_path: Path,
+) -> None:
+    ffprobe = shutil.which("ffprobe")
+    assert ffprobe and shutil.which("ffmpeg"), "Recording contracts require FFmpeg and ffprobe"
+    path = tmp_path / "active-page.webm"
+    with _browser(chrome_path) as browser:
+        browser.open(_data_url('<input id="draft">'))
+        browser.evaluate("document.getElementById('draft').value = 'unsaved'")
+        active = next(tab for tab in browser.tabs.list() if tab.active)
+        frame = browser.cdp.frames.get()
+        started = browser.native.data("recording_start", path=str(path), fps=12)
+
+        assert started["fps"] == 12
+        assert next(tab for tab in browser.tabs.list() if tab.active).target_id == active.target_id
+        assert frame.evaluate("document.getElementById('draft').value") == "unsaved"
+        with pytest.raises(BrowserError, match="Invalid fps"):
+            browser.native.data("recording_restart", path=str(tmp_path / "invalid.webm"), fps=0)
+        assert frame.evaluate("document.getElementById('draft').value") == "unsaved"
+        browser.evaluate(
+            """new Promise(resolve => {
+  let frames = 0;
+  function paint() {
+    document.getElementById('draft').value = String(++frames);
+    if (frames === 12) resolve();
+    else requestAnimationFrame(paint);
+  }
+  requestAnimationFrame(paint);
+})"""
+        )
+        stopped = browser.native.data("recording_stop")
+
+    assert stopped["path"] == str(path)
+    assert stopped["fps"] == 12
+    probe = subprocess.run(
+        [
+            ffprobe,
+            "-v",
+            "error",
+            "-select_streams",
+            "v:0",
+            "-count_frames",
+            "-show_entries",
+            "stream=codec_name,r_frame_rate,nb_read_frames",
+            "-of",
+            "json",
+            str(path),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=30,
+    )
+    stream = json.loads(probe.stdout)["streams"][0]
+    assert stream["codec_name"] == "vp8"
+    assert stream["r_frame_rate"] == "12/1"
+    assert int(stream["nb_read_frames"]) > 0
+
+
+def test_recording_restart_navigation_invalidates_held_cdp_frames(
+    chrome_path: Path,
+    tmp_path: Path,
+) -> None:
+    with _browser(chrome_path) as browser:
+        browser.open(_data_url("<title>First take</title>"))
+        browser.native.data("recording_start", path=str(tmp_path / "first.webm"))
+        frame = browser.cdp.frames.get()
+        restarted = browser.native.data(
+            "recording_restart",
+            path=str(tmp_path / "second.webm"),
+            url=_data_url("<title>Second take</title>"),
+        )
+
+        assert restarted["fps"] == 30
+        assert browser.title() == "Second take"
+        with pytest.raises(CDPStaleObjectError, match="stale"):
+            frame.evaluate("document.title")
+        browser.evaluate(
+            """new Promise(resolve => {
+  let frames = 0;
+  function paint() {
+    document.body.textContent = String(++frames);
+    if (frames === 12) resolve();
+    else requestAnimationFrame(paint);
+  }
+  requestAnimationFrame(paint);
+})"""
+        )
+        stopped = browser.native.data("recording_stop")
+        assert stopped["path"] == str(tmp_path / "second.webm")
+
+
+@pytest.mark.parametrize("new_tab_via_click", [False, True], ids=["tab_new", "click"])
+def test_new_tabs_inherit_setup_before_first_navigation_and_share_init_script_handles(
+    chrome_path: Path,
+    local_site: LocalSite,
+    new_tab_via_click: bool,
+) -> None:
+    (local_site.root / "setup.html").write_text(
+        """<a id="next" href="/setup.html">Next</a>
+<script>
+window.firstDocument = {
+  marker: window.initialized ?? null,
+  userAgent: navigator.userAgent,
+  timezone: Intl.DateTimeFormat().resolvedOptions().timeZone
+};
+</script>"""
+    )
+    url = f"{local_site.base_url}/setup.html"
+    with _browser(chrome_path) as browser:
+        browser.open(url)
+        script = browser.native.data("addinitscript", script="window.initialized = 'ready'")
+        browser.native.data("useragent", userAgent="pyagentbrowser-integration")
+        browser.native.data("timezone", timezoneId="America/New_York")
+        if new_tab_via_click:
+            browser.native.data("click", selector="#next", newTab=True)
+        else:
+            browser.tabs.new(url)
+
+        assert browser.evaluate("window.firstDocument") == {
+            "marker": "ready",
+            "userAgent": "pyagentbrowser-integration",
+            "timezone": "America/New_York",
+        }
+        browser.native.data("removeinitscript", identifier=script["identifier"])
+        browser.open(url)
+        assert browser.evaluate("window.firstDocument.marker") is None
+        if new_tab_via_click:
+            browser.native.data("click", selector="#next", newTab=True)
+        else:
+            browser.tabs.new(url)
+        assert browser.evaluate("window.firstDocument.marker") is None
+
+
 @pytest.mark.parametrize(("content_mode", "embeds_text"), [("text", True), ("none", False)])
 def test_har_content_mode_controls_response_body_capture(
     chrome_path: Path,
@@ -574,7 +710,7 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
     )
 
     with _browser(chrome_path) as browser:
-        browser.open(f"{local_site.base_url}/{page_name}")
+        navigation = browser.native.data("navigate", url=f"{local_site.base_url}/{page_name}")
         browser.page.wait_for_function("document.body.dataset.webmcpReady !== undefined")
         if browser.evaluate("document.body.dataset.webmcpReady") == "unavailable":
             assert sys.platform == "darwin"
@@ -585,6 +721,11 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
             return
 
         tools = browser.webmcp.list()
+        availability = cast(dict[str, Any], navigation["webmcp"])
+        assert isinstance(availability, dict)
+        assert availability["experimental"] is True
+        assert availability["available"] is True
+        assert 1 <= availability["toolCount"] <= len(tools)
         set_message = next(tool for tool in tools if tool.name == "set_message")
         completed = browser.webmcp.invoke(
             set_message.name,

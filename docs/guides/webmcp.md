@@ -61,6 +61,23 @@ with Browser.launch() as browser:
 
 Tool names can repeat across frames. Pass the selected tool's `frame_id` to bind the call to its page context.
 
+## Inspect availability after navigation
+
+Raw navigation data includes `webmcp` when the enabled Chrome integration finds
+allowed page tools within its bounded discovery window:
+
+```python
+from agentbrowser import Browser
+
+with Browser.launch() as browser:
+    navigation = browser.native.data("navigate", url="https://example.com")
+    print(navigation.get("webmcp"))
+```
+
+The field reports `experimental`, `available`, and `toolCount`. An absent field
+can mean the page registers its tools later. Call `browser.webmcp.list()` after
+the page is ready to discover those tools.
+
 ## Detach from long-running work
 
 The focused snippet assumes `browser`, `tool`, and `params` belong to an active controller and a tool selected from `webmcp.list()`.
