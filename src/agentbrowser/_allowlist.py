@@ -22,6 +22,7 @@ URL_TARGET_FIELDS: dict[str, tuple[str, ...]] = {
     "pushstate": ("url",),
     "read": ("url",),
     "recording_start": ("url",),
+    "recording_restart": ("url",),
     "tab_new": ("url",),
     "vitals": ("url",),
 }

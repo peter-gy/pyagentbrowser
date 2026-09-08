@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, Self, TypeVar, cast, ov
 from weakref import proxy as weak_proxy
 
 from agentbrowser._browser_common import (
+    CDP_URL_ACTIONS,
     action_clears_pending_confirmation,
     action_closes_browser,
     action_invalidates_cdp,
@@ -746,7 +747,7 @@ class AsyncBrowser:
                 params=params,
                 force_cdp_invalidation=compound_invalidation,
             )
-        elif compound_invalidation and action == "a11y":
+        elif compound_invalidation:
             self._invalidate_cdp()
         return response
 
@@ -790,9 +791,9 @@ class AsyncBrowser:
             params.get("confirmation_id") if action in {"confirm", "deny"} else None
         )
         pending_id = str(confirmation_value) if confirmation_value is not None else None
-        # URL audits navigate before axe runs. Preserve that lifecycle fact
-        # across confirmation because the confirmed response omits the URL.
-        compound_invalidation = action == "a11y" and action_invalidates_cdp(action, params)
+        # URL commands can fail after navigation. Preserve invalidation across
+        # confirmation because the confirmed response omits the URL.
+        compound_invalidation = action in CDP_URL_ACTIONS and action_invalidates_cdp(action, params)
         if action == "confirm" and pending_id in self._pending_cdp_invalidations:
             compound_invalidation = True
         return pending_id, compound_invalidation

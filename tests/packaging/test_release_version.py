@@ -199,11 +199,12 @@ def test_release_candidate_notes_compare_with_the_nearest_release_tag(tmp_path: 
 
 def test_release_check_accepts_current_package_tag() -> None:
     version = package_version()
+    upstream = json.loads((ROOT / "src/agentbrowser/_upstream.json").read_text())
     result = run_release_check(f"v{version}")
 
     assert result.returncode == 0
     assert f"verified pyagentbrowser {version}" in result.stdout
-    assert "with agent-browser v0.36.0" in result.stdout
+    assert f"with agent-browser v{upstream['version']} ({upstream['commit']})" in result.stdout
 
 
 @pytest.mark.parametrize("tag", ["0.36.0.1", "v0.36.0.0", "v0.36.0.post1"])

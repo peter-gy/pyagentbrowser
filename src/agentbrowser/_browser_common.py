@@ -11,6 +11,7 @@ from agentbrowser.models import (
     SnapshotDiff,
 )
 
+CDP_URL_ACTIONS = frozenset({"a11y", "recording_start", "recording_restart"})
 CDP_INVALIDATING_ACTIONS = frozenset(
     {
         "navigate",
@@ -105,8 +106,9 @@ def action_invalidates_cdp(
     action: str,
     params: Mapping[str, Any] | None = None,
 ) -> bool:
-    if action == "a11y":
-        return params is not None and isinstance(params.get("url"), str)
+    if action in CDP_URL_ACTIONS:
+        url = params.get("url") if params is not None else None
+        return isinstance(url, str) and (action == "a11y" or bool(url))
     return action in CDP_INVALIDATING_ACTIONS
 
 

@@ -525,6 +525,82 @@ def test_accessibility_audit_rejects_invalid_native_targets() -> None:
         browser.diagnostics.accessibility()
 
 
+@pytest.mark.parametrize("action", ["recording_start", "recording_restart"])
+def test_recording_navigation_preserves_the_cdp_lifecycle(action: str) -> None:
+    native = ScriptedNative({action: {"fps": 30}, "__agent_browser_internal_shutdown": {}})
+    with _browser(native) as browser:
+        probe = _InvalidationProbe()
+        browser._cdp_controller = cast(Any, probe)
+
+        browser.native.data(action, path="take.webm", url="")
+        assert probe.invalidations == 0
+
+        browser.native.data(action, path="take.webm", url="https://example.com")
+        assert probe.invalidations == 1
+
+        native.replies[action] = {"success": False, "error": "Capture failed after navigation"}
+        response = browser.native.execute(action, path="take.webm", url="https://example.com")
+        assert response.success is False
+        assert probe.invalidations == 2
+
+
+@pytest.mark.parametrize("action", ["recording_start", "recording_restart"])
+def test_confirmed_recording_navigation_invalidates_cdp(action: str) -> None:
+    native = ConfirmationNative(action=action, result={"fps": 30})
+    with _browser(native) as browser:
+        probe = _InvalidationProbe()
+        browser._cdp_controller = cast(Any, probe)
+
+        pending = browser.native.execute(action, path="take.webm", url="https://example.com")
+        assert pending.success is True
+        assert probe.invalidations == 0
+
+        browser.native.data("confirm", confirmation_id=native.confirmation_id)
+        assert probe.invalidations == 1
+
+
+@pytest.mark.parametrize("action", ["recording_start", "recording_restart"])
+def test_async_recording_navigation_preserves_the_cdp_lifecycle(action: str) -> None:
+    async def run() -> None:
+        native = ScriptedNative({action: {"fps": 30}, "__agent_browser_internal_shutdown": {}})
+        async with AsyncBrowser(_native_session=AsyncNativeSession(native=native)) as browser:
+            probe = _AsyncInvalidationProbe()
+            browser._cdp_controller = cast(Any, probe)
+
+            await browser.native.data(action, path="take.webm")
+            assert probe.invalidations == 0
+
+            await browser.native.data(action, path="take.webm", url="https://example.com")
+            assert probe.invalidations == 1
+
+            native.replies[action] = {"success": False, "error": "Capture failed after navigation"}
+            response = await browser.native.execute(
+                action, path="take.webm", url="https://example.com"
+            )
+            assert response.success is False
+            assert probe.invalidations == 2
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("action", ["recording_start", "recording_restart"])
+def test_async_confirmed_recording_navigation_invalidates_cdp(action: str) -> None:
+    async def run() -> None:
+        native = ConfirmationNative(action=action, result={"fps": 30})
+        async with AsyncBrowser(_native_session=AsyncNativeSession(native=native)) as browser:
+            probe = _AsyncInvalidationProbe()
+            browser._cdp_controller = cast(Any, probe)
+
+            with pytest.raises(ConfirmationRequired) as pending:
+                await browser.native.data(action, path="take.webm", url="https://example.com")
+            assert probe.invalidations == 0
+
+            await pending.value.pending.confirm()
+            assert probe.invalidations == 1
+
+    asyncio.run(run())
+
+
 def test_accessibility_audit_invalidates_cdp_only_when_it_navigates() -> None:
     native = ScriptedNative(
         {

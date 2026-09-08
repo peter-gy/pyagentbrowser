@@ -49,6 +49,7 @@ def test_allowlist_forwards_allowed_navigation(url: str) -> None:
         ("pushstate", "url", "https://evil.example/path"),
         ("read", "url", "https://evil.example/article"),
         ("recording_start", "url", "https://evil.example/path"),
+        ("recording_restart", "url", "https://evil.example/path"),
         ("tab_new", "url", "https://evil.example/path"),
         ("vitals", "url", "https://evil.example/path"),
         ("frame", "url", "*://*.evil.example/*"),
