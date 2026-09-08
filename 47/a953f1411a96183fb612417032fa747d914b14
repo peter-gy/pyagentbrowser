@@ -1,0 +1,62 @@
+uv.lock
+  ai_agent 160
+docs/guides/webmcp.md
+  s_88278d14a3e683::t_0dbc8f586b1473 77-79
+  s_88278d14a3e683::t_37de9e417517a4 64-76,80
+tests/test_allowlist.py
+  s_88278d14a3e683::t_477e8cb438bfba 52
+src/agentbrowser/browser_async.py
+  s_88278d14a3e683::t_6be47799f744e1 13,750,794-796
+src/agentbrowser/_version.py
+  s_88278d14a3e683::t_f12b1848323255 7
+pyproject.toml
+  s_88278d14a3e683::t_f12b1848323255 3
+docs/reference/namespaces.md
+  s_88278d14a3e683::t_1ac671e9b6fc3f 84-89
+tests/test_browser_api.py
+  s_88278d14a3e683::t_477e8cb438bfba 528-603
+src/agentbrowser/_browser_common.py
+  s_88278d14a3e683::t_135dd9429fdf17 14,109-111
+src/agentbrowser/_allowlist.py
+  s_88278d14a3e683::t_135dd9429fdf17 25
+src/agentbrowser/browser.py
+  s_88278d14a3e683::t_6be47799f744e1 12,778,822-824
+.github/workflows/check-release.yml
+  s_88278d14a3e683::t_c154c29836ed67 198-207
+tests/test_browser_integration.py
+  s_88278d14a3e683::t_c073a43636ca13 491-501,564,568,571-572,582,586-589,599-602
+  s_88278d14a3e683::t_c154c29836ed67 471-478,481-490,502-508,513,518-548,560-563,565-567,569-570,573-581,583-585,590-598,603-605,712
+  s_88278d14a3e683::t_be574892abf257 549-559
+  s_88278d14a3e683::t_f12b1848323255 509-512,514-517
+  s_88278d14a3e683::t_f7297fe426b378 723-727
+  s_88278d14a3e683::t_e825be52d90d4f 479-480
+docs/guides/read-and-capture.md
+  s_88278d14a3e683::t_0dbc8f586b1473 69
+  s_88278d14a3e683::t_37de9e417517a4 64-68,70-98
+src/agentbrowser/_upstream.json
+  s_88278d14a3e683::t_8227b0ba595b12 2-3
+tests/packaging/test_release_version.py
+  s_88278d14a3e683::t_5fa62de16833c1 202,207
+crates/pyagentbrowser/Cargo.toml
+  s_88278d14a3e683::t_f12b1848323255 3
+Cargo.lock
+  ai_agent 48,1487
+crates/agent-browser-adapter/Cargo.toml
+  s_88278d14a3e683::t_8227b0ba595b12 3
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "47a953f1411a96183fb612417032fa747d914b14",
+  "prompts": {},
+  "sessions": {
+    "s_88278d14a3e683": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a07f58-589f-7dc3-b523-85b54ad30abf",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
