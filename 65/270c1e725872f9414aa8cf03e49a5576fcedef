@@ -1,0 +1,32 @@
+src/agentbrowser/_upstream.json
+  s_d98d7b81b4b7ec::t_d7bedaa269c329 2-3
+pyproject.toml
+  s_d98d7b81b4b7ec::t_f40c1c5b18fe7d 3
+src/agentbrowser/_version.py
+  s_d98d7b81b4b7ec::t_f40c1c5b18fe7d 7
+scripts/package_smoke.py
+  s_d98d7b81b4b7ec::t_8806f64b2ce268 133
+crates/pyagentbrowser/Cargo.toml
+  s_d98d7b81b4b7ec::t_f40c1c5b18fe7d 3
+crates/agent-browser-adapter/Cargo.toml
+  s_d98d7b81b4b7ec::t_d7bedaa269c329 3
+  s_d98d7b81b4b7ec::t_8806f64b2ce268 46
+tests/test_windows_integration.py
+  s_d98d7b81b4b7ec::t_3921e21fa6f104 1-88
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "65270c1e725872f9414aa8cf03e49a5576fcedef",
+  "prompts": {},
+  "sessions": {
+    "s_d98d7b81b4b7ec": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a084fe-2838-7b11-a109-017623e574a5",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
