@@ -160,6 +160,7 @@ def test_sync_scoped_operations_restore_public_results_after_confirmation(
     scroll, _ = _confirmed_sync("evaluate", _scroll_data(), lambda b: b.page.scroll.by(y=100))
 
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))
     screenshot_path = tmp_path / "captures" / "page.png"
     screenshot, screenshot_native = _confirmed_sync(
         "screenshot",
@@ -203,6 +204,7 @@ def test_async_scoped_operations_restore_public_results_after_confirmation(
         )
 
         monkeypatch.setenv("HOME", str(tmp_path))
+        monkeypatch.setenv("USERPROFILE", str(tmp_path))
         screenshot_path = tmp_path / "captures" / "async.png"
         screenshot, screenshot_native = await _confirmed_async(
             "screenshot",
