@@ -183,6 +183,7 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
         let module_path = match *name {
             "actions" => rewrite_actions_module(out_dir, &path),
             "browser" => rewrite_browser_module(out_dir, &path),
+            "screenshot" => rewrite_screenshot_module(out_dir, &path),
             "state" => rewrite_state_module(out_dir, &path),
             "stream" => rewrite_stream_module(out_dir, &path),
             "tab_binding" => rewrite_tab_binding_module(out_dir, &path),
@@ -349,9 +350,114 @@ fn rewrite_actions_module(out_dir: &Path, source: &Path) -> PathBuf {
     let contents = rewrite_scoped_page_commands(contents);
     let contents = rewrite_frame_commands(contents);
     let contents = rewrite_scoped_waits(contents);
+    let contents = rewrite_frame_capture(contents);
     let contents = rewrite_dashboard_streaming(contents);
     let contents = rewrite_stream_result_success(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated actions file");
+    destination
+}
+
+fn rewrite_frame_capture(contents: String) -> String {
+    const UPSTREAM_OPTIONS_END: &str = r#"        output_dir: cmd
+            .get("screenshotDir")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+    };
+
+    if annotate {"#;
+    const FRAME_OPTIONS_END: &str = r#"        output_dir: cmd
+            .get("screenshotDir")
+            .and_then(|v| v.as_str())
+            .map(String::from),
+        frame_id: state.active_frame_id.clone(),
+    };
+
+    if options.frame_id.is_some() && options.full_page {
+        return Err("Frame screenshots capture the rendered frame rectangle. fullPage is a page capture option".to_string());
+    }
+    if options.frame_id.is_some() && annotate {
+        return Err("Annotated frame screenshots require selector-scoped page capture".to_string());
+    }
+
+    if annotate {"#;
+    const UPSTREAM_DIFF_OPTIONS: &str = r#"        annotate: false,
+        output_dir: None,
+    };
+
+    let result = screenshot::take_screenshot("#;
+    const FRAME_DIFF_OPTIONS: &str = r#"        annotate: false,
+        output_dir: None,
+        frame_id: state.active_frame_id.clone(),
+    };
+
+    let result = screenshot::take_screenshot("#;
+    let rewritten = replace_once_named(
+        contents,
+        "frame screenshot options",
+        UPSTREAM_OPTIONS_END,
+        FRAME_OPTIONS_END,
+    );
+    replace_once_named(
+        rewritten,
+        "frame diff screenshot options",
+        UPSTREAM_DIFF_OPTIONS,
+        FRAME_DIFF_OPTIONS,
+    )
+}
+
+fn rewrite_screenshot_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let destination = out_dir.join("agent_browser_screenshot.rs");
+    let contents = read_rewrite_source(source, "screenshot file");
+    const UPSTREAM_OPTIONS: &str = r#"    pub annotate: bool,
+    pub output_dir: Option<String>,
+}"#;
+    const FRAME_OPTIONS: &str = r#"    pub annotate: bool,
+    pub output_dir: Option<String>,
+    pub frame_id: Option<String>,
+}"#;
+    const UPSTREAM_DEFAULT: &str = r#"            annotate: false,
+            output_dir: None,
+        }"#;
+    const FRAME_DEFAULT: &str = r#"            annotate: false,
+            output_dir: None,
+            frame_id: None,
+        }"#;
+    const UPSTREAM_CAPTURE_BRANCH: &str = r#"    if options.full_page {
+        let metrics: Value = client"#;
+    const FRAME_CAPTURE_BRANCH: &str = r#"    if let Some(frame_id) = options.frame_id.as_deref() {
+        let owner = super::element::frame_owner_object_id(client, session_id, frame_id).await?;
+        let rect = get_rect_for_object(client, session_id, &owner)
+            .await?
+            .ok_or_else(|| format!("Could not measure the owner element of frame {}", frame_id))?;
+        params.clip = Some(Viewport {
+            x: rect.x,
+            y: rect.y,
+            width: rect.width,
+            height: rect.height,
+            scale: 1.0,
+        });
+    } else if options.full_page {
+        let metrics: Value = client"#;
+
+    let rewritten = replace_once_named(
+        contents,
+        "frame screenshot option",
+        UPSTREAM_OPTIONS,
+        FRAME_OPTIONS,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "frame screenshot default",
+        UPSTREAM_DEFAULT,
+        FRAME_DEFAULT,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "frame screenshot clip",
+        UPSTREAM_CAPTURE_BRANCH,
+        FRAME_CAPTURE_BRANCH,
+    );
+    fs::write(destination.as_path(), rewritten).expect("failed to write generated screenshot file");
     destination
 }
 

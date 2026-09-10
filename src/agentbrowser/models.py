@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING, Any, Generic, Literal, TypeAlias, TypeVar, cas
 if TYPE_CHECKING:
     from PIL.Image import Image as PILImage
 
+    from agentbrowser.host import ImageContent
+
 else:
     PILImage = Any
 
@@ -870,6 +872,38 @@ class BoundingBox:
 
 
 @dataclass(frozen=True, slots=True)
+class DocumentScope:
+    """Browser target and frame identity for one document operation."""
+
+    target_id: str | None = None
+    frame_id: str | None = None
+    url: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class ScrollPosition:
+    """Scroll offsets in CSS pixels."""
+
+    x: float
+    y: float
+
+
+@dataclass(frozen=True, slots=True)
+class ScrollResult:
+    """Measured effect of scrolling one document or container."""
+
+    scope: DocumentScope
+    container: str
+    before: ScrollPosition
+    after: ScrollPosition
+
+    @property
+    def moved(self) -> bool:
+        """Return whether either scroll offset changed."""
+        return self.before != self.after
+
+
+@dataclass(frozen=True, slots=True)
 class TabInfo:
     """Metadata for one browser tab or target."""
 
@@ -1075,6 +1109,7 @@ class Screenshot:
     format: str
     annotations: tuple[ScreenshotAnnotation, ...]
     raw: Mapping[str, Any]
+    scope: DocumentScope | None = None
     _image: PILImage | None = field(default=None, init=False, compare=False, repr=False)
 
     @property
@@ -1120,6 +1155,12 @@ class Screenshot:
     def bytes(self) -> builtins.bytes:
         """Return the screenshot file bytes."""
         return self.path.read_bytes()
+
+    def content(self) -> ImageContent:
+        """Return image bytes and MIME type for an agent host."""
+        from agentbrowser.host import ImageContent
+
+        return ImageContent(self.bytes(), _image_mime_type(self.format), self.path)
 
     def _repr_png_(self) -> builtins.bytes | None:
         """Return PNG bytes for notebook frontends when applicable."""
@@ -1173,6 +1214,7 @@ class Screenshot:
             format=self.format,
             annotations=self.annotations,
             raw={**self.raw, "path": str(target)},
+            scope=self.scope,
         )
 
 

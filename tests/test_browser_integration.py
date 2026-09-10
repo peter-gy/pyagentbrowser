@@ -315,6 +315,7 @@ def _write_frame_site(site: LocalSite) -> None:
     )
     (site.root / "story.html").write_text(
         "<title>Story</title><button onclick=\"this.textContent='Changed'\">Change</button>"
+        '<div style="height:2000px"></div>'
     )
 
 
@@ -402,10 +403,19 @@ def test_page_and_nested_frame_handles_keep_one_explicit_scope(
         story = preview.frames.get(selector="#story")
         before = story.observe()
         result = before.one(role="button", name="Change").click(wait=Wait.text("Changed"))
+        screenshot = story.capture.screenshot(
+            local_site.root / "captures" / "story.png",
+            wait_ms=0,
+        )
+        movement = story.scroll.by(y=200)
 
         assert preview.title() == "Nested"
         assert story.title() == "Story"
         assert result.after.one(role="button", name="Changed")
+        assert movement.moved and movement.after.y > movement.before.y
+        assert screenshot.scope is not None
+        assert screenshot.scope.frame_id == story.frame_id
+        assert screenshot.pil().size[0] > 0
         assert browser.page.title() == "Host"
 
 

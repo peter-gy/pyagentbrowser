@@ -72,6 +72,17 @@ class ExecutionContext:
         if self.timeout_ms is not None and self.timeout_ms < 0:
             raise ValueError("ExecutionContext.timeout_ms must be non-negative")
 
+    def limit(self, requested_ms: int | None = None, *, cleanup_ms: int = 1_000) -> int | None:
+        """Return an operation timeout that reserves host time for cleanup."""
+        if requested_ms is not None and requested_ms < 0:
+            raise ValueError("requested_ms must be non-negative")
+        if cleanup_ms < 0:
+            raise ValueError("cleanup_ms must be non-negative")
+        available = None if self.timeout_ms is None else max(0, self.timeout_ms - cleanup_ms)
+        if requested_ms is None:
+            return available
+        return requested_ms if available is None else min(requested_ms, available)
+
 
 @runtime_checkable
 class AgentHost(Protocol):

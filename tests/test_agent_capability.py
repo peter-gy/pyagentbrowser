@@ -186,7 +186,9 @@ def test_host_contract_values_validate_model_facing_boundaries() -> None:
 
     assert content.source == Path("capture.png")
     assert ImageDelivery("submitted", "image-1").status == "submitted"
-    assert ExecutionContext(timeout_ms=30_000, cancellation=True).cancellation
+    context = ExecutionContext(timeout_ms=30_000, cancellation=True)
+    assert context.cancellation
+    assert context.limit(60_000) == 29_000
     with pytest.raises(ValueError, match="image MIME type"):
         ImageContent(b"png", "text/plain")
     with pytest.raises(ValueError, match="non-negative"):

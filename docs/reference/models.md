@@ -89,7 +89,9 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | --- | --- |
 | `ReadResult` | Requested `url`, `final_url`, status, content type, source, truncation state, content, and raw data. |
 | `ReadMode` | Selects Markdown negotiation, raw response body, outline, `llms.txt`, or `llms-full.txt` behavior. |
-| `Screenshot` | File path, format, annotations, raw capture data, bytes, copying, image loading, and notebook display. |
+| `DocumentScope` | Exact page-target and frame identity attached to a document operation. |
+| `ScrollResult` | Document scope, container, before and after offsets, and derived movement state. |
+| `Screenshot` | File path, format, scope, annotations, raw capture data, bytes, host content, copying, image loading, and notebook display. |
 | `ConsoleMessage` | Console type, text, level, URL, line, column, and raw data. |
 
 ### `Screenshot`
@@ -97,6 +99,7 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | Member | Contract |
 | --- | --- |
 | `bytes()` | Read the captured file bytes. |
+| `content()` | Return `ImageContent` for an agent host. |
 | `save(path)` | Copy the file and return a new `Screenshot` for the target path. |
 | `pil(*, mode=None)` | Load a Pillow image and optionally convert its mode. |
 | `image` | Lazily load and cache the Pillow image. |
@@ -104,6 +107,12 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | `annotations` | Ref number, role, accessible name, and bounding box for annotated elements. |
 
 `pil()` and `image` require the `images` extra. `marimo()` requires marimo in the application environment. PNG and JPEG captures expose notebook display data from their file bytes.
+
+`EvidenceManifest.record()` associates a snapshot, action result, screenshot,
+or scroll result with optional `ImageDelivery`, agent assessment, and named
+`EvidenceAssertion` values. `to_dict()` returns a JSON-compatible report. A
+delivery receipt records the host boundary. An assessment records what the
+agent concluded after receiving the evidence.
 
 ## Session, tab, and storage models
 

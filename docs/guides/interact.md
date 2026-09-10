@@ -109,6 +109,17 @@ print(checkout.evaluate("document.title"))
 The `Frame` carries its browser frame identity through queries, evaluation,
 waits, snapshots, and ref actions. `frame.frames` resolves nested child frames.
 
+## Measure scrolling
+
+```python
+movement = checkout.scroll.by(y=600, selector="#results")
+print(movement.before.y, movement.after.y, movement.moved)
+```
+
+`scroll.by()` operates in the page or frame document that owns it. Its
+`ScrollResult` identifies the document scope and reports the selected
+container's offsets before and after the mutation.
+
 ## Emulate the browser environment
 
 ```python

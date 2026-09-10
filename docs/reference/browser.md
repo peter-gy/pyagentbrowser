@@ -59,6 +59,11 @@ Closing releases controller-owned browser, dashboard stream, direct CDP, confirm
 
 Root page methods provide the common path. `browser.page` adds document replacement, history, readiness, selector, function, and explicit load-state operations.
 
+`capabilities(host=None)` reports configured screenshot, image, direct CDP, and
+host-delivery features. `healthcheck()` imports optional image and WebSocket
+dependencies and reports their loaded module paths. Both methods avoid browser
+startup.
+
 `read()` requires a positive `timeout_ms` when supplied. `headers` adds HTTP request headers. A caller-supplied `Accept` header disables Markdown negotiation fallbacks. `allowed_domains` adds a read-specific allowlist, and every redirect or fallback URL must satisfy it plus the session allowlist.
 
 ## `LaunchOptions`

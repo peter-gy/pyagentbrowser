@@ -85,6 +85,7 @@ from agentbrowser.session import (
 
 if TYPE_CHECKING:
     from agentbrowser.cdp import CDPController
+    from agentbrowser.health import BrowserCapabilities, HealthCheck
 
 T = TypeVar("T")
 U = TypeVar("U")
@@ -507,6 +508,18 @@ class Browser:
     def closed(self) -> bool:
         """Whether this browser has been closed."""
         return self._closed
+
+    def capabilities(self, *, host: object | None = None) -> BrowserCapabilities:
+        """Return configured browser and host-integration features."""
+        from agentbrowser.health import capabilities
+
+        return capabilities(host=host)
+
+    def healthcheck(self) -> HealthCheck:
+        """Probe optional browser dependencies without launching Chrome."""
+        from agentbrowser.health import healthcheck
+
+        return healthcheck()
 
     @classmethod
     def launch(

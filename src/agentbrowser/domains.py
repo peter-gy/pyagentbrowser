@@ -42,6 +42,7 @@ from agentbrowser.models import (
     ConfirmationRequired,
     ConsoleMessage,
     Cookie,
+    DocumentScope,
     HarContentMode,
     JSONMapping,
     LoadState,
@@ -55,6 +56,8 @@ from agentbrowser.models import (
     RouteResponse,
     SameSite,
     Screenshot,
+    ScrollPosition,
+    ScrollResult,
     SessionStatus,
     SnapshotDiff,
     StorageArea,
@@ -175,6 +178,11 @@ class Page:
         return self.browser._command(action, **params)
 
     @property
+    def scope(self) -> DocumentScope:
+        """Return the browser target and frame identity for this handle."""
+        return DocumentScope(self.target_id, self.frame_id, self.frame_url or None)
+
+    @property
     def find(self) -> Any:
         """Return live queries bound to this document."""
         from agentbrowser.query import Queries
@@ -190,6 +198,11 @@ class Page:
     def frames(self) -> Frames:
         """Return child-frame discovery bound to this document."""
         return Frames(self)
+
+    @property
+    def scroll(self) -> Scroll:
+        """Return measured document and container scrolling."""
+        return Scroll(self)
 
     def observe(self, spec: Any = None) -> Any:
         """Capture an accessibility snapshot bound to this document."""
@@ -552,6 +565,52 @@ def _collect_frame_records(
 
 
 @dataclass(frozen=True, slots=True)
+class Scroll:
+    """Measured scrolling bound to one page or frame document."""
+
+    page: Page
+
+    def by(
+        self,
+        *,
+        x: float = 0,
+        y: float = 0,
+        selector: str | None = None,
+    ) -> ScrollResult:
+        """Scroll a document or container and return its offsets before and after."""
+        selector_json = json.dumps(selector)
+        result = self.page.evaluate(
+            f"""(() => {{
+                const element = {selector_json} === null
+                    ? document.scrollingElement
+                    : document.querySelector({selector_json});
+                if (!element) throw new Error('scroll container not found');
+                const before = {{x: element.scrollLeft, y: element.scrollTop}};
+                element.scrollBy({{left: {x!r}, top: {y!r}, behavior: 'instant'}});
+                return {{before, after: {{x: element.scrollLeft, y: element.scrollTop}}}};
+            }})()"""
+        )
+        if not isinstance(result, Mapping):
+            raise NativeParseError("scroll evaluation must return an object")
+        return ScrollResult(
+            self.page.scope,
+            selector or "document",
+            _scroll_position(result.get("before")),
+            _scroll_position(result.get("after")),
+        )
+
+
+def _scroll_position(value: Any) -> ScrollPosition:
+    if not isinstance(value, Mapping):
+        raise NativeParseError("scroll position must be an object")
+    x = value.get("x")
+    y = value.get("y")
+    if not isinstance(x, int | float) or not isinstance(y, int | float):
+        raise NativeParseError("scroll offsets must be numbers")
+    return ScrollPosition(float(x), float(y))
+
+
+@dataclass(frozen=True, slots=True)
 class Capture:
     """Screenshot and PDF capture helpers."""
 
@@ -596,7 +655,11 @@ class Capture:
             Parsed screenshot metadata and file path.
         """
         _wait_before_screenshot(wait_ms)
-        return self.browser._command(
+        if path is not None:
+            Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+        if output_dir is not None:
+            Path(output_dir).expanduser().mkdir(parents=True, exist_ok=True)
+        screenshot = self.browser._command(
             "screenshot",
             _decode=lambda data: screenshot_from_data(data, format=format),
             **screenshot_params(
@@ -609,6 +672,8 @@ class Capture:
                 quality=quality,
             ),
         )
+        scope = getattr(self.browser, "scope", None)
+        return replace(screenshot, scope=scope if isinstance(scope, DocumentScope) else None)
 
     def pdf(
         self,

@@ -47,6 +47,34 @@ Pass `session=agentbrowser.SessionOptions(...)` to `create()`, `open()`, or
 another session option. Duplicate names raise `ValueError`. `get()` retrieves
 one open controller and `close()` releases it.
 
+## Connect through an agent host
+
+An `AgentHost` provides the application target, model-facing image delivery,
+and the current execution limit. The target distinguishes a URL to open in a
+new automation browser from an authorized connection to an exact existing
+page.
+
+```python
+import agentbrowser.agent as browser_agent
+from agentbrowser import AttachedTarget, OpenTarget
+
+target = host.current_target()
+if isinstance(target, OpenTarget):
+    browser = browser_agent.open("review", target)
+elif isinstance(target, AttachedTarget):
+    browser = browser_agent.attach("review", target)
+
+timeout_ms = host.execution_context().limit(10_000)
+browser.page.wait_for_text("Ready", timeout_ms=timeout_ms)
+screenshot = browser.page.capture.screenshot("artifacts/ready.png")
+delivery = host.emit_image(screenshot.content())
+```
+
+`ExecutionContext.limit()` reserves one second for tool cleanup by default.
+Hosts that support work across calls report `managed_tasks=True`. A Python
+background task remains bound to its Python process unless the host documents
+stronger ownership.
+
 ```python
 plugin = browser_agent.agent_plugin()
 skill = browser_agent.agent_skill()

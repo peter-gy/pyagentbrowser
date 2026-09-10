@@ -24,6 +24,9 @@ from agentbrowser import (
     CloseResult,
     ConfirmationRequired,
     DashboardOptions,
+    DocumentScope,
+    EvidenceAssertion,
+    EvidenceManifest,
     Frame,
     LaunchOptions,
     NativeParseError,
@@ -35,6 +38,7 @@ from agentbrowser import (
     RestoreOptions,
     RestoreSaveError,
     Screenshot,
+    ScrollResult,
     SessionOptions,
     SessionStatus,
     Snapshot,
@@ -232,6 +236,72 @@ def test_tabs_get_returns_page_bound_to_exact_target() -> None:
     assert page.title() == "Example"
     assert native.commands[1]["_targetId"] == "0123456789ABCDEF"
     assert native.commands[1]["_frameId"] == ""
+
+
+def test_screenshot_creates_artifact_directory_and_exposes_host_content(tmp_path: Path) -> None:
+    path = tmp_path / "nested" / "capture.png"
+
+    def capture(_command: dict[str, Any]) -> dict[str, Any]:
+        assert path.parent.is_dir()
+        path.write_bytes(b"png-bytes")
+        return {"path": str(path)}
+
+    native = ScriptedNative({"screenshot": capture})
+    browser = _browser(native)
+
+    screenshot = browser.page.capture.screenshot(path, wait_ms=0)
+
+    assert path.parent.is_dir()
+    assert screenshot.scope == DocumentScope()
+    assert screenshot.content().data == b"png-bytes"
+    assert screenshot.content().media_type == "image/png"
+
+
+def test_scroll_returns_measured_scope_and_offsets() -> None:
+    native = ScriptedNative(
+        {"evaluate": {"result": {"before": {"x": 0, "y": 100}, "after": {"x": 0, "y": 700}}}}
+    )
+    browser = _browser(native)
+
+    result = browser.page.scroll.by(y=600, selector="#results")
+
+    assert isinstance(result, ScrollResult)
+    assert result.container == "#results"
+    assert result.before.y == 100
+    assert result.after.y == 700
+    assert result.moved
+
+
+def test_capabilities_and_healthcheck_do_not_launch_browser() -> None:
+    browser = _browser(ScriptedNative(default={}))
+
+    capabilities = browser.capabilities()
+    health = browser.healthcheck()
+
+    assert capabilities.screenshots and capabilities.image_bytes
+    assert not capabilities.host_image_delivery
+    assert {check.name for check in health.checks} == {"pillow", "direct_cdp"}
+    assert not browser.is_launched
+
+
+def test_evidence_manifest_separates_capture_delivery_and_assessment(tmp_path: Path) -> None:
+    path = tmp_path / "capture.png"
+    path.write_bytes(b"png")
+    screenshot = Screenshot(path, "png", (), {})
+    manifest = EvidenceManifest()
+
+    record = manifest.record(
+        "mobile-results",
+        screenshot,
+        assessment="No horizontal clipping at 390 CSS pixels.",
+        assertions=(EvidenceAssertion("content changed", True),),
+    )
+
+    data = record.to_dict()
+    assert data["captured"] is True
+    assert data["delivery"] is None
+    assert data["assessment"] == "No horizontal clipping at 390 CSS pixels."
+    assert manifest.to_dict()["records"] == [data]
 
 
 def test_async_frame_handles_apply_the_same_explicit_scope() -> None:

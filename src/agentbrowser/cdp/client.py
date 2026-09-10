@@ -260,10 +260,11 @@ class AsyncCDPClient:
 def _load_sync_websocket_connect() -> Callable[[str], AbstractContextManager[SyncWebSocket]]:
     try:
         from websockets.sync.client import connect
-    except ModuleNotFoundError as exc:
+    except ImportError as exc:
         raise ImportError(
-            "CDP frame/context evaluation requires the optional cdp extra. "
-            'install pyagentbrowser with "pyagentbrowser[cdp]" or install websockets.'
+            "Direct CDP could not load its websockets transport. Run "
+            "browser.healthcheck() for loaded module paths and restart the Python process "
+            'after installing "pyagentbrowser[cdp]".'
         ) from exc
     return cast(Callable[[str], AbstractContextManager[SyncWebSocket]], connect)
 
@@ -271,9 +272,10 @@ def _load_sync_websocket_connect() -> Callable[[str], AbstractContextManager[Syn
 def _load_async_websocket_connect() -> AsyncConnect:
     try:
         from websockets.asyncio.client import connect
-    except ModuleNotFoundError as exc:
+    except ImportError as exc:
         raise ImportError(
-            "Async CDP frame/context evaluation requires the optional cdp extra. "
-            'install pyagentbrowser with "pyagentbrowser[cdp]" or install websockets.'
+            "Async direct CDP could not load its websockets transport. Run "
+            "browser.healthcheck() for loaded module paths and restart the Python process "
+            'after installing "pyagentbrowser[cdp]".'
         ) from exc
     return cast(AsyncConnect, connect)

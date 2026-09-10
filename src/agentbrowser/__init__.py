@@ -10,6 +10,7 @@ from agentbrowser.browser import Browser, PendingAction
 from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
 from agentbrowser.domains import Frame, Page
 from agentbrowser.domains_async import AsyncFrame, AsyncPage
+from agentbrowser.health import BrowserCapabilities, HealthCheck, HealthCheckEntry
 from agentbrowser.host import (
     AgentHost,
     AttachedTarget,
@@ -25,6 +26,7 @@ from agentbrowser.launch import (
     LaunchOptions,
     SessionOptions,
 )
+from agentbrowser.manifest import EvidenceAssertion, EvidenceManifest, EvidenceRecord
 from agentbrowser.models import (
     AccessibilityAudit,
     AccessibilityCounts,
@@ -40,6 +42,7 @@ from agentbrowser.models import (
     ConsoleMessage,
     Cookie,
     DashboardOptions,
+    DocumentScope,
     HarContentMode,
     NativeParseError,
     NetworkRequest,
@@ -51,6 +54,8 @@ from agentbrowser.models import (
     RestoreSaveError,
     RouteResponse,
     Screenshot,
+    ScrollPosition,
+    ScrollResult,
     SessionId,
     SessionStatus,
     SnapshotDiff,
@@ -94,6 +99,7 @@ __all__ = [
     "AsyncStaleRefError",
     "AttachedTarget",
     "Browser",
+    "BrowserCapabilities",
     "BrowserError",
     "BrowserInstallError",
     "BrowserResponse",
@@ -104,9 +110,15 @@ __all__ = [
     "ConsoleMessage",
     "Cookie",
     "DashboardOptions",
+    "DocumentScope",
+    "EvidenceAssertion",
+    "EvidenceManifest",
+    "EvidenceRecord",
     "ExecutionContext",
     "Frame",
     "HarContentMode",
+    "HealthCheck",
+    "HealthCheckEntry",
     "ImageContent",
     "ImageDelivery",
     "InstallResult",
@@ -126,6 +138,8 @@ __all__ = [
     "RestoreSaveError",
     "RouteResponse",
     "Screenshot",
+    "ScrollPosition",
+    "ScrollResult",
     "SessionId",
     "SessionOptions",
     "SessionStatus",

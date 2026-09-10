@@ -47,8 +47,8 @@ from agentbrowser import Browser
 
 with Browser.launch() as browser:
     browser.open("https://example.com")
-    screenshot = browser.capture.screenshot(
-        "example.png",
+    screenshot = browser.page.capture.screenshot(
+        "artifacts/example.png",
         full_page=True,
         annotate=True,
     )
@@ -57,9 +57,20 @@ print(screenshot.path)
 print(screenshot.annotations)
 ```
 
-Screenshots can target the page or one selector. Set `format` to `png` or `jpeg`. JPEG quality ranges from 0 through 100. `wait_ms` adds a bounded delay before capture and defaults to 100 milliseconds.
+Screenshot capture creates the artifact directory. `page.capture` targets the
+page and `frame.capture` targets the rendered frame rectangle. Set `format` to
+`png` or `jpeg`. JPEG quality ranges from 0 through 100. `wait_ms` adds a
+bounded delay before capture and defaults to 100 milliseconds.
 
-Install `pyagentbrowser[images]` for `Screenshot.pil()` and `Screenshot.image`. Notebook frontends can display PNG and JPEG screenshot bytes directly. `Screenshot.marimo()` returns an image for a [marimo](https://marimo.io/) reactive Python notebook when marimo is installed.
+`Screenshot.content()` returns `ImageContent` with bytes, MIME type, and source
+path for `AgentHost.emit_image()`. The resulting `ImageDelivery` records host
+acceptance, queuing, or submission. Record the agent's visual assessment
+separately after the model receives the image.
+
+Install `pyagentbrowser[images]` for `Screenshot.pil()` and `Screenshot.image`.
+Notebook frontends can display PNG and JPEG screenshot bytes directly.
+`Screenshot.marimo()` returns a notebook image when
+[marimo](https://marimo.io/) is installed.
 
 ## Record the active page
 
