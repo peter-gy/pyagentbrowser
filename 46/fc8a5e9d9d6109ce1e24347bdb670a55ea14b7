@@ -1,0 +1,20 @@
+skills/pyagentbrowser/SKILL.md
+  s_52726700b68901::t_51440073c9d0aa 9-10,13,15-16,19-26
+  s_52726700b68901::t_3e5840db203226 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "46fc8a5e9d9d6109ce1e24347bdb670a55ea14b7",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
