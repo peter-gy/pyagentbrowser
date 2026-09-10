@@ -1,0 +1,21 @@
+tests/test_health.py
+  s_52726700b68901::t_2adc8c03574627 12-22
+src/agentbrowser/health.py
+  s_52726700b68901::t_2adc8c03574627 101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "bb8edb191f670d5e6d912922b76255f6c2eb7d5b",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
