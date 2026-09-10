@@ -1,0 +1,21 @@
+Makefile
+  s_52726700b68901::t_db9a7c920aebc4 82
+tests/test_windows_integration.py
+  s_52726700b68901::t_9a86f1f501cf64 50,79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "f4690d9db61e7de3003846e48d8b7e63a4dec14f",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
