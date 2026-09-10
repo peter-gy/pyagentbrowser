@@ -1,0 +1,119 @@
+src/agentbrowser/features/documents/base_async.py
+  s_52726700b68901::t_7612da4d7298f3 3,66,106,150,162,172,178,188,228
+  s_52726700b68901::t_a7871bf0322020 130-132
+docs/guides/agent-skills.md
+  s_52726700b68901::t_28e1b95473fe44 9,41,45-46,74-75
+README.md
+  s_52726700b68901::t_28e1b95473fe44 79-80
+docs/reference/models.md
+  s_52726700b68901::t_28e1b95473fe44 115-117
+docs/guides/code-mode.md
+  s_52726700b68901::t_5d2fa53721b24c 2-3,6,8-10,12,15,17-20,23,27-28,31-35,37,39,41-43,46,48,51-60,63-66,68-69,71,73-75,77-82
+tests/test_scoped_confirmations.py
+  s_52726700b68901::t_7612da4d7298f3 590,616
+src/agentbrowser/features/documents/scroll.py
+  s_52726700b68901::t_7612da4d7298f3 19,30
+src/agentbrowser/transport/deadlines.py
+  s_52726700b68901::t_7612da4d7298f3 7,10,12,14-16,21,23
+tests/test_lifecycle_integration.py
+  s_52726700b68901::t_a7871bf0322020 46,53-56
+src/agentbrowser/cdp/client.py
+  s_52726700b68901::t_af8312d3070c88 296-297,300
+  s_52726700b68901::t_56fe879ac14581 5,9,265-266,268,275-276,278,280-295,298-299,301-306
+tests/test_cdp_controller.py
+  s_52726700b68901::t_56fe879ac14581 9,17
+  s_52726700b68901::t_7612da4d7298f3 110
+src/agentbrowser/agent.py
+  s_52726700b68901::t_7612da4d7298f3 1,5,8-10,12-13,16-17,57,68,70,86,98,127-130
+  s_52726700b68901::t_a7871bf0322020 126
+src/agentbrowser/features/documents/handles_async.py
+  s_52726700b68901::t_7612da4d7298f3 52,58,64,70,78,102,121,125,129
+tests/test_agent_capability.py
+  s_52726700b68901::t_7612da4d7298f3 9
+development_docs/python-sdk.md
+  s_52726700b68901::t_28e1b95473fe44 8-9
+tests/test_capture_integration.py
+  s_52726700b68901::t_a7871bf0322020 153-163
+docs/troubleshooting.md
+  s_52726700b68901::t_28e1b95473fe44 101,109-112
+src/agentbrowser/browser_async.py
+  s_52726700b68901::t_7612da4d7298f3 4
+skills/pyagentbrowser/references/api-map.md
+  s_52726700b68901::t_28e1b95473fe44 39-41
+src/agentbrowser/features/documents/frames.py
+  s_52726700b68901::t_7612da4d7298f3 29,164
+crates/pyagentbrowser/src/session.rs
+  s_52726700b68901::t_7612da4d7298f3 83
+src/agentbrowser/__init__.py
+  s_52726700b68901::t_7612da4d7298f3 17
+src/agentbrowser/features/documents/frames_async.py
+  s_52726700b68901::t_7612da4d7298f3 29,173
+development_docs/sessions-and-lifecycle.md
+  s_52726700b68901::t_28e1b95473fe44 58-67
+tests/test_api_parity.py
+  s_52726700b68901::t_a7871bf0322020 140-141
+tests/test_native_cancellation.py
+  s_52726700b68901::t_a7871bf0322020 99,113,116-118
+development_docs/architecture.md
+  s_52726700b68901::t_28e1b95473fe44 9-12,44,48,61-62
+docs/migration.md
+  s_52726700b68901::t_28e1b95473fe44 55,59-60,63-66
+src/agentbrowser/features/evidence/waiting.py
+  s_52726700b68901::t_7612da4d7298f3 22,82
+tests/test_execution_budget.py
+  s_52726700b68901::t_a7871bf0322020 9,14,17,30
+src/agentbrowser/browser.py
+  s_52726700b68901::t_7612da4d7298f3 4
+tests/support/cdp_targets.py
+  s_52726700b68901::t_56fe879ac14581 9
+src/agentbrowser/features/evidence/ref.py
+  s_52726700b68901::t_7612da4d7298f3 210,221,232,243,254,265,276,295,299
+src/agentbrowser/transport/async_.py
+  s_52726700b68901::t_7612da4d7298f3 18
+src/agentbrowser/AGENTS.md
+  s_52726700b68901::t_28e1b95473fe44 11,15-16
+tests/test_document_lifecycle.py
+  s_52726700b68901::t_56fe879ac14581 4,7,10-11,13-16,27-28,31-32,35-38,40-50,55-57,59-80,82-92,94-95,97
+src/agentbrowser/transport/sync.py
+  s_52726700b68901::t_7612da4d7298f3 17
+docs/guides/read-and-capture.md
+  s_52726700b68901::t_28e1b95473fe44 72-74
+tests/test_queries_api.py
+  s_52726700b68901::t_7612da4d7298f3 49,51
+tests/test_cdp_client.py
+  s_52726700b68901::t_56fe879ac14581 161-177
+src/agentbrowser/_agent/help.py
+  s_52726700b68901::t_7612da4d7298f3 9
+  s_52726700b68901::t_28e1b95473fe44 23,27-29,42
+src/agentbrowser/_agent/resources.py
+  s_52726700b68901::t_7612da4d7298f3 1,3,5,7-8,11-13,16-18
+src/agentbrowser/features/evidence/ref_async.py
+  s_52726700b68901::t_7612da4d7298f3 218,229,240,251,262,273,284,302,306
+tests/test_documents_api.py
+  s_52726700b68901::t_7612da4d7298f3 54,57,152
+src/agentbrowser/features/documents/base.py
+  s_52726700b68901::t_7612da4d7298f3 3,66,103,127,144,156,166,172,182,222
+docs/guides/native-protocol.md
+  s_52726700b68901::t_955e5077c96fc9 32-36
+  s_52726700b68901::t_28e1b95473fe44 64
+skills/pyagentbrowser/SKILL.md
+  s_52726700b68901::t_28e1b95473fe44 67,133-134,137-140,144-147,152-154,158,160,173-177,179-181,240-241
+src/agentbrowser/features/documents/handles.py
+  s_52726700b68901::t_7612da4d7298f3 47,53,59,65,73,97,116,120,124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "85d62f200be3691dd092dfcbac3d57161c0a2e78",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
