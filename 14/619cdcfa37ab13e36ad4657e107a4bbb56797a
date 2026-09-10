@@ -1,0 +1,54 @@
+scripts/artifacts/sdist.py
+  s_52726700b68901::t_4aa8d22934eec8 57
+  s_52726700b68901::t_f864e2676c4bec 173-177
+  s_52726700b68901::t_4a70e9fb23050f 5,31-32,164-172,178-180
+  s_52726700b68901::t_1b779d3a5b9168 9
+  s_52726700b68901::t_7a26d55f6b4d16 1-4,6-8,10-30,33-56,58-163,181-211
+tests/packaging/test_package_smoke.py
+  s_52726700b68901::t_8b6cfb1668f469 255
+  s_52726700b68901::t_f64d82967402f3 124-125,129-132
+  s_52726700b68901::t_4fa9ac3f326e61 16-19,73,107-108,116-117,123,147-148,159,173,175-176,184-185,228-229
+  s_52726700b68901::t_20ab21c74ba09c 5-6,230-254,256-270
+scripts/artifacts/plugin.py
+  s_52726700b68901::t_1b779d3a5b9168 7
+  s_52726700b68901::t_7a26d55f6b4d16 1-6,8-71
+scripts/package_smoke.py
+  s_52726700b68901::t_7a26d55f6b4d16 7-10
+scripts/artifacts/native.py
+  s_52726700b68901::t_7a26d55f6b4d16 1-7,9-55
+  s_52726700b68901::t_1b779d3a5b9168 8
+scripts/artifacts/__init__.py
+  s_52726700b68901::t_7a26d55f6b4d16 1
+.github/workflows/publish.yml
+  s_52726700b68901::t_20f4b0850a4a6d 268
+scripts/artifacts/metadata.py
+  s_52726700b68901::t_1b779d3a5b9168 7,10
+  s_52726700b68901::t_7a26d55f6b4d16 1-6,8-9,11-196
+scripts/artifacts/wheel.py
+  s_52726700b68901::t_1b779d3a5b9168 12,15-20
+  s_52726700b68901::t_f64d82967402f3 96,100-103,178
+  s_52726700b68901::t_7a26d55f6b4d16 1-11,13-14,21-95,97-99,104-177,179-184
+scripts/artifacts/core.py
+  s_52726700b68901::t_7a26d55f6b4d16 1-28
+.github/workflows/build-wheel.yml
+  s_52726700b68901::t_20f4b0850a4a6d 141-142
+scripts/artifacts/release.py
+  s_52726700b68901::t_1b779d3a5b9168 4
+  s_52726700b68901::t_7a26d55f6b4d16 1-3,5-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "14619cdcfa37ab13e36ad4657e107a4bbb56797a",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
