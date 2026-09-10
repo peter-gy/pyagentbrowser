@@ -47,7 +47,7 @@ with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser
 """
         handles: list[int] = []
         with Browser.launch(LaunchOptions(executable_path=chrome_path)) as unrelated:
-            unrelated.open("data:text/html,<title>Independent browser</title>")
+            unrelated.page.open("data:text/html,<title>Independent browser</title>")
             with (tmp_path / "owner.log").open("w+", encoding="utf-8") as log:
                 owner = subprocess.Popen(
                     [sys.executable, "-c", script, str(chrome_path), str(ready)],
@@ -76,7 +76,7 @@ with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser
 
                     for handle in handles:
                         assert kernel.WaitForSingleObject(handle, 10000) == 0
-                    assert unrelated.title() == "Independent browser"
+                    assert unrelated.page.title() == "Independent browser"
                 finally:
                     if owner.poll() is None:
                         owner.kill()

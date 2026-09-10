@@ -79,7 +79,7 @@ lint: sync
 
 .PHONY: typecheck
 typecheck: sync
-	$(UV_RUN) ty check
+	$(UV_RUN) ty check --python-platform all
 
 .PHONY: test
 test: native-dev
