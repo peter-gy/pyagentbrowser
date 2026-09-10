@@ -63,13 +63,26 @@ with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser
                     log.seek(0)
                     assert ready.exists(), log.read()
                     processes = json.loads(ready.read_text(encoding="utf-8"))
-                    assert any(process["type"] == "browser" for process in processes)
-                    assert any(process["type"] == "renderer" for process in processes)
+                    live_types: set[str] = set()
                     for process in processes:
-                        handle = kernel.OpenProcess(0x00100001, False, int(process["id"]))
-                        assert handle, ctypes.WinError(ctypes.get_last_error())
+                        pid = int(process["id"])
+                        if pid <= 0:
+                            continue
+                        handle = kernel.OpenProcess(0x00100001, False, pid)
+                        if not handle:
+                            # Chrome can report a child that exits before its handle is opened.
+                            error = ctypes.get_last_error()
+                            assert error == 87, (process, ctypes.WinError(error))
+                            continue
                         handles.append(handle)
-                        assert kernel.WaitForSingleObject(handle, 0) == 258
+                        state = kernel.WaitForSingleObject(handle, 0)
+                        assert state in {0, 258}, (
+                            process,
+                            ctypes.WinError(ctypes.get_last_error()),
+                        )
+                        if state == 258:
+                            live_types.add(process["type"])
+                    assert {"browser", "renderer"} <= live_types, processes
 
                     owner.kill()
                     owner.wait(timeout=10)
