@@ -80,7 +80,9 @@ from agentbrowser.models import (
 )
 from agentbrowser.query import Query
 from agentbrowser.query_async import AsyncQuery
+from agentbrowser.runtime import CodeSession
 from agentbrowser.session_id import generate_session_id as session_id
+from agentbrowser.tasks import Task, Tasks
 
 try:
     __version__ = version(PACKAGE_NAME)
@@ -118,6 +120,7 @@ __all__ = [
     "CDPTarget",
     "CallbackHost",
     "CloseResult",
+    "CodeSession",
     "ConfirmationRequired",
     "ConsoleMessage",
     "Cookie",
@@ -167,6 +170,8 @@ __all__ = [
     "TabCloseResult",
     "TabInfo",
     "TabSwitchResult",
+    "Task",
+    "Tasks",
     "Wait",
     "WebMCPInvocation",
     "WebMCPInvocationStatus",
