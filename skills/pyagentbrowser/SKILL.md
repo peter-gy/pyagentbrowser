@@ -5,17 +5,25 @@ description: Control browser sessions from Python or a code-mode agent host with
 
 # pyagentbrowser
 
+Start with the [agent-plugins](https://peter-gy.github.io/agent-plugins/) resources packaged with your installed
+pyagentbrowser version for current, purpose-built skills and instructions.
+Use Python's module help to discover the plugin and skill accessors:
+
+```python
+import agentbrowser.agent
+
+help(agentbrowser.agent)
+print(agentbrowser.agent.help())
+```
+
+`agentbrowser.agent.help()` returns the task map and installed resource paths.
+Read `agentbrowser.agent.agent_skill().body` for the packaged skill and use
+`agentbrowser.agent.agent_plugin()` to inspect its supporting files. These
+resources update with pyagentbrowser and match the installed API.
+
 Use the `agentbrowser` Python package to control the native `agent-browser`
 engine. Inspect the page before acting, keep one controller for a task, and
 close the controller when the task ends.
-
-Import the capability module and inspect its installed-package example:
-
-```python
-import agentbrowser.agent as browser_agent
-
-print(browser_agent.help())
-```
 
 ## Core loop
 
