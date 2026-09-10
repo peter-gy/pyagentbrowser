@@ -30,7 +30,8 @@ for the surface you changed.
 Browser / AsyncBrowser
   -> Python policy, lifecycle, namespaces, models, and evidence
   -> PyO3 native session
-  -> first-party Rust adapter and generated compatibility shims
+  -> first-party Rust Engine interface
+  -> generated modules from the agent-browser-build crate
   -> pinned upstream agent-browser submodule
 ```
 

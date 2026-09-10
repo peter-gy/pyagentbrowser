@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/agent-browser-build",
     "crates/agent-browser-adapter",
     "crates/pyagentbrowser",
 ]

@@ -23,6 +23,7 @@ help:
 	@printf '%s\n' \
 		'make install           Bootstrap dependencies and build the native extension' \
 		'make update-upstream   Pin upstream origin/main and synchronize metadata' \
+		'make check-upstream    Audit an available upstream ref in isolation' \
 		'make test-sdk          Run Python SDK contract tests' \
 		'make test-native       Run PyO3 and generated-adapter boundary tests' \
 		'make test-package      Run wheel, sdist, version, and provenance contracts' \
@@ -55,6 +56,10 @@ install: native-dev
 .PHONY: update-upstream
 update-upstream:
 	uv run --no-project --with "tomlkit>=0.13.3" python scripts/update_upstream.py --ref "$(UPSTREAM_REF)" $(UPSTREAM_UPDATE_FLAGS)
+
+.PHONY: check-upstream
+check-upstream:
+	$(UV_RUN) python -m scripts.check_upstream --ref "$(UPSTREAM_REF)" $(UPSTREAM_CHECK_FLAGS)
 
 .PHONY: clean
 clean:
@@ -123,11 +128,13 @@ rust-check: submodule-init
 	$(RUST_CARGO) fmt --all --manifest-path Cargo.toml --check
 	$(RUST_CARGO) clippy -p pyagentbrowser -p agent-browser --lib --all-features --locked -- -D warnings
 	$(RUST_CARGO) clippy -p agent-browser --test smoke --all-features --locked -- -D warnings
+	$(RUST_CARGO) clippy -p agent-browser-build --all-targets --locked -- -D warnings
 
 .PHONY: rust-test
 rust-test: submodule-init
 	$(RUST_CARGO) test -p pyagentbrowser --lib --locked
 	$(RUST_CARGO) test -p agent-browser --test smoke --locked
+	$(RUST_CARGO) test -p agent-browser-build --locked
 
 .PHONY: package
 package: export RUSTFLAGS := $(strip $(RUSTFLAGS) $(REPRODUCIBLE_RUSTFLAGS))

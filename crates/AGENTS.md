@@ -7,8 +7,12 @@ The native layer embeds a pinned engine behind the Python API.
 - `pyagentbrowser/` owns the PyO3 module, native session construction, embedded
   skill data, dashboard sidecars, parent-process cleanup, and Python-facing
   native errors.
-- `agent-browser-adapter/` owns compatibility with the pinned upstream source.
-  Its build script copies source into `OUT_DIR` and applies narrow rewrites.
+- `agent-browser-adapter/` owns the embedded `Engine` interface, configuration,
+  confirmation, and document behavior. Keep upstream runtime types private to
+  the adapter.
+- `agent-browser-build/` owns module registration, feature rewrites, protocol
+  generation, and source audit reports. The adapter's build script calls it to
+  generate adapted modules in `OUT_DIR`.
 - `third_party/agent-browser/` is the upstream source of truth and stays clean.
 
 ## Adapter rules
@@ -17,6 +21,8 @@ The native layer embeds a pinned engine behind the Python API.
 - Match exact source anchors and require one match unless the upstream contract
   proves another count. Missing or duplicate matches must stop the build.
 - Generate adapted source under `OUT_DIR`. Do not track generated Rust output.
+- Declare dependencies when a patch consumes text introduced by another patch.
+  Keep each feature's source transformations beside its own module registration.
 - Keep adapter changes scoped to embedding constraints such as entrypoints,
   process ownership, control transport, or platform integration.
 - Treat paths, text encoding, line endings, process identity, and cleanup as
