@@ -1,0 +1,20 @@
+tests/test_windows_integration.py
+  s_52726700b68901::t_7cc0bc66673bac 66,68-76,78,83-85
+  s_52726700b68901::t_02fa61f1043d48 79-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "0c1276167fddc90f0732d08047b0c883520b1c0b",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
