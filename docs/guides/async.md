@@ -15,8 +15,8 @@ from agentbrowser import AsyncBrowser, Wait
 
 async def main() -> None:
     async with await AsyncBrowser.launch() as browser:
-        await browser.open("https://example.com")
-        snapshot = await browser.observe()
+        await browser.page.open("https://example.com")
+        snapshot = await browser.page.observe()
         link = snapshot.one(role="link", name="Learn more")
         result = await link.click(
             wait=Wait.url("*://www.iana.org/*")
@@ -40,7 +40,13 @@ The intentional differences are:
 
 ## Cancellation and close
 
-Canceling an await prevents queued work that has not started. Native work already in progress runs through its owner.
+Canceling an await skips queued work that has not started. For active work,
+cancellation interrupts native dispatch and waits for the owner thread to
+settle the command before propagating `CancelledError`. The controller can
+accept subsequent commands and close normally.
+
+Browser effects already sent can still occur. Inspect the current document
+before retrying a mutation, and capture a new snapshot before using refs.
 
 `close()` is single-flight. Concurrent callers share the same terminal result or terminal error. Closing rejects queued operations with `RuntimeError`, requests native shutdown, and joins the owner thread.
 
@@ -58,7 +64,7 @@ async def publish() -> None:
     session = SessionOptions(confirm_actions=("click",))
     async with await AsyncBrowser.launch(session=session) as browser:
         await browser.page.set_content("<button>Publish</button>")
-        snapshot = await browser.observe()
+        snapshot = await browser.page.observe()
         try:
             await snapshot.one(role="button", name="Publish").click()
         except ConfirmationRequired as required:

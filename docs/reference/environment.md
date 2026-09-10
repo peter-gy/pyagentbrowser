@@ -29,7 +29,8 @@ Source installations require the Rust toolchain and build dependencies used by [
 | `pyagentbrowser[images]` | [Pillow](https://pillow.readthedocs.io/) screenshot loading and conversion |
 | `pyagentbrowser[cdp]` | WebSocket transport for direct Chrome DevTools Protocol APIs |
 
-`Screenshot.marimo()` discovers [marimo](https://marimo.io/), a reactive Python notebook, at runtime when the application already provides it.
+`Screenshot.content()` returns a dependency-free `ImageContent` value for an
+agent host. Notebook display protocols read the same screenshot bytes.
 
 ## Browser selection
 

@@ -22,7 +22,7 @@ session = SessionOptions(
 )
 
 with Browser.launch(session=session) as browser:
-    browser.open("https://example.com")
+    browser.page.open("https://example.com")
 ```
 
 An exact entry authorizes one host. A wildcard such as `*.example.com` authorizes the root host and its subdomains.
@@ -40,7 +40,7 @@ session = SessionOptions(confirm_actions=("click",))
 
 with Browser.launch(session=session) as browser:
     browser.page.set_content("<button>Publish</button>")
-    publish = browser.observe().one(role="button", name="Publish")
+    publish = browser.page.observe().one(role="button", name="Publish")
 
     try:
         result = publish.click()

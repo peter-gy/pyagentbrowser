@@ -9,6 +9,11 @@ The optional `browser.cdp` namespace opens a direct [Chrome DevTools Protocol](h
 
 Focused snippets that start from `browser` are partial. Place them inside an active `Browser` context such as the frame example.
 
+Use `page.frames` for ordinary frame observation, queries, evaluation, waits,
+and capture. Direct CDP frame handles provide execution-context selection and
+raw protocol access. They have their own lifetime and cannot be passed as
+`agentbrowser.Frame` handles.
+
 Install the WebSocket transport:
 
 ```bash
@@ -89,9 +94,5 @@ The `agentbrowser.cdp` package also exports synchronous and asynchronous clients
 Direct frame and execution-context handles are bound to a controller generation. Navigation, document replacement, history movement, tab changes, new windows, browser relaunch, URL-based accessibility audits, and close invalidate cached page state.
 
 Resolve the frame or context again after one of those transitions. A `browser.cdp.target()` handle resolves its selected page target again when an operation runs. Reusing an invalidated frame or context raises `CDPStaleObjectError`.
-
-Use `page.frames` for ordinary frame observation, queries, evaluation, waits,
-and capture. Direct CDP execution contexts remain available for protocol work
-that needs an isolated world or raw Chrome method.
 
 See [Browser controllers](/reference/browser) for attachment configuration and [Models and errors](/reference/models) for direct protocol failures.

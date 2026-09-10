@@ -5,7 +5,9 @@ description: Read rendered or remote documents and write screenshots, PDFs, down
 
 # Read and capture browser content
 
-`browser.read()` returns agent-readable content from an explicit URL or from the rendered active tab. `browser.capture` writes page artifacts. `browser.downloads` waits for files produced by the page.
+`browser.page.read()` returns agent-readable content from an explicit URL or from the
+rendered active tab. `page.capture` writes document artifacts.
+`browser.downloads` waits for files produced by the page.
 
 Focused snippets that start from `browser` are partial. Place them inside an active `Browser` context such as the screenshot example.
 
@@ -15,7 +17,7 @@ Focused snippets that start from `browser` are partial. Place them inside an act
 from agentbrowser import Browser, ReadMode
 
 with Browser() as browser:
-    document = browser.read(
+    document = browser.page.read(
         "https://example.com",
         mode=ReadMode.markdown(),
     )
@@ -46,7 +48,7 @@ An explicit URL can use the engine's HTTP reader before a lazy browser starts. O
 from agentbrowser import Browser
 
 with Browser.launch() as browser:
-    browser.open("https://example.com")
+    browser.page.open("https://example.com")
     screenshot = browser.page.capture.screenshot(
         "artifacts/example.png",
         full_page=True,
@@ -61,6 +63,11 @@ Screenshot capture creates the artifact directory. `page.capture` targets the
 page and `frame.capture` targets the rendered frame rectangle. Set `format` to
 `png` or `jpeg`. JPEG quality ranges from 0 through 100. `wait_ms` adds a
 bounded delay before capture and defaults to 100 milliseconds.
+`frame.capture.screenshot()` accepts path, output directory, format, quality,
+and paint-delay options. It clips the visible rectangle through enclosing
+frames and overflow containers. Use the owning page for selector, full-page,
+annotated, or PDF capture. Rotated, skewed, reflected, and three-dimensional
+frame transforms raise `BrowserError`.
 
 `Screenshot.content()` returns `ImageContent` with bytes, MIME type, and source
 path for `AgentHost.emit_image()`. The resulting `ImageDelivery` records host
@@ -69,8 +76,6 @@ separately after the model receives the image.
 
 Install `pyagentbrowser[images]` for `Screenshot.pil()` and `Screenshot.image`.
 Notebook frontends can display PNG and JPEG screenshot bytes directly.
-`Screenshot.marimo()` returns a notebook image when
-[marimo](https://marimo.io/) is installed.
 
 ## Record the active page
 
@@ -85,7 +90,7 @@ from agentbrowser import Browser
 with Browser.launch() as browser:
     browser.page.set_content('<button id="start">Start</button>')
     browser.native.data("recording_start", path="take.webm", fps=30)
-    browser.evaluate("""
+    browser.page.evaluate("""
       document.getElementById('start').animate(
         [{transform: 'translateX(0)'}, {transform: 'translateX(200px)'}],
         {duration: 1000, fill: 'forwards'}
@@ -110,7 +115,7 @@ separate page.
 ## Write a PDF
 
 ```python
-path = browser.capture.pdf(
+path = browser.page.capture.pdf(
     "report.pdf",
     print_background=True,
     prefer_css_page_size=True,
@@ -122,7 +127,7 @@ PDF capture uses the active tab and returns the written `Path`.
 ## Compare the current page with a baseline
 
 ```python
-baseline = browser.observe()
+baseline = browser.page.observe()
 # Perform work that can change the page.
 diff = baseline.diff()
 print(diff.changed, diff.additions, diff.removals)

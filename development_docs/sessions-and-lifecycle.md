@@ -45,9 +45,28 @@ constructed
   -> shared terminal result
 ```
 
-Cancellation skips queued work that has not started. Active native work completes on the owner. `AsyncBrowser.close()` is single-flight and shields shared shutdown from caller cancellation. The first close call fixes the timeout used by every caller.
+Cancellation skips queued work that has not started. For active work, the
+per-command native cancellation token interrupts dispatch and invalidates refs.
+The cancelled await waits for owner-thread settlement before propagating
+`CancelledError`. Effects already sent to the browser can still occur.
+
+`AsyncBrowser.close()` is single-flight and shields shared shutdown from caller
+cancellation. The first close call fixes the timeout used by every caller.
 
 A native shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`.
+
+## Host execution limits
+
+A bound `AgentHost` supplies one `ExecutionContext` for a code call. The session
+records its monotonic deadline before enqueueing asynchronous work and computes
+the remaining budget at native dispatch. The PyO3 boundary bounds the native
+operation by that budget. Deadline expiry reports an error and leaves any
+page effects observable for the next call. It does not roll back a mutation.
+
+`CodeSession` owns persistent globals and typed text/image results. Its `Tasks`
+registry gives each asynchronous operation a separate target and execution
+budget. Task cancellation waits for cooperative cleanup. The application owns
+interruption of blocking Python code and closes injected browser controllers.
 
 ## Restore and abrupt exit
 

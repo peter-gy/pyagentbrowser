@@ -26,10 +26,10 @@
   <a href="LICENSE"><img alt="Apache-2.0 license" src="https://img.shields.io/github/license/peter-gy/pyagentbrowser"></a>
 </p>
 
-Control browsers from Python with the native
+Control browsers and iframe applications from Python with the native
 [`agent-browser`](https://github.com/vercel-labs/agent-browser) engine.
-Inspect a page, act on an element, and get the before-and-after snapshots
-with a diff of what changed.
+Bind page and frame handles, act on inspected elements, capture model-ready
+images, and retain before-and-after evidence.
 
 > **Alpha:** The public API and native integration can change between minor
 > releases. Pin a version for production automation.
@@ -52,7 +52,7 @@ with Browser.launch() as browser:
     browser.page.set_content(
         "<button onclick=\"this.textContent='Done'\">Run</button>"
     )
-    snapshot = browser.observe()
+    snapshot = browser.page.observe()
     result = snapshot.one(role="button", name="Run").click()
 
     print(result.after.one(role="button").name)
@@ -64,15 +64,20 @@ Done
 True
 ```
 
-`observe()` captures a `Snapshot` of the page's accessible elements. Selecting
+`page.observe()` captures a `Snapshot` of the page's accessible elements. Selecting
 a button returns a `Ref`. Clicking it returns an `ActionResult` with `before`,
 `after`, and `diff`.
-Use [`browser.find`](docs/guides/interact.md) for live element queries.
+Use [`page.find`](docs/guides/interact.md) for live element queries and
+[`page.frames`](docs/guides/interact.md#work-in-a-child-frame) for embedded applications.
 
 ## Browser workflows
 
 - **Inspect and act.** Navigate pages, fill forms, read documents, and capture
   screenshots and PDFs through typed namespaces.
+- **Keep document scope.** Bind an exact page or frame so observation,
+  evaluation, waits, scrolling, capture, and ref actions share one target.
+- **Deliver evidence.** Convert screenshots to host image content and record
+  capture, delivery, visual assessment, and behavioral assertions separately.
 - **Manage sessions.** Launch a browser or attach to an existing one. Work with
   tabs, cookies, saved state, and explicit cleanup.
 - **Control actions.** Configure domain restrictions and confirmation policy
@@ -85,6 +90,7 @@ Use [`browser.find`](docs/guides/interact.md) for live element queries.
 [Get started](docs/getting-started.md) ·
 [Concepts](docs/concepts/runtime-model.md) ·
 [Action evidence](docs/concepts/evidence.md) ·
+[Code-mode integration](docs/guides/code-mode.md) ·
 [Safety](docs/concepts/safety.md) ·
 [API reference](docs/reference/browser.md) ·
 [Troubleshooting](docs/troubleshooting.md)

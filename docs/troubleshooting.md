@@ -97,7 +97,6 @@ The controller is closed even when persistence failed.
 
 - Install `pyagentbrowser[images]` for Pillow-backed screenshot methods.
 - Install `pyagentbrowser[cdp]` for direct CDP APIs.
-- Install [marimo](https://marimo.io/), a reactive Python notebook, in the application environment for `Screenshot.marimo()`.
 
 Run `browser.healthcheck()` to inspect Pillow and direct CDP transport health.
 The direct CDP diagnostic includes the loaded module path. Restart the Python
@@ -107,6 +106,12 @@ module can leave package classes and constants out of sync.
 ## A timeout uses the wrong scale
 
 Browser operation fields ending in `_ms` use milliseconds. `SessionOptions.timeout`, async close timeout, and direct CDP client timeout use seconds.
+
+Within a bound `AgentHost`, native operations also consume the remaining
+`ExecutionContext` budget. A deadline reached before dispatch raises
+`TimeoutError`. A native operation that exceeds the budget raises
+`BrowserError` with `code="execution_timeout"`. Inspect the current page before
+retrying a mutation because timeout leaves its effects uncertain.
 
 ## Commands fail after close
 

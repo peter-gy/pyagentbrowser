@@ -2,8 +2,8 @@
 
 ## Persistent code-mode sessions
 
-Each marimo code-mode scratchpad call receives fresh Python locals. Create a
-controller through `agentbrowser.agent` so the module owns it between calls:
+Code-mode scratchpad calls may receive fresh Python locals. Create a controller
+through `agentbrowser.agent` so the module owns it between calls:
 
 ```python
 import agentbrowser as ab
@@ -13,14 +13,14 @@ browser = browser_agent.create(
     "research",
     session=ab.SessionOptions(session_id="research-browser"),
 )
-browser.open("https://example.com")
+browser.page.open("https://example.com")
 ```
 
 Later kernel calls retrieve the same controller by connection name:
 
 ```python
 browser = browser_agent.get("research")
-print(browser.observe().text)
+print(browser.page.observe().text)
 ```
 
 Pass session options while creating the controller. Duplicate names raise
@@ -34,6 +34,19 @@ browser_agent.close("research")
 Inspect registered names with `browser_agent.names()`. Call
 `browser_agent.close_all()` when the task used several names. Use `Browser` as a
 context manager when the complete task fits in one kernel call.
+
+`browser_agent.status(name)` exposes the registry process, ownership, native
+session, browser lifecycle, active target, and current URL. `close_all()`
+attempts every registered close before reporting collected failures.
+
+The registry belongs to the current Python process. `get()` never starts or
+reattaches a browser. Use `AttachedTarget` when a host supplies a live browser
+connection and exact page identity. Use `OpenTarget` to open an application URL
+in a new automation browser.
+
+An attached page handle remains bound to its target. Closing the controller
+releases pyagentbrowser resources. Browser-process ownership follows the
+`Browser.attach()` contract.
 
 ## Snapshot identity
 

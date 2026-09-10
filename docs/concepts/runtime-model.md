@@ -22,7 +22,7 @@ Browser or AsyncBrowser controller
 | Controller | The Python `Browser` or `AsyncBrowser` object used by application code. |
 | Native session | The ordered command, policy, identity, and persistence boundary owned by the controller. |
 | Browser process | A locally launched Chrome or Chromium process. An attached endpoint is externally owned. |
-| Page | A handle bound to one browser page target. `browser.page` follows the active target and `browser.tabs.get()` binds an exact target. |
+| Page | A handle bound to one browser page target. Acquire the configured or active target through `browser.page`, or select one through `browser.tabs.get()`. |
 | Frame | A handle bound to one child browsing context. Observation, queries, evaluation, waits, and ref actions carry its frame identity. |
 | Direct CDP handle | An execution context or raw protocol target from the direct Chrome DevTools Protocol API. Context handles are generation-bound. |
 
@@ -34,13 +34,13 @@ Browser or AsyncBrowser controller
 | `Browser.launch()` | Before the call returns | Controller launches and owns the local process |
 | `Browser.attach(CDPTarget(...))` | Before the call returns | External owner keeps the browser process |
 
-An explicit URL passed to `browser.read(url=...)` can use the engine's HTTP reader before browser startup. Reading the active document, using direct CDP, or acting on a page starts a lazy local browser.
+An explicit URL passed to `browser.page.read(url=...)` can use the engine's HTTP reader before browser startup. Reading the active document, using direct CDP, or acting on a page starts a lazy local browser.
 
 ## Operation, action, and command
 
 A high-level operation is one Python method call. A native action is one engine behavior such as `launch`, `navigate`, or `click`. A JSON command is one serialized invocation of a native action.
 
-Some high-level operations contain several native actions. `Browser().open(url)` can launch the browser and then navigate. Confirmation policy may pause either action.
+Some high-level operations contain several native actions. `Browser().page.open(url)` can launch the browser and then navigate. Confirmation policy may pause either action.
 
 ## Identity and stored state
 

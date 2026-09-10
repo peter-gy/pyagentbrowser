@@ -20,7 +20,7 @@ with Browser.launch() as browser:
         <button onclick="document.body.dataset.saved = 'yes'">Save</button>
     """)
 
-    snapshot = browser.observe()
+    snapshot = browser.page.observe()
     snapshot.one(role="textbox", name="Email").fill("ada@example.com")
     result = snapshot.refresh().one(role="button", name="Save").click(
         wait=Wait.all(
@@ -49,9 +49,9 @@ with Browser.launch() as browser:
         <button type="button">Continue</button>
     """)
 
-    browser.find.label("Email").fill("ada@example.com")
-    browser.find.role("button", name="Continue").hover().click()
-    print(browser.find.role("button", name="Continue").text())
+    browser.page.find.label("Email").fill("ada@example.com")
+    browser.page.find.role("button", name="Continue").hover().click()
+    print(browser.page.find.role("button", name="Continue").text())
 ```
 
 Query factories cover CSS selectors, XPath expressions, accessible roles, visible text, labels, placeholders, alternative text, title attributes, and test IDs. Query mutations return the query for chaining.
@@ -88,8 +88,8 @@ The keyboard and mouse namespaces also expose low-level down, up, and dispatch o
 
 ```python
 identifier = browser.scripts.add_init("window.__agentReady = true")
-browser.open("https://example.com")
-print(browser.evaluate("window.__agentReady"))
+browser.page.open("https://example.com")
+print(browser.page.evaluate("window.__agentReady"))
 browser.scripts.remove_init(identifier)
 ```
 
@@ -108,17 +108,32 @@ print(checkout.evaluate("document.title"))
 
 The `Frame` carries its browser frame identity through queries, evaluation,
 waits, snapshots, and ref actions. `frame.frames` resolves nested child frames.
+`frames.tree()` returns descendants with their IDs, names, URLs, and parent
+IDs. Pass exactly one `id`, `selector`, `name`, or `url` to `frames.get()`.
+ID, name, and URL search those descendants. A selector resolves an iframe
+element in the document that owns `frames`.
+An iframe exposed in a snapshot can also resolve its child through
+`ref.content_frame()`.
+Zero matches raise `FrameLookupError` with reason `not_found`, and multiple
+matches raise it with reason `ambiguous`. Inspect `error.candidates` to refine
+the lookup.
+
+Frame evaluation shares the document's default JavaScript global scope and
+awaits promises. Frame load waits accept `load`, `domcontentloaded`, and `none`.
+Use the owning page for navigation, document replacement, and network-idle
+waits.
 
 ## Measure scrolling
 
 ```python
-movement = checkout.scroll.by(y=600, selector="#results")
+movement = checkout.scroll.by(y=600)
 print(movement.before.y, movement.after.y, movement.moved)
 ```
 
 `scroll.by()` operates in the page or frame document that owns it. Its
 `ScrollResult` identifies the document scope and reports the selected
 container's offsets before and after the mutation.
+Pass `selector="#results"` to measure a scrollable element inside the document.
 
 ## Emulate the browser environment
 

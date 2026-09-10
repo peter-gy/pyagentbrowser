@@ -6,8 +6,8 @@ from agentbrowser import AsyncBrowser, Wait
 async def main() -> None:
     browser = await AsyncBrowser.launch()
     async with browser:
-        await browser.open("https://example.com")
-        page = await browser.observe()
+        await browser.page.open("https://example.com")
+        page = await browser.page.observe()
         result = await page.one(role="link", name="Learn more").click(
             wait=Wait.url("*://www.iana.org/*")
         )

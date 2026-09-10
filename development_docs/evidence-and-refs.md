@@ -15,10 +15,21 @@ reporting.
 | `Wait`                  | Post-action condition applied before the next snapshot   |
 | `ActionResult`          | Ref, before snapshot, after snapshot, and their diff     |
 | `ActionTransitionError` | A completed mutation whose wait or evidence stage failed |
+| `DocumentScope`         | Page-target and frame identity for one document handle   |
+| `EvidenceManifest`      | Captures, deliveries, assessments, and assertions        |
 
 A ref belongs to the snapshot that produced it. It stores the source snapshot,
 native ref ID, selector, role, name, and raw node metadata. A later page state
 can invalidate the native ID even while the Python object still exists.
+
+The native response supplies the ref-map generation stored by each snapshot.
+Ref commands carry that generation into dispatch so a later observation cannot
+reuse an ID for a different element. Snapshot refresh and transition capture
+retain the producing page and frame handle.
+
+Typed ref commands resolve the captured node identity and reject detached
+nodes. Use `ref.refresh()` to select from a new snapshot after replacement.
+The native escape hatch retains the pinned engine's role-and-name fallback.
 
 ## Action transition
 

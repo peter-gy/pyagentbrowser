@@ -11,6 +11,10 @@ Add a high-level method or namespace member when at least one of these contracts
 - The operation composes several native actions.
 - The operation updates controller lifecycle or direct CDP state.
 - A ref action needs waits, a resulting snapshot, and a diff.
+- A page or frame operation must preserve document scope across dispatch,
+  waiting, and evidence capture.
+- A code-mode host supplies an application target, image delivery, or execution
+  limit through the host contract.
 - Confirmation must resume higher-level work after the native action.
 
 Keep `browser.native.execute(action, **params)` and `browser.native.data(action, **params)` complete for the pinned engine. A typed API should reduce repeated caller work. It should not hide the raw extension path.

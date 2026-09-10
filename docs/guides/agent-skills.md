@@ -1,21 +1,18 @@
 ---
 title: Load agent skills and code-mode guidance
-description: Discover pyagentbrowser from marimo code mode and read the instruction files installed with the wheel.
+description: Bind application targets, image delivery, execution limits, and version-matched browser instructions to a code-mode agent.
 ---
 
 # Load agent skills and code-mode guidance
 
-The pyagentbrowser wheel registers an importable marimo code-mode capability and carries an Agent Plugin with Python-specific browser instructions. It also embeds the skills from its pinned `agent-browser` engine for hosts that consume the native engine's instruction set.
+The `agentbrowser.agent` module keeps named browser controllers across calls in
+one Python process. An `AgentHost` supplies the current application target,
+image delivery, and execution limits. The wheel carries an Agent Plugin with
+Python-specific browser instructions and the pinned engine's native skills.
 
-## Discover pyagentbrowser in marimo code mode
-
-[Marimo](https://marimo.io/) 0.24.0 or later discovers installed code-mode capabilities through Python package entry points. Install pyagentbrowser in the notebook environment, then inspect the registered module:
+## Keep a controller across calls
 
 ```python
-import marimo._code_mode as cm
-
-print(cm.capabilities()["pyagentbrowser"])
-
 import agentbrowser.agent as browser_agent
 
 help(browser_agent)
@@ -27,8 +24,8 @@ Create a named module-owned controller when browser work spans code-mode calls:
 
 ```python
 browser = browser_agent.create("research")
-browser.open("https://example.com")
-page = browser.observe()
+browser.page.open("https://example.com")
+page = browser.page.observe()
 print(page.origin)
 print(page.text)
 
@@ -47,33 +44,10 @@ Pass `session=agentbrowser.SessionOptions(...)` to `create()`, `open()`, or
 another session option. Duplicate names raise `ValueError`. `get()` retrieves
 one open controller and `close()` releases it.
 
-## Connect through an agent host
+Read [Code-mode integration](/guides/code-mode) to supply an application target,
+return model-facing screenshot content, and manage work across tool calls.
 
-An `AgentHost` provides the application target, model-facing image delivery,
-and the current execution limit. The target distinguishes a URL to open in a
-new automation browser from an authorized connection to an exact existing
-page.
-
-```python
-import agentbrowser.agent as browser_agent
-from agentbrowser import AttachedTarget, OpenTarget
-
-target = host.current_target()
-if isinstance(target, OpenTarget):
-    browser = browser_agent.open("review", target)
-elif isinstance(target, AttachedTarget):
-    browser = browser_agent.attach("review", target)
-
-timeout_ms = host.execution_context().limit(10_000)
-browser.page.wait_for_text("Ready", timeout_ms=timeout_ms)
-screenshot = browser.page.capture.screenshot("artifacts/ready.png")
-delivery = host.emit_image(screenshot.content())
-```
-
-`ExecutionContext.limit()` reserves one second for tool cleanup by default.
-Hosts that support work across calls report `managed_tasks=True`. A Python
-background task remains bound to its Python process unless the host documents
-stronger ownership.
+## Load the Python instructions
 
 ```python
 plugin = browser_agent.agent_plugin()
@@ -85,6 +59,22 @@ instructions = skill.body
 ```
 
 The packaged `pyagentbrowser` skill uses `Browser`, `AsyncBrowser`, typed namespaces, and `browser.native` directly. These Python operations share the embedded native action service with the upstream engine.
+
+## Discover the capability in Marimo
+
+[Marimo](https://marimo.io/), a Python notebook environment, discovers installed
+code-mode capabilities through package entry points in version 0.24.0 or later.
+Install pyagentbrowser in the notebook environment, then inspect its entry:
+
+```python
+import marimo._code_mode as cm
+
+print(cm.capabilities()["pyagentbrowser"])
+```
+
+Capability discovery exposes the Python module and its instructions. The
+code-execution host must also bind an `AgentHost` and forward image content to
+the model for `current_host()` and visual assessment to work.
 
 ## Read the embedded native instruction files
 

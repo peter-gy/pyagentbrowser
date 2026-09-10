@@ -12,7 +12,7 @@ Public result models are frozen dataclasses unless this page states otherwise. M
 | Model | Fields and contract |
 | --- | --- |
 | `SnapshotSpec` | `selector`, `interactive`, `compact`, `max_depth`, and `urls` define one accessibility capture. |
-| `Snapshot` | `text`, `origin`, `url`, `spec`, `refs`, and `raw`, plus ref lookup, refresh, and diff operations. |
+| `Snapshot` | `text`, `origin`, `url`, `spec`, `refs`, `generation`, and `raw`, plus ref lookup, refresh, and diff operations. |
 | `Ref` | Snapshot-scoped `id`, selector, role, name, source snapshot, browser, and native metadata. |
 | `ActionResult` | `action`, `target`, `before`, `after`, and `diff` for one completed ref mutation. |
 | `SnapshotDiff` | Unified `text`, addition, removal, and unchanged counts, `changed`, and raw source values. |
@@ -38,7 +38,7 @@ candidate refs when criteria match zero or several refs. `Snapshot.ref()` raises
 | `one(*, role=None, name=None, contains=None, exact=False)` | Return exactly one ref or raise `LookupError`. |
 | `all(*, role=None, name=None, contains=None, exact=False)` | Return every matching ref as a tuple. |
 | `refresh()` | Capture the same `SnapshotSpec` again. |
-| `diff()` | Compare this snapshot with the active page and return `SnapshotDiff`. |
+| `diff()` | Capture the same document scope and compare it with this snapshot, returning `SnapshotDiff`. |
 
 Interactive representations keep snapshots, refs, action results, diffs, browser
 controllers, and close results bounded. Read `.text`, `.raw`, or the explicit
@@ -62,6 +62,7 @@ Every mutation returns `ActionResult` and accepts an optional `wait` condition.
 | `input_value()` | Return the current form value. |
 | `attribute(name)` | Return an attribute value or `None`. |
 | `is_visible()`, `is_enabled()`, `is_checked()` | Return one boolean element state. |
+| `content_frame()` | Resolve the child `Frame` owned by this observed iframe element. |
 | `refresh(*, role=None, name=None, contains=None, exact=True)` | Resolve accessible metadata against a fresh snapshot. |
 
 `Ref` also exposes its source `snapshot`, `browser`, ID without `@`, native selector, accessible role, accessible name, and raw metadata. Native `stale_ref` and `unknown_ref` failures become `StaleRefError`.
@@ -73,7 +74,7 @@ Every mutation returns `ActionResult` and accepts an optional `wait` condition.
 | `Wait.text(text, *, timeout_ms=None)` | Wait for page text after the action. |
 | `Wait.url(url, *, timeout_ms=None)` | Wait for an active URL pattern. |
 | `Wait.loaded(state="load", *, timeout_ms=None)` | Wait for a load state. |
-| `Wait.all(*conditions)` | Apply one or more conditions in order. |
+| `Wait.all(*conditions, timeout_ms=None)` | Apply one or more conditions in order within an optional shared timeout. |
 
 Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at least one condition.
 
@@ -89,7 +90,9 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | --- | --- |
 | `ReadResult` | Requested `url`, `final_url`, status, content type, source, truncation state, content, and raw data. |
 | `ReadMode` | Selects Markdown negotiation, raw response body, outline, `llms.txt`, or `llms-full.txt` behavior. |
-| `DocumentScope` | Exact page-target and frame identity attached to a document operation. |
+| `DocumentScope` | Page target, frame, URL, and evidence generation attached to a document operation. |
+| `ElementGeometry` | Document scope, selector, bounds, client size, scroll size, and overflow flags. |
+| `FrameLookupError` | `not_found`, `ambiguous`, `detached`, or `scope_mismatch` reason plus criteria and bounded frame candidates. |
 | `ScrollResult` | Document scope, container, before and after offsets, and derived movement state. |
 | `Screenshot` | File path, format, scope, annotations, raw capture data, bytes, host content, copying, image loading, and notebook display. |
 | `ConsoleMessage` | Console type, text, level, URL, line, column, and raw data. |
@@ -103,16 +106,77 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | `save(path)` | Copy the file and return a new `Screenshot` for the target path. |
 | `pil(*, mode=None)` | Load a Pillow image and optionally convert its mode. |
 | `image` | Lazily load and cache the Pillow image. |
-| `marimo(*, alt=None, width=None, height=None, rounded=False, caption=None, style=None)` | Return an image for a [marimo](https://marimo.io/) reactive Python notebook. |
 | `annotations` | Ref number, role, accessible name, and bounding box for annotated elements. |
 
-`pil()` and `image` require the `images` extra. `marimo()` requires marimo in the application environment. PNG and JPEG captures expose notebook display data from their file bytes.
+`pil()` and `image` require the `images` extra. PNG and JPEG captures expose
+notebook display data from their file bytes.
 
 `EvidenceManifest.record()` associates a snapshot, action result, screenshot,
-or scroll result with optional `ImageDelivery`, agent assessment, and named
+scroll result, or element geometry with optional `ImageDelivery`, agent assessment, and named
 `EvidenceAssertion` values. `to_dict()` returns a JSON-compatible report. A
 delivery receipt records the host boundary. An assessment records what the
 agent concluded after receiving the evidence.
+
+## Code-mode models
+
+| Model | Contract |
+| --- | --- |
+| `OpenTarget(url)` | Application URL to open in an owned browser. |
+| `AttachedTarget(connection, target_id)` | `CDPTarget` connection and exact existing page identity. |
+| `ImageContent(data, media_type, source=None)` | Non-empty image bytes, image MIME type, and optional source path. |
+| `ImageDelivery(status, id=None)` | Host acknowledgement with status `accepted`, `queued`, or `submitted`. |
+| `ExecutionContext(timeout_ms=None, cancellation=False, managed_tasks=False)` | Execution budget and host capabilities. `limit(requested_ms=None, cleanup_ms=1000)` returns the remaining operation budget. |
+| `AgentConnectionStatus` | Registry name, process ID, ownership, session ID, lifecycle, target ID, and URL. |
+| `ManagedTaskStatus` | Task ID, lifecycle state, optional progress, and detail. |
+
+`AgentHost.current_target()`, `emit_image(content)`, and `execution_context()`
+provide these values to executed code. `AgentHost.image_delivery` reports
+whether the current execution accepts image content. `CallbackHost(target, image_emitter=None,
+execution=...)` accepts application callbacks. Bind a host with `bind_host()`
+and restore the previous binding with `reset_host(token)`. `current_host()`
+raises `RuntimeError` when called outside a binding.
+
+### `CodeSession`
+
+`CodeSession(target, *, namespace=None)` creates persistent Python globals and
+a task registry. `target` accepts a `BrowserTarget` value or a callback.
+
+| Method | Contract |
+| --- | --- |
+| `execute_code(code, *, timeout_ms=None)` | Execute trusted Python and return ordered text/image `content` plus `isError`. |
+| `await aexecute_code(code, *, timeout_ms=None)` | Execute Python with top-level `await`. |
+| `await close()` | Settle task cancellation and mark the session closed. |
+
+Calls on one session must run sequentially. Exceptions preserve emitted output
+and existing globals and set `isError=True`. Concurrent calls and calls after
+close raise `RuntimeError`. Synchronous execution with no tasks allocates no
+event-loop resources and reports `managed_tasks=False`. Asynchronous execution
+reports `managed_tasks=True` and provides `current_host().start_task()`.
+The application owns injected objects and interruption
+of arbitrary Python work. See [Code-mode integration](/guides/code-mode) for
+the model-facing transport boundary.
+
+### `Tasks` and `Task`
+
+`Tasks(target)` owns tasks on the event loop that starts its first operation.
+`CodeSession.tasks` provides the registry used by `current_host().start_task()`.
+
+| Method | Contract |
+| --- | --- |
+| `tasks.start(name, operation, *, timeout_ms=None)` | Start an async callable and return a retained `Task`. |
+| `tasks.get(task_id)` | Return one retained task or raise `KeyError`. |
+| `tasks.list()` | Return retained handles in creation order. |
+| `await tasks.close()` | Cancel running tasks, await cleanup, and close the registry. |
+| `task.status()` | Return `ManagedTaskStatus`. |
+| `task.report(progress=None, detail=None)` | Update a running task's progress from 0 through 1 and detail. Omitted values retain their current values. |
+| `await task.result(*, timeout_ms=None)` | Retrieve the value or exception. A retrieval timeout leaves the task running. |
+| `await task.cancel()` | Request cancellation, await cleanup, and return terminal status. |
+
+Task handles expose `id` and `name`. Await operations and close on the owning
+event loop. Cancellation is cooperative and an operation that catches it can
+complete or fail. Background tasks return screenshots for emission during an
+active code call. Each task captures its application target when it starts and
+receives an independent execution budget.
 
 ## Session, tab, and storage models
 
@@ -217,7 +281,7 @@ Direct protocol errors live in `agentbrowser.cdp`:
 | `CDPStaleObjectError` | A cached frame or execution context expired after a page transition. |
 | `CDPEvaluationError` | JavaScript threw in the selected context. |
 
-Standard Python exceptions also define public contracts. Invalid options raise `TypeError` or `ValueError`. Operations after close raise `RuntimeError`. Missing optional image, marimo, or WebSocket dependencies raise `ImportError`. Async close can raise `TimeoutError`.
+Standard Python exceptions also define public contracts. Invalid options raise `TypeError` or `ValueError`. Operations after close raise `RuntimeError`. Missing optional image or WebSocket dependencies raise `ImportError`. Async close can raise `TimeoutError`.
 
 `BrowserError`, `NativeParseError`, `ActionTransitionError`, `BrowserInstallError`, `RestoreSaveError`, and `CDPError` inherit from `AgentBrowserError`. `ConfirmationRequired` inherits from `BrowserError`. Stale ref errors also inherit from `BrowserError`.
 

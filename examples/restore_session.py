@@ -6,7 +6,7 @@ session = SessionOptions(
 )
 
 browser = Browser.launch(session=session)
-browser.open("https://example.com")
+browser.page.open("https://example.com")
 print(browser.session.status().restore_status)
 
 closed = browser.close()

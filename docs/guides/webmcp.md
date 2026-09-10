@@ -18,7 +18,7 @@ from agentbrowser import Browser
 
 with Browser.launch() as browser:
     browser.page.set_content('<output id="result">idle</output>')
-    browser.evaluate("""
+    browser.page.evaluate("""
       (() => {
         if (typeof document.modelContext?.registerTool !== "function") {
           document.body.dataset.webmcpReady = "unavailable";
@@ -46,7 +46,7 @@ with Browser.launch() as browser:
     browser.page.wait_for_function(
         "document.body.dataset.webmcpReady !== undefined"
     )
-    if browser.evaluate("document.body.dataset.webmcpReady") != "true":
+    if browser.page.evaluate("document.body.dataset.webmcpReady") != "true":
         print("WebMCP is unavailable in this Chrome build")
     else:
         tools = browser.webmcp.list()
@@ -56,7 +56,7 @@ with Browser.launch() as browser:
             {"message": "Ready"},
             frame_id=set_message.frame_id,
         )
-        print(invocation.status, browser.find.css("#result").text())
+        print(invocation.status, browser.page.find.css("#result").text())
 ```
 
 Tool names can repeat across frames. Pass the selected tool's `frame_id` to bind the call to its page context.

@@ -9,9 +9,9 @@ extension to Python.
 
 The Python SDK adds four owned behaviors above the native command set:
 
-1. `Snapshot`, `Ref`, and `ActionResult` bind browser actions to reproducible
-   before-and-after evidence.
-2. Namespaces such as `browser.page`, `browser.find`, `browser.capture`, and
+1. `Page`, `Frame`, `Snapshot`, `Ref`, and `ActionResult` bind browser actions
+   to explicit document scope and reproducible before-and-after evidence.
+2. Namespaces such as `page.find`, `page.capture`, `page.scroll`, and
    `browser.cdp` expose Python types, validation, and lifecycle semantics.
 3. Domain containment, typed confirmation continuations, session status, async
    ownership, and terminal close evidence stay attached to every checked native
@@ -60,8 +60,8 @@ invalidate cached direct CDP frame and execution-context handles. Read
 | Surface               | Owner                                                                          | Responsibility                                                                      |
 | --------------------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------- |
 | Public controller     | `browser.py`, `browser_async.py`                                               | Startup, close, namespaces, confirmation continuations, result decoding             |
-| Agent evidence        | `_evidence.py`, `agent_async.py`, `models.py`                                  | Snapshots, refs, waits, diffs, transition results, typed errors                     |
-| Code-mode capability  | `agent.py`, Agent Plugin resources                                             | Durable scratchpad connections, dynamic help, and version-matched Python guidance  |
+| Agent evidence        | `_evidence.py`, `agent_async.py`, `models.py`, `manifest.py`                   | Scoped snapshots, refs, waits, diffs, images, assessments, and assertions           |
+| Code-mode capability  | `agent.py`, `host.py`, `runtime.py`, `tasks.py`, Agent Plugin resources         | Process-local controllers, host targets, typed image results, tasks, and execution limits |
 | Capability namespaces | `domains.py`, `domains_async.py`, `query.py`, `query_async.py`                 | Stable Python workflows over native actions                                         |
 | Browser installation  | `install.py`                                                                   | Executable discovery and isolated Chrome for Testing preparation                    |
 | Safety boundary       | `launch.py`, `_allowlist.py`, `session.py`, `session_async.py`, native adapter | Launch constraints, domain containment, confirmation replay, and response filtering |
@@ -83,9 +83,9 @@ Three terms keep this path precise:
 - A native action is one engine behavior such as `launch` or `navigate`.
 - A JSON command is one serialized invocation of a native action.
 
-`Browser().open("example.com")` can contain two native actions:
+`Browser().page.open("example.com")` can contain two native actions:
 
-1. `Browser.open()` delegates to `Page.open()`, which normalizes the URL.
+1. `Page.open()` normalizes the URL and carries its target identity into dispatch.
 2. A lazy controller first sends a `launch` action. Confirmation can pause this
    action before navigation begins.
 3. The controller then sends a `navigate` action. An already-launched controller
