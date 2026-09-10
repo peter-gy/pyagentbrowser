@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import importlib.util
 import io
+import subprocess
+import sys
 import tarfile
 import zipfile
 from pathlib import Path
@@ -11,7 +13,10 @@ import agent_plugins
 import pytest
 
 import _agent_plugins_maturin as agent_plugin_backend
-from scripts import package_smoke
+from scripts.artifacts import native, plugin
+from scripts.artifacts import sdist as sdist_checks
+from scripts.artifacts import wheel as wheel_checks
+from scripts.artifacts.core import PackageSmokeError
 
 pytestmark = pytest.mark.packaging
 ROOT = Path(__file__).resolve().parents[2]
@@ -65,7 +70,7 @@ def test_wheel_payload_checks_runtime_anchors_and_one_native_extension(
     }
     sizes = {name: 1 for name in names}
 
-    package_smoke.assert_wheel_runtime_payload(
+    wheel_checks.assert_wheel_runtime_payload(
         names,
         sizes,
         artifact_name,
@@ -99,8 +104,8 @@ def test_wheel_payload_rejects_invalid_native_boundaries(
     sizes = {name: 1 for name in names}
     sizes.update(native_extensions)
 
-    with pytest.raises(package_smoke.PackageSmokeError, match=match):
-        package_smoke.assert_wheel_runtime_payload(
+    with pytest.raises(PackageSmokeError, match=match):
+        wheel_checks.assert_wheel_runtime_payload(
             names,
             sizes,
             "pyagentbrowser-1.0.0-cp311-abi3-macosx_11_0_arm64.whl",
@@ -108,17 +113,23 @@ def test_wheel_payload_rejects_invalid_native_boundaries(
 
 
 def test_wheel_rejects_source_and_development_payloads() -> None:
-    with pytest.raises(package_smoke.PackageSmokeError, match="forbidden payload"):
-        package_smoke.assert_wheel_excludes_source_and_junk(
+    with pytest.raises(PackageSmokeError, match="forbidden payload"):
+        wheel_checks.assert_wheel_excludes_source_and_junk(
             {"agentbrowser/__init__.py", "tests/test_runtime.py"}
         )
 
 
 def test_wheel_rejects_empty_python_modules() -> None:
-    with pytest.raises(package_smoke.PackageSmokeError, match="empty Python modules"):
-        package_smoke.assert_wheel_python_modules_are_nonempty(
-            {"agentbrowser/__init__.py": 0, "agentbrowser/py.typed": 0}
+    with pytest.raises(PackageSmokeError, match="empty Python modules"):
+        wheel_checks.assert_wheel_module_payloads(
+            {"agentbrowser/browser.py": 0, "agentbrowser/py.typed": 0}
         )
+
+
+def test_wheel_accepts_empty_package_initializers() -> None:
+    wheel_checks.assert_wheel_module_payloads(
+        {"agentbrowser/features/__init__.py": 0, "agentbrowser/features/capture/api.py": 100}
+    )
 
 
 @pytest.mark.parametrize(
@@ -133,8 +144,8 @@ def test_native_artifact_scan_rejects_build_paths(
     with zipfile.ZipFile(wheel, "w") as archive:
         archive.writestr("agentbrowser/_native.abi3.so", leaked_path)
 
-    with pytest.raises(package_smoke.PackageSmokeError, match="local build paths"):
-        package_smoke.assert_native_extension_excludes_local_build_paths(wheel)
+    with pytest.raises(PackageSmokeError, match="local build paths"):
+        native.assert_native_extension_excludes_local_build_paths(wheel)
 
 
 def test_native_artifact_scan_allows_dependency_io_modules(tmp_path: Path) -> None:
@@ -145,7 +156,7 @@ def test_native_artifact_scan_allows_dependency_io_modules(tmp_path: Path) -> No
             b"/cargo/registry/src/tokio/src/io/registration.rs",
         )
 
-    package_smoke.assert_native_extension_excludes_local_build_paths(wheel)
+    native.assert_native_extension_excludes_local_build_paths(wheel)
 
 
 def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: Path) -> None:
@@ -159,10 +170,10 @@ def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: 
         archive.writestr("pyagentbrowser-0.36.0.dist-info/RECORD", "")
 
     agent_plugins.attach_wheel(wheel, project=ROOT)
-    names = package_smoke.wheel_names(wheel)
+    names = wheel_checks.wheel_names(wheel)
 
-    package_smoke.assert_wheel_agent_plugin(wheel, names)
-    package_smoke.assert_wheel_record(wheel)
+    plugin.assert_wheel_agent_plugin(wheel, names)
+    wheel_checks.assert_wheel_record(wheel)
     with zipfile.ZipFile(wheel) as archive:
         for mapping in agent_plugins.build_plan(ROOT).files:
             packaged = f"pyagentbrowser-0.36.0.agent-plugin/{mapping.target.as_posix()}"
@@ -170,8 +181,8 @@ def test_cross_platform_wheel_step_attaches_the_complete_agent_plugin(tmp_path: 
 
 
 def test_sdist_agent_plugin_check_rejects_an_incomplete_inventory() -> None:
-    with pytest.raises(package_smoke.PackageSmokeError, match="payload drifted"):
-        package_smoke.assert_sdist_agent_plugin(
+    with pytest.raises(PackageSmokeError, match="payload drifted"):
+        plugin.assert_sdist_agent_plugin(
             {".agent-plugin/plugin.json", ".agent-plugin/skills/pyagentbrowser/SKILL.md"}
         )
 
@@ -214,5 +225,46 @@ def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:
         ".github/workflows/release.yml",
         "third_party/agent-browser/docs/internal.md",
     ):
-        with pytest.raises(package_smoke.PackageSmokeError):
-            package_smoke.assert_sdist_excludes_junk_and_dashboard_payload({forbidden})
+        with pytest.raises(PackageSmokeError):
+            sdist_checks.assert_sdist_excludes_junk_and_dashboard_payload({forbidden})
+
+
+def test_sdist_requires_the_owned_build_dependency_sources(tmp_path: Path) -> None:
+    (tmp_path / "Cargo.toml").write_text(
+        '[workspace]\nmembers = ["crates/engine-build"]\n', encoding="utf-8"
+    )
+    crate = tmp_path / "crates/engine-build"
+    source = crate / "src/features"
+    source.mkdir(parents=True)
+    (crate / "Cargo.toml").write_text('[package]\nname = "engine-build"\n', encoding="utf-8")
+    (crate / "build.rs").write_text("fn main() {}\n", encoding="utf-8")
+    (crate / "src/lib.rs").write_text("mod features;\n", encoding="utf-8")
+    (source / "mod.rs").write_text("mod capture;\n", encoding="utf-8")
+    (source / "capture.rs").write_text("pub fn generate() {}\n", encoding="utf-8")
+    names = {
+        "crates/engine-build/Cargo.toml",
+        "crates/engine-build/build.rs",
+        "crates/engine-build/src/lib.rs",
+        "crates/engine-build/src/features/mod.rs",
+        "crates/engine-build/src/features/capture.rs",
+    }
+
+    sdist_checks.assert_sdist_build_sources(names, root=tmp_path)
+
+    names.remove("crates/engine-build/src/features/capture.rs")
+    with pytest.raises(PackageSmokeError, match=r"src/features/capture\.rs"):
+        sdist_checks.assert_sdist_build_sources(names, root=tmp_path)
+
+
+def test_package_smoke_command_reports_missing_artifacts(tmp_path: Path) -> None:
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.package_smoke", str(tmp_path)],
+        cwd=ROOT,
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+
+    assert result.returncode == 1
+    assert "expected at least one wheel" in result.stderr
+    assert result.stdout == ""

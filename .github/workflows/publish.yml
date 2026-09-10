@@ -265,7 +265,7 @@ jobs:
           from urllib.error import HTTPError
           from urllib.request import urlopen
 
-          from scripts.package_smoke import expected_release_artifact_names
+          from scripts.artifacts.release import expected_release_artifact_names
 
           version = os.environ["VERSION"].removeprefix("v")
           url = f"https://pypi.org/pypi/pyagentbrowser/{version}/json"

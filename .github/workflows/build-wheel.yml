@@ -138,7 +138,8 @@ jobs:
           import os
           from pathlib import Path
 
-          from scripts.package_smoke import check_sdist, check_wheel
+          from scripts.artifacts.sdist import check_sdist
+          from scripts.artifacts.wheel import check_wheel
 
           wheels = sorted(Path("dist").glob("*.whl"))
           assert len(wheels) == 1, wheels
