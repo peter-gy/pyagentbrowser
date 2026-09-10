@@ -7,8 +7,8 @@ import pytest
 from fakes import ScriptedNative
 
 from agentbrowser import ActionResult, AsyncBrowser, Browser, ConfirmationRequired, Wait
-from agentbrowser.session import NativeSession
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.transport.async_ import AsyncNativeSession
+from agentbrowser.transport.sync import NativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
@@ -35,6 +35,7 @@ def _confirmation(action: str, confirmation_id: str) -> dict[str, Any]:
 def _confirmed(action: str, data: Any) -> dict[str, Any]:
     return {
         "success": True,
+        "targetId": "fixture-target",
         "data": {
             "confirmed": True,
             "action": action,

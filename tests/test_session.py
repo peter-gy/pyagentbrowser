@@ -17,11 +17,12 @@ from fakes import (
     WarningNative,
 )
 
-import agentbrowser.session as session_module
+import agentbrowser.transport.sync as session_module
 from agentbrowser import BrowserError, ConfirmationRequired, RestoreOptions
-from agentbrowser.models import OMIT, DashboardOptions
-from agentbrowser.session import NativeSession
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.contracts.protocol import OMIT
+from agentbrowser.features.session.models import DashboardOptions
+from agentbrowser.transport.async_ import AsyncNativeSession
+from agentbrowser.transport.sync import NativeSession
 
 pytestmark = pytest.mark.sdk_dx
 

@@ -8,23 +8,17 @@ from pathlib import Path
 import pytest
 
 from agentbrowser import AsyncBrowser, Browser, LaunchOptions, OpenTarget
-from agentbrowser.host import (
-    CallbackHost,
-    ImageContent,
-    ImageDelivery,
-    bind_host,
-    current_host,
-    reset_host,
-)
-from agentbrowser.runtime import CodeSession
-from agentbrowser.tasks import Tasks
+from agentbrowser.contracts.images import ImageContent, ImageDelivery
+from agentbrowser.integrations.host import CallbackHost, bind_host, current_host, reset_host
+from agentbrowser.integrations.runtime import CodeSession
+from agentbrowser.integrations.tasks import Tasks
 
 
 @pytest.mark.sdk_dx
 def test_execution_preserves_globals_and_serializes_ordered_image_content() -> None:
     session = CodeSession(OpenTarget("https://example.com"))
     first = session.execute_code(
-        "from agentbrowser.host import current_host, ImageContent\n"
+        "from agentbrowser import current_host, ImageContent\n"
         "value = 20\n"
         "def report():\n"
         "    print('before')\n"
@@ -79,7 +73,7 @@ def test_execution_restores_host_and_preserves_partial_output_on_error() -> None
     try:
         session = CodeSession(OpenTarget("https://inner.example"))
         result = session.execute_code(
-            "from agentbrowser.host import current_host\n"
+            "from agentbrowser import current_host\n"
             "saved = current_host().current_target().url\n"
             "print(saved)\n"
             "raise ValueError('failed')"
@@ -98,9 +92,7 @@ def test_execution_restores_host_and_preserves_partial_output_on_error() -> None
 @pytest.mark.sdk_dx
 def test_image_emission_after_execution_fails_before_changing_returned_content() -> None:
     session = CodeSession(OpenTarget("https://example.com"))
-    result = session.execute_code(
-        "from agentbrowser.host import current_host\nhost = current_host()"
-    )
+    result = session.execute_code("from agentbrowser import current_host\nhost = current_host()")
     with pytest.raises(RuntimeError, match="execution has ended"):
         session.namespace["host"].emit_image(ImageContent(b"png", "image/png"))
     assert result == {"content": [], "isError": False}
@@ -160,7 +152,7 @@ def test_managed_task_retains_result_and_owns_execution_budget_across_calls() ->
         release = asyncio.Event()
         session = CodeSession(OpenTarget("https://example.com"), namespace={"release": release})
         started = await session.aexecute_code(
-            "from agentbrowser.host import current_host\n"
+            "from agentbrowser import current_host\n"
             "async def operation():\n"
             "    await release.wait()\n"
             "    return current_host().execution_context().timeout_ms\n"
@@ -298,7 +290,7 @@ def test_background_image_emission_requires_an_active_code_call() -> None:
     async def run() -> None:
         session = CodeSession(OpenTarget("https://example.com"))
         result = await session.aexecute_code(
-            "from agentbrowser.host import current_host, ImageContent\n"
+            "from agentbrowser import current_host, ImageContent\n"
             "async def operation():\n"
             "    current_host().emit_image(ImageContent(b'png', 'image/png'))\n"
             "task = current_host().start_task('image', operation)"
@@ -321,7 +313,7 @@ def test_real_screenshot_reaches_serialized_tool_result(chrome_path: Path, tmp_p
             namespace={"browser": browser, "output_path": tmp_path / "capture.png"},
         )
         result = session.execute_code(
-            "from agentbrowser.host import current_host\n"
+            "from agentbrowser import current_host\n"
             "host = current_host()\n"
             "browser.page.open(host.current_target().url)\n"
             "shot = browser.page.capture.screenshot(path=output_path)\n"
@@ -353,7 +345,7 @@ def test_managed_browser_task_returns_screenshot_to_a_later_call(
             )
             try:
                 started = await session.aexecute_code(
-                    "from agentbrowser.host import current_host\n"
+                    "from agentbrowser import current_host\n"
                     "async def capture():\n"
                     "    await browser.page.open(current_host().current_target().url)\n"
                     "    return await browser.page.capture.screenshot(path=output_path)\n"

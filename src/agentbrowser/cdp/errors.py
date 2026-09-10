@@ -3,7 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
-from agentbrowser.models import AgentBrowserError
+from agentbrowser.contracts.errors import AgentBrowserError
 
 
 class CDPError(AgentBrowserError):

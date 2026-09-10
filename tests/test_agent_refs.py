@@ -25,8 +25,8 @@ from agentbrowser import (
     StaleRefError,
     Wait,
 )
-from agentbrowser.session import NativeSession
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.transport.async_ import AsyncNativeSession
+from agentbrowser.transport.sync import NativeSession
 
 pytestmark = pytest.mark.sdk_dx
 

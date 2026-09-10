@@ -27,8 +27,8 @@ from agentbrowser import (
     SnapshotDiff,
     StaleRefError,
 )
-from agentbrowser.session import NativeSession
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.transport.async_ import AsyncNativeSession
+from agentbrowser.transport.sync import NativeSession
 
 pytestmark = pytest.mark.sdk_dx
 TARGET_ID = "A" * 16
@@ -170,7 +170,7 @@ def test_sync_scoped_operations_restore_public_results_after_confirmation(
     page, _ = _confirmed_sync("tab_list", _tabs_data(), lambda b: b.tabs.get(id="t1"))
 
     assert isinstance(snapshot, Snapshot)
-    assert snapshot.browser.scope.target_id == TARGET_ID
+    assert snapshot.document.scope.target_id == TARGET_ID
     assert evaluated == "ready"
     assert isinstance(geometry, ElementGeometry)
     assert geometry.scope.target_id == TARGET_ID
@@ -214,7 +214,7 @@ def test_async_scoped_operations_restore_public_results_after_confirmation(
         page, _ = await _confirmed_async("tab_list", _tabs_data(), lambda b: b.tabs.get(id="t1"))
 
         assert isinstance(snapshot, AsyncSnapshot)
-        assert snapshot.browser.scope.target_id == TARGET_ID
+        assert snapshot.document.scope.target_id == TARGET_ID
         assert evaluated == "ready"
         assert isinstance(geometry, ElementGeometry)
         assert geometry.scope.target_id == TARGET_ID
@@ -588,7 +588,7 @@ def test_frame_snapshot_diff_and_manifest_keep_captured_scope_generation() -> No
     native = _ConfirmingFrameSnapshotNative()
     browser = Browser(_native_session=NativeSession(native=native))
     frame = Frame(
-        browser,
+        browser.extension(lambda executor: executor),
         target_id=TARGET_ID,
         frame_id="preview",
         frame_url=f"{ORIGIN}/frame",
@@ -607,7 +607,7 @@ def test_frame_snapshot_diff_and_manifest_keep_captured_scope_generation() -> No
             "url": f"{ORIGIN}/frame",
             "generation": 1,
         }
-        assert browser._ref_generation == 2
+        assert browser._controller._ref_generation == 2
     finally:
         browser.close()
 
@@ -617,7 +617,7 @@ def test_async_frame_snapshot_diff_and_manifest_keep_captured_scope_generation()
         native = _ConfirmingFrameSnapshotNative()
         browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
         frame = AsyncFrame(
-            browser,
+            browser.extension(lambda executor: executor),
             target_id=TARGET_ID,
             frame_id="preview",
             frame_url=f"{ORIGIN}/frame",
@@ -636,7 +636,7 @@ def test_async_frame_snapshot_diff_and_manifest_keep_captured_scope_generation()
                 "url": f"{ORIGIN}/frame",
                 "generation": 1,
             }
-            assert browser._ref_generation == 2
+            assert browser._controller._ref_generation == 2
         finally:
             await browser.close()
 

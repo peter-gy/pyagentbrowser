@@ -4,20 +4,19 @@ This package owns the public Python contract around the embedded engine.
 
 ## Place behavior
 
-- `browser.py` and `browser_async.py` own controller lifecycle, confirmation
-  continuations, typed decoding, and namespace composition.
-- `_evidence.py` and `agent_async.py` own snapshots, refs, transition evidence,
-  and stale-ref recovery. `agent.py` owns process-local browser registration
-  and installed Agent Plugin resources. `host.py` owns host target, image,
-  and execution contracts.
-- `runtime.py` owns persistent Python execution and typed tool-result content.
-  `tasks.py` owns asynchronous work, retained results, and settled cancellation.
-- `domains.py` and `domains_async.py` own page and frame handles plus focused
-  capability namespaces. Document operations preserve their target and frame
-  identity across native dispatch and confirmation continuations.
-- `session.py` and `session_async.py` own ordered JSON protocol execution.
-- `models.py` owns public values and errors. `command_params.py` owns native
-  payload construction. `cdp/` owns the optional direct CDP path.
+- `browser.py` and `browser_async.py` compose public capabilities and expose
+  lifecycle operations through owned resource controllers.
+- `features/<capability>/` owns its API, local models, parameter validation,
+  decoders, and composed workflows. Use `Executor` and `AsyncExecutor` for
+  checked commands and document identity.
+- `execution/` owns resource controllers, confirmation, command effects,
+  policy, and lifecycle. `transport/` owns JSON serialization and ordered native
+  sessions. `contracts/` holds errors and values shared across features.
+- `integrations/` owns host binding, Python code
+  execution, image tool content, managed tasks, and packaged guidance.
+  `agent.py` owns the process-local controller registry and exposes the
+  code-mode capability entry point.
+- `cdp/` owns the optional direct Chrome DevTools Protocol path.
 
 Keep high-level workflow semantics in Python. Put native process integration or
 upstream source adaptation in the Rust crates.

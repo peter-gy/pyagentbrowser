@@ -13,8 +13,8 @@ from agentbrowser import (
     bind_host,
     reset_host,
 )
-from agentbrowser.session import NativeSession
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.transport.async_ import AsyncNativeSession
+from agentbrowser.transport.sync import NativeSession
 from tests.fakes import EchoNative, ScriptedNative
 
 pytestmark = pytest.mark.sdk_dx
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.sdk_dx
 
 def test_execution_budget_decreases_and_stops_dispatch_but_allows_cleanup(monkeypatch):
     now = [100.0]
-    monkeypatch.setattr("agentbrowser.host.monotonic", lambda: now[0])
+    monkeypatch.setattr("agentbrowser.contracts.execution.monotonic", lambda: now[0])
     context = ExecutionContext(timeout_ms=5_000)
     native = EchoNative()
     session = NativeSession(native=native)
@@ -49,7 +49,7 @@ def test_execution_budget_decreases_and_stops_dispatch_but_allows_cleanup(monkey
 def test_async_queue_preserves_deadline_from_submission(monkeypatch):
     async def run():
         now = [100.0]
-        monkeypatch.setattr("agentbrowser.host.monotonic", lambda: now[0])
+        monkeypatch.setattr("agentbrowser.contracts.execution.monotonic", lambda: now[0])
         started, release = Event(), Event()
 
         def hold(_):

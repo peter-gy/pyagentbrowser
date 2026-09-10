@@ -1,53 +1,28 @@
 from __future__ import annotations
 
-import asyncio
-import inspect
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable
 from contextlib import suppress
-from dataclasses import dataclass, replace
-from typing import TYPE_CHECKING, Any, Generic, Literal, Self, TypeVar, cast, overload
-from weakref import proxy as weak_proxy
+from typing import TYPE_CHECKING, Self, TypeVar
 
-from agentbrowser._browser_common import (
-    CDP_URL_ACTIONS,
-    action_clears_pending_confirmation,
-    action_closes_browser,
-    action_invalidates_cdp,
-    action_resets_cdp,
-    action_sets_launched,
-    confirmation_id,
-    response_browser_launched,
-    response_confirmation_id,
-    response_data_mapping,
-)
-from agentbrowser.browser import _SKIP_AUTO_INSTALL_ACTIONS, _uses_local_chrome
-from agentbrowser.command_params import (
-    geolocation_params,
-    media_params,
-    permissions_params,
-    viewport_params,
-)
-from agentbrowser.domains_async import (
-    AsyncCDP,
-    AsyncClipboard,
-    AsyncCommandTarget,
-    AsyncCookies,
-    AsyncDiagnostics,
-    AsyncDialogs,
-    AsyncDiff,
-    AsyncDownloads,
-    AsyncKeyboard,
-    AsyncMouse,
-    AsyncNetwork,
-    AsyncPage,
-    AsyncScripts,
-    AsyncSession,
-    AsyncState,
-    AsyncStorage,
-    AsyncTabs,
-    AsyncWebMCP,
-)
-from agentbrowser.install import ensure_installed
+from agentbrowser.contracts.errors import ConfirmationRequired
+from agentbrowser.execution.commands import AsyncBoundExecutor, AsyncExecutor, Command
+from agentbrowser.execution.controller_async import AsyncController
+from agentbrowser.execution.native import AsyncNative
+from agentbrowser.features.cdp.api import AsyncCDP
+from agentbrowser.features.dashboard.api import AsyncDashboard
+from agentbrowser.features.diagnostics.api import AsyncDiagnostics
+from agentbrowser.features.diagnostics.diff import AsyncDiff
+from agentbrowser.features.documents.handles_async import AsyncPage
+from agentbrowser.features.downloads.api import AsyncDownloads
+from agentbrowser.features.emulation.api import AsyncEmulation
+from agentbrowser.features.input.api import AsyncClipboard, AsyncDialogs, AsyncKeyboard, AsyncMouse
+from agentbrowser.features.network.api import AsyncNetwork
+from agentbrowser.features.scripts.api import AsyncScripts
+from agentbrowser.features.session.api import AsyncSession
+from agentbrowser.features.session.models import CloseResult
+from agentbrowser.features.storage.api import AsyncCookies, AsyncState, AsyncStorage
+from agentbrowser.features.tabs.async_ import AsyncTabs
+from agentbrowser.features.webmcp.api import AsyncWebMCP
 from agentbrowser.launch import (
     CDPTarget,
     LaunchConfiguration,
@@ -55,266 +30,12 @@ from agentbrowser.launch import (
     SessionOptions,
     normalize_session,
 )
-from agentbrowser.models import (
-    BrowserResponse,
-    CloseResult,
-    ConfirmationRequired,
-    JSONMapping,
-    JSONValue,
-    RestoreSaveError,
-    close_result_from_data,
-)
-from agentbrowser.session import (
-    _checked_response,
-    _require_response_data_mapping,
-    _try_unwrap_confirmed_response,
-)
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.transport.async_ import AsyncNativeSession
 
 if TYPE_CHECKING:
-    from agentbrowser.cdp import AsyncCDPController
     from agentbrowser.health import BrowserCapabilities, HealthCheck
 
 T = TypeVar("T")
-U = TypeVar("U")
-
-
-@dataclass(frozen=True, slots=True)
-class AsyncNative:
-    """Raw native command boundary for an `AsyncBrowser`."""
-
-    _browser: AsyncBrowser
-
-    async def execute(self, action: str, **params: Any) -> BrowserResponse:
-        """Run a native command and return the response envelope."""
-        return await self._browser._native_execute(action, **params)
-
-    @overload
-    async def data(self, action: str, **params: Any) -> JSONMapping: ...
-
-    @overload
-    async def data(
-        self,
-        action: str,
-        *,
-        expect: Literal["object"],
-        **params: Any,
-    ) -> JSONMapping: ...
-
-    @overload
-    async def data(
-        self,
-        action: str,
-        *,
-        expect: Literal["any"],
-        **params: Any,
-    ) -> JSONValue: ...
-
-    async def data(
-        self,
-        action: str,
-        *,
-        expect: str = "object",
-        **params: Any,
-    ) -> JSONMapping | JSONValue:
-        """Run a native command and return checked response data.
-
-        `expect="object"` requires object-shaped response data. Use
-        `expect="any"` for native actions whose `data` is a scalar, array, or
-        `null`.
-        """
-        return await self._browser._native_data(action, expect=expect, **params)
-
-
-@dataclass(frozen=True, slots=True)
-class AsyncDashboard:
-    """Dashboard observability lifecycle for an `AsyncBrowser`."""
-
-    _browser: AsyncBrowser
-
-    async def status(self) -> Mapping[str, Any]:
-        """Return the configured dashboard stream status."""
-        return await self._browser._command("stream_status")
-
-    async def stop(self) -> None:
-        """Stop dashboard streaming for this browser."""
-        await self._browser._command("stream_disable", _decode=lambda _data: None)
-
-
-@dataclass(frozen=True, slots=True)
-class AsyncEmulation:
-    """Async browser environment and device emulation."""
-
-    _browser: AsyncBrowser
-
-    async def viewport(
-        self,
-        width: int,
-        height: int,
-        *,
-        device_scale_factor: float = 1.0,
-        mobile: bool = False,
-    ) -> None:
-        """Set viewport dimensions in CSS pixels."""
-        await self._browser._command(
-            "viewport",
-            _decode=lambda _data: None,
-            **viewport_params(
-                width,
-                height,
-                device_scale_factor=device_scale_factor,
-                mobile=mobile,
-            ),
-        )
-
-    async def device(self, name: str) -> None:
-        """Apply a named device preset."""
-        await self._browser._command("device", _decode=lambda _data: None, name=name)
-
-    async def headers(self, headers: Mapping[str, str]) -> None:
-        """Set extra HTTP headers."""
-        await self._browser._command(
-            "headers",
-            _decode=lambda _data: None,
-            headers=dict(headers),
-        )
-
-    async def offline(self, enabled: bool = True) -> None:
-        """Set network offline emulation."""
-        await self._browser._command(
-            "offline",
-            _decode=lambda _data: None,
-            offline=enabled,
-        )
-
-    async def user_agent(self, value: str) -> None:
-        """Set the browser user agent."""
-        await self._browser._command(
-            "useragent",
-            _decode=lambda _data: None,
-            userAgent=value,
-        )
-
-    async def media(
-        self,
-        *,
-        media: str | None = None,
-        color_scheme: str | None = None,
-        reduced_motion: str | None = None,
-        features: Mapping[str, str] | None = None,
-    ) -> None:
-        """Set CSS media emulation."""
-        await self._browser._command(
-            "set_media",
-            _decode=lambda _data: None,
-            **media_params(
-                media=media,
-                color_scheme=color_scheme,
-                reduced_motion=reduced_motion,
-                features=features,
-            ),
-        )
-
-    async def timezone(self, timezone_id: str) -> None:
-        """Set the emulated timezone."""
-        await self._browser._command(
-            "timezone",
-            _decode=lambda _data: None,
-            timezoneId=timezone_id,
-        )
-
-    async def locale(self, locale: str) -> None:
-        """Set the emulated locale."""
-        await self._browser._command("locale", _decode=lambda _data: None, locale=locale)
-
-    async def geolocation(
-        self,
-        latitude: float,
-        longitude: float,
-        *,
-        accuracy: float | None = None,
-    ) -> None:
-        """Set emulated coordinates."""
-        await self._browser._command(
-            "geolocation",
-            _decode=lambda _data: None,
-            **geolocation_params(latitude, longitude, accuracy=accuracy),
-        )
-
-    async def permissions(
-        self,
-        permissions: Sequence[str],
-        *,
-        origin: str | None = None,
-    ) -> None:
-        """Grant permissions for an optional origin."""
-        await self._browser._command(
-            "permissions",
-            _decode=lambda _data: None,
-            **permissions_params(permissions, origin=origin),
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class AsyncPendingAction(Generic[T]):
-    """Native action awaiting explicit async confirmation or denial."""
-
-    _browser: AsyncBrowser
-    confirmation_id: str
-    action: str
-    details: Mapping[str, Any]
-    _decode: Callable[[JSONMapping], T] | None = None
-    _expect: Literal["object", "any"] = "object"
-    _complete: Callable[[Any], Any] | None = None
-
-    async def confirm(self) -> T:
-        """Confirm this pending action and decode its original return type."""
-        try:
-            result: Any = await self._browser._native_data(
-                "confirm",
-                expect=self._expect,
-                confirmation_id=self.confirmation_id,
-            )
-        except ConfirmationRequired as error:
-            if isinstance(error.pending, AsyncPendingAction):
-                error.pending = replace(
-                    error.pending,
-                    _decode=self._decode,
-                    _expect=self._expect,
-                    _complete=self._complete,
-                )
-            raise
-        if self._decode is not None:
-            result = self._decode(cast(JSONMapping, result))
-        if self._complete is None:
-            return cast(T, result)
-        completed = self._complete(result)
-        return cast(T, await completed if inspect.isawaitable(completed) else completed)
-
-    async def deny(self) -> None:
-        """Deny this pending action."""
-        await self._browser._command("deny", confirmation_id=self.confirmation_id)
-
-    def map(self, complete: Callable[[T], U]) -> AsyncPendingAction[U]:
-        """Complete a higher-level operation after native confirmation."""
-        previous = self._complete
-        if previous is None:
-            composed: Callable[[Any], Any] = complete
-        else:
-
-            async def composed(value: Any) -> Any:
-                try:
-                    intermediate = previous(value)
-                    if inspect.isawaitable(intermediate):
-                        intermediate = await intermediate
-                except ConfirmationRequired as error:
-                    if error.pending is not None:
-                        error.pending = error.pending.map(complete)
-                    raise
-                completed = complete(intermediate)
-                return await completed if inspect.isawaitable(completed) else completed
-
-        return cast(AsyncPendingAction[U], replace(self, _complete=composed))
 
 
 class AsyncBrowser:
@@ -323,8 +44,7 @@ class AsyncBrowser:
     Native calls run on a dedicated owner thread so the event loop can keep
     scheduling unrelated work. Document operations live under `page`.
     Browser-wide operations live under `tabs`, `network`, `diagnostics`,
-    `session`, `webmcp`, `cdp`, and `native`.
-    """
+    `session`, `webmcp`, `cdp`, and `native`."""
 
     def __init__(
         self,
@@ -336,11 +56,12 @@ class AsyncBrowser:
         launch_configuration = LaunchConfiguration.from_public_options(
             allowed_domains=base_options._allowed_domains()
         )
-        self._init(
+        self._controller = AsyncController(
             launch_configuration,
             session=base_options,
             native_session=_native_session,
         )
+        self._page_target_id: str | None = None
 
     @classmethod
     def _from_configuration(
@@ -351,117 +72,16 @@ class AsyncBrowser:
         native_session: AsyncNativeSession | None = None,
     ) -> AsyncBrowser:
         browser = cls.__new__(cls)
-        browser._init(
+        browser._controller = AsyncController(
             launch_configuration,
             session=session,
             native_session=native_session,
         )
+        browser._page_target_id = None
         return browser
-
-    def _init(
-        self,
-        launch_configuration: LaunchConfiguration,
-        *,
-        session: SessionOptions | None = None,
-        native_session: AsyncNativeSession | None = None,
-    ) -> None:
-        session_config = normalize_session(session)
-        self._session = native_session or AsyncNativeSession(
-            session=session_config.session_id,
-            restore=session_config.restore,
-            namespace=session_config.namespace,
-            default_timeout_ms=session_config._timeout_ms(),
-            allowed_domains=session_config._allowed_domains(),
-            engine=launch_configuration.engine,
-            action_policy=session_config.action_policy,
-            confirm_actions=session_config.confirm_actions,
-            no_auto_dialog=not session_config.auto_dialogs,
-            pin_tab=session_config.pin_tab,
-            dashboard=session_config.dashboard,
-        )
-        if native_session is not None and session_config.allowed_domains:
-            self._session.set_allowed_domains(session_config._allowed_domains())
-        default_session_config = SessionOptions()
-        if native_session is not None and session_config.namespace is not None:
-            raise ValueError(
-                "namespace must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if native_session is not None and session_config.session_id is not None:
-            raise ValueError(
-                "session_id must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if native_session is not None and session_config.restore is not None:
-            raise ValueError(
-                "restore must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if native_session is not None and session_config.timeout != default_session_config.timeout:
-            raise ValueError(
-                "default_timeout_ms must be set on AsyncNativeSession "
-                "when native_session is supplied"
-            )
-        if native_session is not None and session_config.action_policy is not None:
-            raise ValueError(
-                "action_policy must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if native_session is not None and session_config.confirm_actions:
-            raise ValueError(
-                "confirm_actions must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if native_session is not None and session_config.pin_tab is not None:
-            raise ValueError(
-                "pin_tab must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if (
-            native_session is not None
-            and session_config.auto_dialogs != default_session_config.auto_dialogs
-        ):
-            raise ValueError(
-                "no_auto_dialog must be set on AsyncNativeSession when native_session is supplied"
-            )
-        if native_session is not None and session_config.dashboard is not None:
-            raise ValueError(
-                "dashboard must be set on AsyncNativeSession when native_session is supplied"
-            )
-        self._launch_configuration = launch_configuration
-        self._auto_install = native_session is None
-        self._install_prepared = False
-        self._launched = False
-        self._close_task: asyncio.Task[CloseResult] | None = None
-        self._cdp_controller: AsyncCDPController | None = None
-        self._pending_cdp_invalidations: set[str] = set()
-        self._ref_generation = 0
-
-        command_target = cast(AsyncCommandTarget, weak_proxy(self))
-        browser_proxy = cast(AsyncBrowser, weak_proxy(self))
-        self._page_target_id: str | None = None
-        self._active_target_id: str | None = None
-        self.cdp = AsyncCDP(browser_proxy)
-        self.clipboard = AsyncClipboard(command_target)
-        self.cookies = AsyncCookies(command_target)
-        self.diagnostics = AsyncDiagnostics(command_target)
-        self.dashboard = AsyncDashboard(browser_proxy)
-        self.dialogs = AsyncDialogs(command_target)
-        self.diff = AsyncDiff(command_target)
-        self.downloads = AsyncDownloads(command_target)
-        self.emulation = AsyncEmulation(browser_proxy)
-        self.keyboard = AsyncKeyboard(command_target)
-        self.mouse = AsyncMouse(command_target)
-        self.native = AsyncNative(browser_proxy)
-        self.network = AsyncNetwork(command_target)
-        self.scripts = AsyncScripts(command_target)
-        self.session = AsyncSession(command_target)
-        self.state = AsyncState(command_target)
-        self.storage = AsyncStorage(command_target)
-        self.tabs = AsyncTabs(command_target)
-        self.webmcp = AsyncWebMCP(command_target)
 
     async def __aenter__(self) -> Self:
         return self
-
-    @property
-    def page(self) -> AsyncPage:
-        """Return a main-document handle for the configured page target."""
-        return AsyncPage(self, target_id=self._page_target_id or self._active_target_id)
 
     async def __aexit__(self, exc_type: object, _exc: object, _tb: object) -> None:
         if exc_type is None:
@@ -472,16 +92,6 @@ class AsyncBrowser:
 
     def __repr__(self) -> str:
         return f"AsyncBrowser(launched={self.is_launched!r}, closed={self.closed!r})"
-
-    @property
-    def is_launched(self) -> bool:
-        """Whether the native browser has been launched in this session."""
-        return self._launched
-
-    @property
-    def closed(self) -> bool:
-        """Whether this browser has been closed."""
-        return self._session.closed
 
     def capabilities(self, *, host: object | None = None) -> BrowserCapabilities:
         """Return configured browser and host-integration features."""
@@ -512,7 +122,7 @@ class AsyncBrowser:
             session=session_config,
         )
         try:
-            await browser._launch_process()
+            await browser._controller.start()
         except ConfirmationRequired as error:
             if error.pending is not None:
                 error.pending = error.pending.map(lambda _value: browser)
@@ -538,367 +148,120 @@ class AsyncBrowser:
             session=session_config,
         )
         try:
-            await browser._connect()
+            await browser._controller.start()
         except ConfirmationRequired as error:
             if error.pending is not None:
                 error.pending = error.pending.map(lambda _value: browser)
             raise
         return browser
 
-    @overload
-    async def _command(
-        self,
-        action: str,
-        *,
-        _decode: Callable[[JSONMapping], T],
-        **params: Any,
-    ) -> T: ...
+    @property
+    def _executor(self) -> AsyncExecutor:
+        return AsyncBoundExecutor(self._controller)
 
-    @overload
-    async def _command(
-        self,
-        action: str,
-        *,
-        _decode: None = None,
-        **params: Any,
-    ) -> JSONMapping: ...
+    def extension(self, factory: Callable[[AsyncExecutor], T]) -> T:
+        """Construct a capability using this browser's checked command executor."""
+        return factory(self._executor)
 
-    async def _command(
-        self,
-        action: str,
-        *,
-        _decode: Callable[[JSONMapping], T] | None = None,
-        **params: Any,
-    ) -> T | JSONMapping:
-        """Run a native command and require object-shaped response data.
-
-        Parameters
-        ----------
-        action
-            Native agent-browser command action.
-        **params
-            JSON-compatible command parameters.
-
-        Returns
-        -------
-        Mapping[str, object]
-            Response `data` object returned by the native engine.
-        """
-        try:
-            data = await self._native_data(action, expect="object", **params)
-        except ConfirmationRequired as err:
-            if err.confirmation_id is not None:
-                err.pending = self._pending_action(err, decoder=_decode)
-            raise
-        mapping = cast(JSONMapping, data)
-        return _decode(mapping) if _decode is not None else mapping
-
-    async def _native_data(
-        self,
-        action: str,
-        *,
-        expect: str = "object",
-        **params: Any,
-    ) -> JSONMapping | JSONValue:
-        if expect not in {"object", "any"}:
-            raise ValueError('expect must be "object" or "any"')
-        await self._prepare_install_for_action(action, params)
-        pending_id, compound_invalidation = self._cdp_invalidation_context(action, params)
-        confirmation_consumed = False
-        try:
-            raw_response = await self._session.execute(action, **params)
-            self._record_native_metadata(raw_response)
-            confirmation_consumed = action == "confirm" and raw_response.success
-            response = _checked_response(action, raw_response)
-        except ConfirmationRequired as err:
-            self._continue_cdp_invalidation(
-                pending_id,
-                err.confirmation_id,
-                compound_invalidation,
-            )
-            if err.confirmation_id is not None:
-                err.pending = self._pending_action(
-                    err,
-                    expect=cast(Literal["object", "any"], expect),
-                )
-            raise
-        except BaseException:
-            if compound_invalidation:
-                self._invalidate_cdp()
-            if pending_id is not None and confirmation_consumed:
-                self._pending_cdp_invalidations.discard(pending_id)
-            raise
-        if pending_id is not None and (action == "deny" or confirmation_consumed):
-            self._pending_cdp_invalidations.discard(pending_id)
-        await self._record_successful_action(
-            response,
-            params=params,
-            force_cdp_invalidation=compound_invalidation,
-        )
-        if expect == "any":
-            return response.data
-        return _require_response_data_mapping(response)
-
-    async def _native_execute(self, action: str, **params: Any) -> BrowserResponse:
-        await self._prepare_install_for_action(action, params)
-        pending_id, compound_invalidation = self._cdp_invalidation_context(action, params)
-        try:
-            response = await self._session.execute(action, **params)
-            self._record_native_metadata(response)
-        except BaseException:
-            if compound_invalidation:
-                self._invalidate_cdp()
-            raise
-        confirmation_consumed = action == "confirm" and response.success
-        if confirmation_consumed:
-            response = _try_unwrap_confirmed_response(response)
-        data = response_data_mapping(response)
-        if data is not None and bool(data.get("confirmation_required")):
-            self._continue_cdp_invalidation(
-                pending_id,
-                response_confirmation_id(response),
-                compound_invalidation,
-            )
-            return response
-        if pending_id is not None and (
-            (action == "deny" and response.success) or confirmation_consumed
-        ):
-            self._pending_cdp_invalidations.discard(pending_id)
-        if confirmation_consumed:
-            if response.success:
-                await self._record_successful_action(
-                    response,
-                    params=params,
-                    force_cdp_invalidation=compound_invalidation,
-                )
-            elif compound_invalidation:
-                self._invalidate_cdp()
-            return response
-        if response.success:
-            await self._record_successful_action(
-                response,
-                params=params,
-                force_cdp_invalidation=compound_invalidation,
-            )
-        elif compound_invalidation:
-            self._invalidate_cdp()
-        return response
-
-    def _pending_action(
-        self,
-        confirmation: ConfirmationRequired[Any] | BrowserResponse | str,
-        *,
-        decoder: Callable[[JSONMapping], T] | None = None,
-        expect: Literal["object", "any"] = "object",
-    ) -> AsyncPendingAction[T]:
-        """Return a named pending action for a confirmation exception, response, or id."""
-        if isinstance(confirmation, BrowserResponse):
-            pending_id = response_confirmation_id(confirmation)
-            action = confirmation.action
-            data = response_data_mapping(confirmation) or {}
-        else:
-            pending_id = confirmation_id(confirmation)
-            if isinstance(confirmation, ConfirmationRequired):
-                action = confirmation.action
-                data = confirmation.data
-            else:
-                action = "confirm"
-                data = {}
-        if pending_id is None:
-            raise ValueError("pending action requires a confirmation id")
-        return AsyncPendingAction(
-            _browser=self,
-            confirmation_id=pending_id,
-            action=action,
-            details=dict(data),
-            _decode=decoder,
-            _expect=expect,
+    @property
+    def page(self) -> AsyncPage:
+        """Return a main-document handle for the configured page target."""
+        return AsyncPage(
+            self._executor, target_id=self._page_target_id or self._controller._active_target_id
         )
 
-    def _cdp_invalidation_context(
-        self,
-        action: str,
-        params: Mapping[str, Any],
-    ) -> tuple[str | None, bool]:
-        confirmation_value = (
-            params.get("confirmation_id") if action in {"confirm", "deny"} else None
-        )
-        pending_id = str(confirmation_value) if confirmation_value is not None else None
-        # URL commands can fail after navigation. Preserve invalidation across
-        # confirmation because the confirmed response omits the URL.
-        compound_invalidation = action in CDP_URL_ACTIONS and action_invalidates_cdp(action, params)
-        if action == "confirm" and pending_id in self._pending_cdp_invalidations:
-            compound_invalidation = True
-        return pending_id, compound_invalidation
+    @property
+    def is_launched(self) -> bool:
+        """Whether the native browser has been launched in this session."""
+        return self._controller._launched
 
-    def _continue_cdp_invalidation(
-        self,
-        previous_id: str | None,
-        next_id: str | None,
-        enabled: bool,
-    ) -> None:
-        if previous_id is not None:
-            self._pending_cdp_invalidations.discard(previous_id)
-        if enabled and next_id is not None:
-            self._pending_cdp_invalidations.add(next_id)
+    @property
+    def closed(self) -> bool:
+        """Whether this browser has been closed."""
+        return self._controller.closed
 
-    def _record_native_metadata(self, response: BrowserResponse) -> None:
-        generation = response.raw.get("refGeneration")
-        if isinstance(generation, int):
-            self._ref_generation = generation
-        target_id = response.raw.get("targetId")
-        if isinstance(target_id, str):
-            self._active_target_id = target_id
-        if response.raw.get("scopeSwitched"):
-            self._invalidate_cdp()
+    @property
+    def native(self) -> AsyncNative:
+        """Return the complete native command interface."""
+        return AsyncNative(self._controller)
 
-    async def _record_successful_action(
-        self,
-        response: BrowserResponse,
-        *,
-        params: Mapping[str, Any] | None = None,
-        force_cdp_invalidation: bool = False,
-    ) -> None:
-        action = response.action
-        if response.raw.get("refGeneration") is None and (
-            action in {"snapshot", "diff_snapshot", "diff_url"}
-            or (action == "screenshot" and bool((params or {}).get("annotate")))
-        ):
-            self._ref_generation += 1
-        browser_launched = response_browser_launched(response)
-        if browser_launched is not None:
-            self._launched = browser_launched
-        elif action_sets_launched(action):
-            self._launched = True
-        elif action_clears_pending_confirmation(action) and action_closes_browser(action):
-            self._launched = False
-        if action_closes_browser(action):
-            self._pending_cdp_invalidations.clear()
-        if action_resets_cdp(action):
-            await self._reset_cdp()
-        elif force_cdp_invalidation or action_invalidates_cdp(action, params):
-            self._invalidate_cdp()
+    @property
+    def cdp(self) -> AsyncCDP:
+        """Return the direct Chrome DevTools Protocol interface."""
+        return AsyncCDP(self._controller._cdp)
 
-    def _cdp(self) -> AsyncCDPController:
-        if self._cdp_controller is None:
-            from agentbrowser.cdp import AsyncCDPController
+    @property
+    def clipboard(self) -> AsyncClipboard:
+        return AsyncClipboard(self._executor)
 
-            self._cdp_controller = AsyncCDPController(self)
-        return self._cdp_controller
+    @property
+    def cookies(self) -> AsyncCookies:
+        return AsyncCookies(self._executor)
 
-    def _invalidate_cdp(self) -> None:
-        if self._cdp_controller is not None:
-            self._cdp_controller.invalidate()
+    @property
+    def diagnostics(self) -> AsyncDiagnostics:
+        return AsyncDiagnostics(self._executor)
 
-    async def _reset_cdp(self) -> None:
-        if self._cdp_controller is not None:
-            await self._cdp_controller.close()
-            self._cdp_controller = None
+    @property
+    def dashboard(self) -> AsyncDashboard:
+        return AsyncDashboard(self._executor)
 
-    async def _connect(self) -> Mapping[str, Any]:
-        """Attach to the configured CDP target without navigating.
+    @property
+    def dialogs(self) -> AsyncDialogs:
+        return AsyncDialogs(self._executor)
 
-        This internal handshake is valid for browsers created through
-        `AsyncBrowser.attach(CDPTarget(...))`.
+    @property
+    def diff(self) -> AsyncDiff:
+        return AsyncDiff(self._executor)
 
-        Returns
-        -------
-        Mapping[str, object]
-            Native attach response data.
-        """
-        if (
-            self._launch_configuration.cdp_url is None
-            and self._launch_configuration.cdp_port is None
-        ):
-            raise RuntimeError("CDP connection requires AsyncBrowser.attach(CDPTarget(...))")
-        return await self._launch_native()
+    @property
+    def downloads(self) -> AsyncDownloads:
+        return AsyncDownloads(self._executor)
 
-    async def _launch_process(
-        self,
-        *,
-        options: LaunchOptions | None = None,
-    ) -> Mapping[str, Any]:
-        """Launch a native browser process using explicit process options.
+    @property
+    def emulation(self) -> AsyncEmulation:
+        return AsyncEmulation(self._executor)
 
-        Parameters
-        ----------
-        options
-            Optional full replacement `LaunchOptions` for this launch command.
+    @property
+    def keyboard(self) -> AsyncKeyboard:
+        return AsyncKeyboard(self._executor)
 
-        Returns
-        -------
-        Mapping[str, object]
-            Native launch response data.
-        """
-        if (
-            self._launch_configuration.cdp_url is not None
-            or self._launch_configuration.cdp_port is not None
-        ):
-            raise RuntimeError("local launch cannot use CDPTarget")
-        return await self._launch_native(options=options)
+    @property
+    def mouse(self) -> AsyncMouse:
+        return AsyncMouse(self._executor)
 
-    async def _launch_native(
-        self,
-        *,
-        options: LaunchOptions | None = None,
-    ) -> Mapping[str, Any]:
-        launch_params = self._launch_configuration.command_params(options=options)
-        await self._prepare_install_for_launch(launch_params)
-        data = await self._command("launch", **launch_params)
-        self._launched = True
-        return data
+    @property
+    def network(self) -> AsyncNetwork:
+        return AsyncNetwork(self._executor)
 
-    async def _prepare_install_for_action(self, action: str, params: dict[str, Any]) -> None:
-        if not self._auto_install or self._install_prepared or self._launched:
-            return
-        if action == "launch":
-            await self._prepare_install_for_launch(params)
-            return
-        if action in _SKIP_AUTO_INSTALL_ACTIONS:
-            return
-        if not _uses_local_chrome(self._launch_configuration.command_params()):
-            return
-        await asyncio.to_thread(ensure_installed)
-        self._install_prepared = True
+    @property
+    def scripts(self) -> AsyncScripts:
+        return AsyncScripts(self._executor)
 
-    async def _prepare_install_for_launch(self, launch_params: dict[str, Any]) -> None:
-        if not self._auto_install or self._install_prepared:
-            return
-        if not _uses_local_chrome(launch_params):
-            return
-        result = await asyncio.to_thread(ensure_installed)
-        launch_params["executablePath"] = str(result.executable_path)
-        self._install_prepared = True
+    @property
+    def session(self) -> AsyncSession:
+        return AsyncSession(self._executor)
 
-    async def _close_browser(self) -> CloseResult:
-        if self._cdp_controller is not None:
-            with suppress(Exception):
-                await self._cdp_controller.close()
-            self._cdp_controller = None
-        response = await self._session.shutdown_native()
-        if response is None:
-            return CloseResult(closed=True)
-        checked = _checked_response("close", replace(response, action="close"))
-        await self._record_successful_action(checked)
-        return close_result_from_data(_require_response_data_mapping(checked, action="close"))
+    @property
+    def state(self) -> AsyncState:
+        return AsyncState(self._executor)
 
-    async def _close_once(self, *, timeout: float) -> CloseResult:
-        result = CloseResult(closed=True)
-        try:
-            result = await asyncio.wait_for(self._close_browser(), timeout=timeout)
-        finally:
-            await self._session.aclose(timeout=timeout)
-        if result.save_error is not None:
-            raise RestoreSaveError(result)
-        return result
+    @property
+    def storage(self) -> AsyncStorage:
+        return AsyncStorage(self._executor)
+
+    @property
+    def tabs(self) -> AsyncTabs:
+        return AsyncTabs(self._executor)
+
+    @property
+    def webmcp(self) -> AsyncWebMCP:
+        return AsyncWebMCP(self._executor)
 
     async def close(self, *, timeout: float = 5.0) -> CloseResult:
         """Close the browser and return terminal restore-save state."""
-        if self._close_task is None:
-            self._close_task = asyncio.create_task(self._close_once(timeout=timeout))
-        return await asyncio.shield(self._close_task)
+        return await self._controller.close(timeout=timeout)
 
     async def activate(self) -> Self:
         """Bring the browser window to the foreground."""
-        await self._command("bringtofront", _decode=lambda _data: self)
-        return self
+        return await self._executor.execute(Command("bringtofront", decode=lambda _data: self))

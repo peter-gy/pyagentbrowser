@@ -1,58 +1,84 @@
 # Python SDK design
 
-The Python layer promotes native actions into stable workflows when it can own validation, a typed result, lifecycle behavior, agent evidence, or a durable composition pattern.
+Each capability owns its public operations, payload validation, result models,
+and decoding under `src/agentbrowser/features/<capability>/`. It executes
+`Command[T]` through an `Executor` or `AsyncExecutor` supplied by a browser or
+document handle.
 
-## Public surface rule
+```python
+from agentbrowser import Command, Executor
 
-Add a high-level method or namespace member when at least one of these contracts belongs to Python:
+class HeadingCount:
+    def __init__(self, executor: Executor) -> None:
+        self.executor = executor
 
-- The input has a stable Python shape that should be validated before dispatch.
-- The result has fields callers should consume through a typed model.
-- The operation composes several native actions.
-- The operation updates controller lifecycle or direct CDP state.
-- A ref action needs waits, a resulting snapshot, and a diff.
-- A page or frame operation must preserve document scope across dispatch,
-  waiting, and evidence capture.
-- A code-mode host supplies an application target, image delivery, or execution
-  limit through the host contract.
-- Confirmation must resume higher-level work after the native action.
+    def read(self) -> int:
+        return self.executor.execute(Command(
+            "evaluate",
+            {"script": "document.querySelectorAll('h1').length"},
+            decode=lambda data: int(data["result"]),
+        ))
+```
 
-Keep `browser.native.execute(action, **params)` and `browser.native.data(action, **params)` complete for the pinned engine. A typed API should reduce repeated caller work. It should not hide the raw extension path.
+The complete [extension example](../docs/guides/extensions.md) includes strict
+decoding, sync and async use, and resource cleanup.
+
+## Add a vertical capability
+
+1. Define the smallest public call and its result. Decide whether it targets a
+   browser session, page, or frame.
+2. Place the API, local models, parameter builders, and decoders in the feature
+   package. Add separate files when each owns a distinct responsibility.
+3. Share command construction and decoding between sync and async APIs. Keep
+   the execution and continuation code explicit at each async boundary.
+4. Execute through the supplied executor. Add multi-stage confirmation
+   continuations when work must continue after an approved action.
+5. Export caller-facing types from `agentbrowser`. Compose a built-in feature
+   from its owning browser or document when it belongs in the stable SDK.
+6. Verify the public contract and update its guide and reference entry.
+
+Use `contracts/` for values shared across features. Use `execution/` for
+session-wide policy, lifecycle, confirmation, and command effects. Use
+`transport/` for wire serialization and ordered native work. Host execution and
+tool content belong in `integrations/`.
+
+An extension factory receives the same executor used by built-in capabilities.
+It can be an ordinary class or function. Keep application-specific workflows
+in the consuming application until the package owns a stable reusable contract.
+
+## Checked commands and result decoding
+
+`Command[T]` contains an action, parameters, and a decoder from the native data
+mapping to `T`. The executor checks the response before invoking the decoder.
+If confirmation pauses execution, the pending operation retains that decoder.
+
+Required fields decode strictly. Raise `NativeParseError` for malformed native
+data and retain the mapping on models when additional engine fields matter to
+callers. Command parameters remain native protocol names at this boundary.
+
+`browser.native.execute()` preserves the complete `BrowserResponse`, including
+unsuccessful and confirmation-required envelopes. `browser.native.data()` and
+typed methods check success. The raw methods cover the pinned engine's complete
+action set.
 
 ## Sync and async parity
 
-Every stable browser, snapshot, ref, query, and namespace operation has a synchronous and asynchronous form with the same names, parameters, validation, and result shape.
+Stable operations have the same names, parameters, validation, and result
+shapes across synchronous and asynchronous APIs. Engine calls become awaitable.
+Handle factories and immutable snapshot lookup stay synchronous.
+`AsyncBrowser.close()` additionally accepts a shutdown timeout in seconds.
 
-Intentional differences are narrow:
+`tests/test_api_parity.py` checks public signatures. Capability tests establish
+returned values, error behavior, confirmation, and lifecycle. Use
+`tests/test_extensions.py` for the consumer extension boundary and
+`make test-integration` when the contract requires real document state.
 
-- Engine calls become awaitable.
-- Handle factories and immutable snapshot lookup stay synchronous.
-- `AsyncBrowser.close()` adds a shutdown timeout in seconds.
-- Async native work is serialized through one owner thread.
+## Public imports
 
-`tests/test_browser_api.py` introspects public methods and parameters across the two surfaces. Update both implementations before changing that parity witness.
+Import public configuration, errors, protocols, and result types from
+`agentbrowser`. Internal module paths follow ownership and can change as a
+feature grows. Code-mode controller registration and packaged guidance use
+`agentbrowser.agent`.
 
-## Result decoding
-
-Typed methods decode required fields strictly. Missing or malformed fields raise `NativeParseError`. Preserve the native mapping on the returned model when callers may need additional engine fields.
-
-The raw and checked paths have different contracts:
-
-```text
-NativeSession.execute()
-  -> native.execute(): preserve BrowserResponse
-  -> native.data(): check success and return data
-  -> typed method: check success and decode a Python result
-```
-
-`native.execute()` preserves unsuccessful and confirmation-required envelopes. `native.data()` and typed methods raise `BrowserError` or `ConfirmationRequired`.
-
-## Public exports
-
-Export new public models from `agentbrowser.__init__` when users need them to construct configuration, catch an error, annotate a supported value, or consume a result. Types that appear in public signatures should have one deliberate import path.
-
-Update the closest public guide, exact reference page, runnable example, and SDK contract test with every public change.
-
-[Evidence and refs](evidence-and-refs.md) owns the composed action pipeline.
-[Direct CDP](direct-cdp.md) owns the optional persistent protocol connection and
-generation-bound handles.
+Run `make test-sdk`, then `make check`. Add native or browser tests when a
+capability introduces a contract at those boundaries.

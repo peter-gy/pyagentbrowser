@@ -39,10 +39,11 @@ When summaries disagree with implementation, inspect the nearest owned
 contract in this order:
 
 1. Public Python signatures, models, and exports in `src/agentbrowser/`.
-2. Python-to-native command construction in `session.py`, `session_async.py`,
-   and `command_params.py`.
+2. Feature command construction in `features/`, checked dispatch in
+   `execution/`, and native serialization in `transport/`.
 3. PyO3 resource ownership in `crates/pyagentbrowser/`.
-4. Generated adaptation rules in `crates/agent-browser-adapter/build.rs`.
+4. The owned engine interface in `crates/agent-browser-adapter/` and generated
+   adaptation rules in `crates/agent-browser-build/`.
 5. The exact pinned source in `third_party/agent-browser/`.
 6. Artifact and automation contracts in `pyproject.toml`, the Makefile,
    package scripts, and GitHub workflows.

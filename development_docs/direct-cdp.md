@@ -60,7 +60,7 @@ a new document.
 Native actions that navigate, switch tabs, close tabs, create windows, or
 replace content invalidate the cached direct CDP page session. Launch and close
 reset the controller connection. Keep
-`src/agentbrowser/_browser_common.py` aligned when a native action changes
+`src/agentbrowser/contracts/actions.py` aligned when a native action changes
 document or target identity.
 
 ## Events and responses

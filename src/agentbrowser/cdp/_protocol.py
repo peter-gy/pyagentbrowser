@@ -8,6 +8,26 @@ from typing import Any, cast
 from agentbrowser.cdp.errors import CDPEvaluationError, CDPProtocolError
 
 
+def _evaluate_params(
+    script: str,
+    *,
+    context_id: int,
+    unique_id: str | None,
+    await_promise: bool,
+    return_by_value: bool,
+) -> dict[str, Any]:
+    params: dict[str, Any] = {
+        "expression": script,
+        "awaitPromise": await_promise,
+        "returnByValue": return_by_value,
+    }
+    if unique_id is not None:
+        params["uniqueContextId"] = unique_id
+    else:
+        params["contextId"] = context_id
+    return params
+
+
 def _decode_message(raw: str | bytes) -> Mapping[str, Any]:
     text = raw.decode("utf-8") if isinstance(raw, bytes) else raw
     try:

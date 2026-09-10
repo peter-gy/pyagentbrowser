@@ -15,10 +15,10 @@ Python-specific browser instructions and the pinned engine's native skills.
 ```python
 import agentbrowser.agent as browser_agent
 
-help(browser_agent)
+print(browser_agent.help())
 ```
 
-`help(browser_agent)` renders a short SDK workflow and the paths to the Agent Plugin resources installed with the same pyagentbrowser version.
+`browser_agent.help()` returns a short SDK workflow and the paths to the Agent Plugin resources installed with the same pyagentbrowser version.
 
 Create a named module-owned controller when browser work spans code-mode calls:
 

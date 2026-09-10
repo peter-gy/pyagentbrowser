@@ -20,6 +20,7 @@ export const routes = {
   agentSkills: "/guides/agent-skills",
   codeMode: "/guides/code-mode",
   nativeProtocol: "/guides/native-protocol",
+  extensions: "/guides/extensions",
   browserReference: "/reference/browser",
   namespacesReference: "/reference/namespaces",
   modelsReference: "/reference/models",
@@ -52,6 +53,7 @@ export const guideItems = [
   { text: "Agent skills and code mode", link: routes.agentSkills },
   { text: "Code-mode integration", link: routes.codeMode },
   { text: "Raw native protocol", link: routes.nativeProtocol },
+  { text: "Compose extensions", link: routes.extensions },
 ] satisfies DefaultTheme.SidebarItem[];
 
 export const referenceItems = [

@@ -31,6 +31,7 @@ session boundary.
 | Call page tools | `browser.webmcp` | Typed WebMCP tools and invocations |
 | Use a CDP session | `browser.cdp` | Direct protocol targets and execution contexts |
 | Call any native action | `browser.native.execute()` | Complete native response envelope |
+| Compose a typed capability | `page.extension(factory)` | A capability with checked execution and retained document scope |
 | Read native action data | `browser.native.data()` | Native response data mapping |
 
 Use `SnapshotSpec` to scope and compact accessible state. Use `Wait` on ref

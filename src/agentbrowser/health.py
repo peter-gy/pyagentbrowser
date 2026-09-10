@@ -8,7 +8,7 @@ from importlib.metadata import PackageNotFoundError, version
 from importlib.util import find_spec
 from pathlib import Path
 
-from agentbrowser.host import current_host
+from agentbrowser.integrations.host import current_host
 
 
 @dataclass(frozen=True, slots=True)

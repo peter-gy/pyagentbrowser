@@ -55,3 +55,6 @@ with Browser.launch() as browser:
 ```
 
 Native action names and response shapes follow the embedded engine version. Promote repeated application code to a typed wrapper only when the application can own its validation and result shape.
+
+[Compose extensions](/guides/extensions) shows how to give that wrapper a
+checked executor while retaining browser lifecycle and document scope.

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pydoc
 import subprocess
 import sys
 import weakref
@@ -16,6 +15,8 @@ import pytest
 import agentbrowser.agent as browser_agent
 from agentbrowser import (
     AttachedTarget,
+    Browser,
+    BrowserError,
     CallbackHost,
     CDPTarget,
     CloseResult,
@@ -24,15 +25,14 @@ from agentbrowser import (
     ImageContent,
     ImageDelivery,
     OpenTarget,
-    Ref,
     SessionOptions,
-    Snapshot,
-    StaleRefError,
     TabInfo,
     bind_host,
     current_host,
     reset_host,
 )
+from agentbrowser.transport.sync import NativeSession
+from tests.fakes import ConfirmationNative
 
 pytestmark = pytest.mark.sdk_dx
 ROOT = Path(__file__).resolve().parents[1]
@@ -44,7 +44,7 @@ class _Pending:
         self.confirmation_id = f"confirm-{action}"
         self.details = {"action": action}
         self._outcome = outcome
-        self._browser = browser
+        self._controller = browser
         self.denied = False
 
     def confirm(self) -> object:
@@ -83,6 +83,8 @@ import sys
 import agentbrowser
 
 assert agentbrowser.Ref
+assert agentbrowser.Snapshot
+assert agentbrowser.StaleRefError
 assert "agentbrowser.agent" not in sys.modules
 assert "agent_plugins" not in sys.modules
 """,
@@ -93,12 +95,6 @@ assert "agent_plugins" not in sys.modules
     )
 
     assert result.returncode == 0, result.stderr
-
-
-def test_agent_module_preserves_direct_evidence_imports() -> None:
-    assert browser_agent.Ref is Ref
-    assert browser_agent.Snapshot is Snapshot
-    assert browser_agent.StaleRefError is StaleRefError
 
 
 def test_create_and_get_keep_one_controller_across_scratchpad_locals() -> None:
@@ -259,6 +255,33 @@ def test_attach_confirmation_completes_launch_switch_registration_and_status(
     assert confirmed_status.url == active.url
 
 
+@pytest.mark.parametrize("decision", ["deny", "failed_confirm"])
+def test_attach_rejection_closes_the_pending_controller(
+    monkeypatch: pytest.MonkeyPatch, decision: str
+) -> None:
+    native = ConfirmationNative(action="launch")
+    browser = Browser(_native_session=NativeSession(native=native))
+    monkeypatch.setattr(
+        browser_agent.Browser,
+        "_from_configuration",
+        lambda *_args, **_kwargs: browser,
+    )
+
+    with pytest.raises(ConfirmationRequired) as required:
+        browser_agent.attach("rejected", AttachedTarget(CDPTarget(port=9222), "A" * 16))
+
+    if decision == "deny":
+        required.value.pending.deny()
+    else:
+        native.confirmation_id = "expired-confirmation"
+        with pytest.raises(BrowserError, match="confirmation id mismatch"):
+            required.value.pending.confirm()
+
+    assert browser.closed
+    assert browser_agent.names() == ()
+    assert native.commands[-1]["action"] == "__agent_browser_internal_shutdown"
+
+
 def test_open_confirmation_failure_closes_and_forgets_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -353,7 +376,6 @@ def test_host_contract_values_validate_model_facing_boundaries() -> None:
     assert ImageDelivery("submitted", "image-1").status == "submitted"
     context = ExecutionContext(timeout_ms=30_000, cancellation=True)
     assert context.cancellation
-    assert context.limit(60_000) == 29_000
     with pytest.raises(ValueError, match="image MIME type"):
         ImageContent(b"png", "text/plain")
     with pytest.raises(ValueError, match="non-negative"):
@@ -441,7 +463,6 @@ def test_agent_capability_loads_and_renders_help_in_a_fresh_process() -> None:
             sys.executable,
             "-c",
             """
-import pydoc
 from importlib.metadata import distribution
 
 capabilities = [
@@ -453,7 +474,7 @@ assert [(entry.name, entry.value) for entry in capabilities] == [
     ("pyagentbrowser", "agentbrowser.agent")
 ]
 module = capabilities[0].load()
-assert 'browser = browser_agent.create("research")' in pydoc.render_doc(module)
+assert 'browser = browser_agent.create("research")' in module.help()
 """,
         ],
         capture_output=True,
@@ -478,7 +499,7 @@ def test_agent_plugin_exposes_the_packaged_pyagentbrowser_skill() -> None:
 
 
 def test_agent_module_help_points_to_sdk_and_installed_resources() -> None:
-    rendered = pydoc.render_doc(browser_agent)
+    rendered = browser_agent.help()
 
     assert str(browser_agent.agent_skill().file("SKILL.md")) in rendered
     assert "https://peter-gy.github.io/pyagentbrowser/llms.txt" in rendered

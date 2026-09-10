@@ -2,24 +2,74 @@
 
 from importlib.metadata import PackageNotFoundError, version
 
-from agentbrowser._evidence import Ref, Snapshot, StaleRefError
 from agentbrowser._native import __agent_browser_version__ as __upstream_version__
 from agentbrowser._version import PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM_COMMIT
-from agentbrowser.agent_async import AsyncRef, AsyncSnapshot, AsyncStaleRefError
-from agentbrowser.browser import Browser, PendingAction
-from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
-from agentbrowser.domains import Frame, Page
-from agentbrowser.domains_async import AsyncFrame, AsyncPage
+from agentbrowser.browser import Browser
+from agentbrowser.browser_async import AsyncBrowser
+from agentbrowser.contracts.connection import ProxyConfig
+from agentbrowser.contracts.errors import (
+    AgentBrowserError,
+    BrowserError,
+    ConfirmationRequired,
+    FrameLookupError,
+    NativeParseError,
+)
+from agentbrowser.contracts.execution import ExecutionContext
+from agentbrowser.contracts.images import ImageContent, ImageDelivery
+from agentbrowser.contracts.protocol import BrowserResponse
+from agentbrowser.contracts.scope import DocumentScope
+from agentbrowser.execution.commands import AsyncExecutor, Command, Executor
+from agentbrowser.execution.pending import AsyncPendingAction, PendingAction
+from agentbrowser.features.capture.models import Screenshot
+from agentbrowser.features.diagnostics.models import (
+    AccessibilityAudit,
+    AccessibilityCounts,
+    AccessibilityIssue,
+    AccessibilityNode,
+    ConsoleMessage,
+)
+from agentbrowser.features.documents.handles import Frame, Page
+from agentbrowser.features.documents.handles_async import AsyncFrame, AsyncPage
+from agentbrowser.features.documents.models import ElementGeometry, ScrollPosition, ScrollResult
+from agentbrowser.features.documents.read import ReadMode, ReadResult
+from agentbrowser.features.evidence.changes import ActionResult, ActionTransitionError, SnapshotDiff
+from agentbrowser.features.evidence.errors import AsyncStaleRefError, StaleRefError
+from agentbrowser.features.evidence.manifest import (
+    EvidenceAssertion,
+    EvidenceManifest,
+    EvidenceRecord,
+)
+from agentbrowser.features.evidence.models import SnapshotSpec
+from agentbrowser.features.evidence.ref import Ref
+from agentbrowser.features.evidence.ref_async import AsyncRef
+from agentbrowser.features.evidence.snapshots import AsyncSnapshot, Snapshot
+from agentbrowser.features.evidence.waits import Wait
+from agentbrowser.features.network.models import (
+    HarContentMode,
+    NetworkRequest,
+    RequestDetail,
+    RouteResponse,
+)
+from agentbrowser.features.queries import AsyncQuery, Query
+from agentbrowser.features.session.models import (
+    CloseResult,
+    DashboardOptions,
+    RestoreOptions,
+    RestoreSaveError,
+    SessionId,
+    SessionStatus,
+)
+from agentbrowser.features.storage.models import Cookie
+from agentbrowser.features.tabs.models import TabCloseResult, TabInfo, TabSwitchResult
+from agentbrowser.features.webmcp.models import WebMCPInvocation, WebMCPInvocationStatus, WebMCPTool
 from agentbrowser.health import BrowserCapabilities, HealthCheck, HealthCheckEntry
-from agentbrowser.host import (
+from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
+from agentbrowser.integrations.host import (
     AgentConnectionStatus,
     AgentHost,
     AttachedTarget,
     BrowserTarget,
     CallbackHost,
-    ExecutionContext,
-    ImageContent,
-    ImageDelivery,
     ManagedTask,
     ManagedTaskHost,
     ManagedTaskStatus,
@@ -28,61 +78,14 @@ from agentbrowser.host import (
     current_host,
     reset_host,
 )
-from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
+from agentbrowser.integrations.runtime import CodeSession
+from agentbrowser.integrations.tasks import Task, Tasks
 from agentbrowser.launch import (
     CDPTarget,
     LaunchOptions,
     SessionOptions,
 )
-from agentbrowser.manifest import EvidenceAssertion, EvidenceManifest, EvidenceRecord
-from agentbrowser.models import (
-    AccessibilityAudit,
-    AccessibilityCounts,
-    AccessibilityIssue,
-    AccessibilityNode,
-    ActionResult,
-    ActionTransitionError,
-    AgentBrowserError,
-    BrowserError,
-    BrowserResponse,
-    CloseResult,
-    ConfirmationRequired,
-    ConsoleMessage,
-    Cookie,
-    DashboardOptions,
-    DocumentScope,
-    ElementGeometry,
-    FrameLookupError,
-    HarContentMode,
-    NativeParseError,
-    NetworkRequest,
-    ProxyConfig,
-    ReadMode,
-    ReadResult,
-    RequestDetail,
-    RestoreOptions,
-    RestoreSaveError,
-    RouteResponse,
-    Screenshot,
-    ScrollPosition,
-    ScrollResult,
-    SessionId,
-    SessionStatus,
-    SnapshotDiff,
-    SnapshotSpec,
-    TabCloseResult,
-    TabInfo,
-    TabSwitchResult,
-    Wait,
-    WebMCPInvocation,
-    WebMCPInvocationStatus,
-    WebMCPTool,
-)
-from agentbrowser.query import Query
-from agentbrowser.query_async import AsyncQuery
-from agentbrowser.runtime import CodeSession
 from agentbrowser.session_id import generate_session_id as session_id
-from agentbrowser.tasks import Task, Tasks
 
 try:
     __version__ = version(PACKAGE_NAME)
@@ -103,6 +106,7 @@ __all__ = [
     "AgentConnectionStatus",
     "AgentHost",
     "AsyncBrowser",
+    "AsyncExecutor",
     "AsyncFrame",
     "AsyncPage",
     "AsyncPendingAction",
@@ -121,6 +125,7 @@ __all__ = [
     "CallbackHost",
     "CloseResult",
     "CodeSession",
+    "Command",
     "ConfirmationRequired",
     "ConsoleMessage",
     "Cookie",
@@ -131,6 +136,7 @@ __all__ = [
     "EvidenceManifest",
     "EvidenceRecord",
     "ExecutionContext",
+    "Executor",
     "Frame",
     "FrameLookupError",
     "HarContentMode",

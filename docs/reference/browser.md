@@ -42,6 +42,17 @@ Both controllers support context managers. Commands after close raise `RuntimeEr
 
 Closing releases controller-owned browser, dashboard stream, direct CDP, confirmation, and native helper-process resources. A persistence failure completes cleanup, then raises `RestoreSaveError` with the terminal `CloseResult` on `error.result`.
 
+## Extensions
+
+`browser.extension(factory)` calls `factory(executor)` and returns its result.
+The executor implements `Executor` for `Browser` and `AsyncExecutor` for
+`AsyncBrowser`. Factory construction is synchronous on both surfaces.
+
+`page.extension(factory)` and `frame.extension(factory)` supply a document-bound
+executor. It retains page and frame identity across commands. All executors
+share their resource owner's policy, confirmation, and terminal close.
+See [Compose extensions](/guides/extensions) for command and decoder contracts.
+
 ## `browser.page`
 
 | Method | Returns | Behavior |

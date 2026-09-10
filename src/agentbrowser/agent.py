@@ -3,39 +3,27 @@
 from __future__ import annotations
 
 import os
-import sys
 from collections.abc import Callable
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from textwrap import indent
 from threading import RLock
-from types import ModuleType
-from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
+from typing import Any, Generic, Literal, TypeVar, cast
 
-import agent_plugins
-
-from agentbrowser import _evidence
 from agentbrowser.browser import Browser
-from agentbrowser.host import AgentConnectionStatus, AttachedTarget, OpenTarget
+from agentbrowser.contracts.errors import ConfirmationRequired
+from agentbrowser.features.session.models import CloseResult
+from agentbrowser.integrations.help import help as help
+from agentbrowser.integrations.host import AgentConnectionStatus, AttachedTarget, OpenTarget
+from agentbrowser.integrations.resources import agent_plugin as agent_plugin
+from agentbrowser.integrations.resources import agent_skill as agent_skill
 from agentbrowser.launch import LaunchOptions, SessionOptions, normalize_session
-from agentbrowser.models import CloseResult, ConfirmationRequired
 
-if TYPE_CHECKING:
-    from agentbrowser._evidence import Ref as Ref
-    from agentbrowser._evidence import Snapshot as Snapshot
-    from agentbrowser._evidence import StaleRefError as StaleRefError
-
-_DISTRIBUTION_NAME = "pyagentbrowser"
-_SKILL_NAME = "pyagentbrowser"
 _DEFAULT_CONNECTION = "default"
 T = TypeVar("T")
 U = TypeVar("U")
 
 __all__ = [
     "CloseAllError",
-    "Ref",
-    "Snapshot",
-    "StaleRefError",
     "agent_plugin",
     "agent_skill",
     "attach",
@@ -43,6 +31,7 @@ __all__ = [
     "close_all",
     "create",
     "get",
+    "help",
     "names",
     "open",
     "status",
@@ -201,10 +190,10 @@ def attach(
     try:
         browser = Browser.attach(target.connection, launch=launch, session=options)
     except ConfirmationRequired as error:
-        pending_browser = getattr(error.pending, "_browser", None)
+        pending_controller = getattr(error.pending, "_controller", None)
         cleanup = (
-            (lambda: _close_browser(pending_browser))
-            if callable(getattr(pending_browser, "close", None))
+            (lambda: _close_browser(pending_controller))
+            if callable(getattr(pending_controller, "close", None))
             else (lambda: None)
         )
         _set_lifecycle_pending(
@@ -403,121 +392,3 @@ def _connection_name(name: str) -> str:
             "connection name must contain 1 to 64 alphanumeric, hyphen, or underscore characters"
         )
     return name
-
-
-def agent_plugin() -> agent_plugins.Plugin:
-    """Return the Agent Plugin installed with this pyagentbrowser version."""
-    return agent_plugins.locate(_DISTRIBUTION_NAME)
-
-
-def agent_skill() -> agent_plugins.Skill:
-    """Return the packaged pyagentbrowser Agent Skill."""
-    return agent_plugin().skill(_SKILL_NAME)
-
-
-def _sdk_help(summary: str) -> str:
-    return f"""{summary}
-
-Create one browser controller for a code-mode task:
-
-    import agentbrowser.agent as browser_agent
-
-    browser = browser_agent.create("research")
-    browser.page.open("https://example.com")
-
-Retrieve it in a later call with `browser_agent.get("research")`. Inspect
-process, ownership, session, and target identity with
-`browser_agent.status("research")`. End the task with
-`browser_agent.close("research")`.
-
-Use `browser_agent.open(name, OpenTarget(url))` when a host provides an
-application URL. Use `browser_agent.attach(name, AttachedTarget(...))` when a
-host provides an authorized browser connection and exact page identity.
-
-Task map:
-
-    inspect page          browser.page.observe()
-    inspect frames        browser.page.frames.tree()
-    target a frame        browser.page.frames.get(...)
-    find an element       page.find.role(...)
-    resize viewport       browser.emulation.viewport(...)
-    emulate media         browser.emulation.media(...)
-    measure layout        page.geometry(...)
-    measure scrolling     page.scroll.by(...)
-    capture screenshot    page.capture.screenshot(...)
-    deliver image         host.emit_image(shot.content())
-    diagnose environment  browser.healthcheck()
-
-Published documentation:
-
-    https://peter-gy.github.io/pyagentbrowser/llms.txt
-"""
-
-
-def _module_help(summary: str) -> str:
-    sdk = _sdk_help(summary)
-    try:
-        plugin = agent_plugin()
-        skill = plugin.skill(_SKILL_NAME)
-        tree = indent(plugin.tree(max_depth=4, max_files=50), "    ")
-    except agent_plugins.AgentPluginError as error:
-        return f"""{sdk}
-
-The installed Agent Plugin could not be resolved: {error}
-Reinstall pyagentbrowser to restore its version-matched skill resources.
-"""
-
-    return f"""{sdk}
-
-Installed Agent Plugin resources:
-
-{tree}
-
-Skill instructions:
-
-    {skill.file("SKILL.md")}
-"""
-
-
-class _AgentModule(ModuleType):
-    def __getattr__(self, name: str) -> object:
-        try:
-            return {
-                "Ref": _evidence.Ref,
-                "Snapshot": _evidence.Snapshot,
-                "StaleRefError": _evidence.StaleRefError,
-            }[name]
-        except KeyError:
-            raise AttributeError(f"module {__name__!r} has no attribute {name!r}") from None
-
-    @property
-    def __doc__(self) -> str | None:
-        summary = self.__dict__.get("__doc__")
-        return _module_help(summary) if isinstance(summary, str) else None
-
-    @__doc__.setter
-    def __doc__(self, value: str | None) -> None:
-        self.__dict__["__doc__"] = value
-
-    def __dir__(self) -> list[str]:
-        return sorted(
-            {
-                "__doc__",
-                "__name__",
-                "__package__",
-                "__spec__",
-                "agent_plugin",
-                "agent_skill",
-                "attach",
-                "close",
-                "close_all",
-                "create",
-                "get",
-                "names",
-                "open",
-                "status",
-            }
-        )
-
-
-sys.modules[__name__].__class__ = _AgentModule

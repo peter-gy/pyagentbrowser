@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from agentbrowser import Browser
-from agentbrowser.session import NativeSession
+from agentbrowser.transport.sync import NativeSession
 from tests.fakes import EchoNative
 
 pytestmark = pytest.mark.sdk_dx

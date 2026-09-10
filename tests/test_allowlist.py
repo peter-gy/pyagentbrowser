@@ -8,7 +8,7 @@ import pytest
 from fakes import ConfirmationNative, ScriptedNative
 
 from agentbrowser import Browser, BrowserError, ConfirmationRequired
-from agentbrowser.session import NativeSession
+from agentbrowser.transport.sync import NativeSession
 
 pytestmark = pytest.mark.sdk_dx
 

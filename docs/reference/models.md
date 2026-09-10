@@ -13,7 +13,7 @@ Public result models are frozen dataclasses unless this page states otherwise. M
 | --- | --- |
 | `SnapshotSpec` | `selector`, `interactive`, `compact`, `max_depth`, and `urls` define one accessibility capture. |
 | `Snapshot` | `text`, `origin`, `url`, `spec`, `refs`, `generation`, and `raw`, plus ref lookup, refresh, and diff operations. |
-| `Ref` | Snapshot-scoped `id`, selector, role, name, source snapshot, browser, and native metadata. |
+| `Ref` | Snapshot-scoped `id`, selector, role, name, source snapshot, document, and native metadata. |
 | `ActionResult` | `action`, `target`, `before`, `after`, and `diff` for one completed ref mutation. |
 | `SnapshotDiff` | Unified `text`, addition, removal, and unchanged counts, `changed`, and raw source values. |
 | `Wait` | One post-action text, URL, load, or ordered combined condition. |
@@ -32,6 +32,7 @@ candidate refs when criteria match zero or several refs. `Snapshot.ref()` raises
 | `origin` | Page URL or origin reported by the native engine. |
 | `url` | Alias for `origin`. |
 | `spec` | `SnapshotSpec` reused by refresh and ref mutations. |
+| `document` | The producing `Page` or `Frame`, retained for scoped actions and refresh. |
 | `refs` | Mapping of ref IDs to bound `Ref` objects. |
 | `raw` | Native snapshot response mapping. |
 | `ref(ref_id)` | Resolve an exact ID such as `e1` or `@e1`. |
@@ -65,7 +66,7 @@ Every mutation returns `ActionResult` and accepts an optional `wait` condition.
 | `content_frame()` | Resolve the child `Frame` owned by this observed iframe element. |
 | `refresh(*, role=None, name=None, contains=None, exact=True)` | Resolve accessible metadata against a fresh snapshot. |
 
-`Ref` also exposes its source `snapshot`, `browser`, ID without `@`, native selector, accessible role, accessible name, and raw metadata. Native `stale_ref` and `unknown_ref` failures become `StaleRefError`.
+`Ref` also exposes its source `snapshot`, `document`, ID without `@`, native selector, accessible role, accessible name, and raw metadata. Native `stale_ref` and `unknown_ref` failures become `StaleRefError`.
 
 ### `Wait`
 

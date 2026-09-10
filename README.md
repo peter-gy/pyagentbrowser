@@ -91,6 +91,7 @@ Use [`page.find`](docs/guides/interact.md) for live element queries and
 [Concepts](docs/concepts/runtime-model.md) ·
 [Action evidence](docs/concepts/evidence.md) ·
 [Code-mode integration](docs/guides/code-mode.md) ·
+[Compose extensions](docs/guides/extensions.md) ·
 [Safety](docs/concepts/safety.md) ·
 [API reference](docs/reference/browser.md) ·
 [Troubleshooting](docs/troubleshooting.md)

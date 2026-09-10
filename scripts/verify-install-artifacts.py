@@ -18,7 +18,6 @@ from __future__ import annotations
 import importlib.metadata as metadata
 import importlib.util
 import importlib.resources as resources
-import pydoc
 from pathlib import Path
 
 import agent_plugins
@@ -29,12 +28,13 @@ from agentbrowser import (
     AccessibilityAudit,
     Browser,
     CloseResult,
+    Command,
     RestoreSaveError,
     SessionStatus,
     TabSwitchResult,
 )
 from agentbrowser.cdp import CDPClient
-from agentbrowser.models import Screenshot
+from agentbrowser import Screenshot
 
 assert Browser
 assert AccessibilityAudit
@@ -74,12 +74,14 @@ assert {path.relative_to(plugin.path).as_posix() for path in plugin.files} == {
     "skills/pyagentbrowser/references/api-map.md",
     "skills/pyagentbrowser/references/lifecycle-and-safety.md",
 }
-assert 'browser = browser_agent.create("research")' in pydoc.render_doc(browser_agent)
+assert 'browser = browser_agent.create("research")' in browser_agent.help()
 
 browser = Browser()
 assert isinstance(browser.session.status(), SessionStatus)
 assert browser.native.execute("session_info").success
 assert browser.native.data("session_info")["session"]
+executor = browser.extension(lambda executor: executor)
+assert executor.execute(Command("session_info"))["session"]
 assert isinstance(browser.close(), CloseResult)
 
 assert "core" in skills.available()
@@ -124,7 +126,7 @@ import threading
 from pathlib import Path
 
 from agentbrowser.cdp import CDPClient
-from agentbrowser.models import Screenshot
+from agentbrowser import Screenshot
 from websockets.sync.server import serve
 
 def cdp_handler(websocket):

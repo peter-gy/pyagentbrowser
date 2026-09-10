@@ -6,16 +6,10 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
-from agentbrowser.command_params import optional
-from agentbrowser.models import (
-    ColorScheme,
-    DashboardOptions,
-    ProxyConfig,
-    RestoreOptions,
-    path_value,
-    paths_value,
-    proxy_value,
-)
+from agentbrowser.contracts.connection import ProxyConfig, proxy_value
+from agentbrowser.contracts.protocol import optional, path_value, paths_value
+from agentbrowser.features.emulation.models import ColorScheme
+from agentbrowser.features.session.models import DashboardOptions, RestoreOptions
 
 _ALLOWLIST_BLOCKED_CHROME_SWITCHES = {
     "app",

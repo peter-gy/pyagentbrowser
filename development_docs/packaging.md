@@ -30,7 +30,7 @@ Package smoke tests reject source trees, development instructions, caches, dupli
 
 ## Source distribution contract
 
-The source distribution contains the Python source, root Cargo lock, Rust toolchain file, PyO3 crate, adapter crate, pinned upstream engine source required by the build, the Agent Plugin build backend and staged resources, user-facing Markdown docs, examples, and license material.
+The source distribution contains the Python source, root Cargo lock, Rust toolchain file, PyO3 crate, adapter crate, build crate, pinned upstream engine source required by the build, the Agent Plugin build backend and staged resources, user-facing Markdown docs, examples, and license material.
 
 The manifest excludes repository automation, local artifacts, and upstream
 project tooling outside the source set selected for downstream builds. Package
@@ -54,7 +54,7 @@ Inspect built binaries and archive members for checkout paths before accepting t
 - Missing-extra diagnostics.
 - The `images` and `cdp` optional packages.
 - Embedded skill reads.
-- Marimo capability metadata, dynamic help, and Agent Plugin resource lookup.
+- Marimo capability metadata, explicit `agent.help()`, and Agent Plugin resource lookup.
 - Wheel installation across supported Python endpoints.
 - Source-distribution build and install.
 - `pip check` dependency consistency.

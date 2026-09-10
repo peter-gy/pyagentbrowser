@@ -14,7 +14,7 @@ Import the capability module and inspect its installed-package example:
 ```python
 import agentbrowser.agent as browser_agent
 
-help(browser_agent)
+print(browser_agent.help())
 ```
 
 ## Core loop

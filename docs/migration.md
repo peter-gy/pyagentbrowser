@@ -65,3 +65,36 @@ notebook frontend can render the `Screenshot` object through its standard image
 display protocol. An agent host uses `emit_image()` to submit image content to
 the model. Record the model's visual assessment separately from the delivery
 receipt.
+
+## Import public types from `agentbrowser`
+
+```python
+from agentbrowser import (
+    AsyncExecutor,
+    Command,
+    Executor,
+    NativeParseError,
+    Snapshot,
+    SnapshotSpec,
+)
+```
+
+Replace imports from `agentbrowser.models`, `agentbrowser.domains`,
+`agentbrowser.domains_async`, `agentbrowser.query`, and
+`agentbrowser.query_async` with their public `agentbrowser` exports. Internal
+modules now follow capability ownership and are outside the supported import
+contract.
+
+Replace `snapshot.browser` and `ref.browser` with `snapshot.document` and
+`ref.document`. They return the producing page or frame handle. Keep the browser
+controller separately when a task needs session-wide operations.
+
+Use `print(browser_agent.help())` for the installed SDK task map. Python's
+built-in `help(browser_agent)` describes the module's signatures.
+
+## Construct capabilities through an executor
+
+Replace extensions that reach into browser private fields with
+`browser.extension(factory)` or `document.extension(factory)`. The factory
+receives `Executor` or `AsyncExecutor`, and each operation executes a typed
+`Command`. See [Compose extensions](/guides/extensions) for a complete example.
