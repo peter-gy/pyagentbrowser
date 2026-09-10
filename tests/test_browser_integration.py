@@ -8,7 +8,7 @@ import ssl
 import subprocess
 import sys
 import time
-from collections.abc import Iterator
+from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from functools import partial
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
@@ -26,15 +26,21 @@ from agentbrowser import (
     AsyncBrowser,
     Browser,
     BrowserError,
+    CallbackHost,
     CDPTarget,
     ConfirmationRequired,
+    ExecutionContext,
     HarContentMode,
+    ImageDelivery,
     LaunchOptions,
+    OpenTarget,
     RestoreOptions,
     SessionOptions,
     SessionStatus,
     SnapshotDiff,
     Wait,
+    bind_host,
+    reset_host,
 )
 from agentbrowser.cdp import CDPStaleObjectError
 
@@ -311,10 +317,17 @@ def _write_frame_site(site: LocalSite) -> None:
     )
     (site.root / "frame.html").write_text(
         "<title>Nested</title><h1>Nested frame</h1>"
+        "<script>window.appState = 'preview-ready'</script>"
         '<iframe id="story" name="story" sandbox="allow-scripts" src="/story.html"></iframe>'
     )
     (site.root / "story.html").write_text(
         "<title>Story</title><button onclick=\"this.textContent='Changed'\">Change</button>"
+        "<script>window.appState = 'story-ready'</script>"
+        '<iframe id="deep" name="deep" '
+        'srcdoc="<title>Deep</title><h2>Deep content</h2>'
+        "<script>window.appState = &quot;deep-ready&quot;</script>"
+        "<button onclick=&quot;this.textContent='Deep changed'&quot;>Deep action</button>"
+        '"></iframe>'
         '<div style="height:2000px"></div>'
     )
 
@@ -362,9 +375,9 @@ def test_ref_action_returns_transition_evidence_across_the_native_boundary(
     chrome_path: Path,
 ) -> None:
     with _browser(chrome_path) as browser:
-        browser.open(_data_url(_form_html()))
-        browser.find.css("#name").fill("Ada")
-        page = browser.observe()
+        browser.page.open(_data_url(_form_html()))
+        browser.page.find.css("#name").fill("Ada")
+        page = browser.page.observe()
 
         result = page.one(role="button", name="Greet").click()
 
@@ -382,7 +395,7 @@ def test_cdp_frame_resolution_uses_the_active_native_target(
 ) -> None:
     _write_frame_site(local_site)
     with _browser(chrome_path) as browser:
-        browser.open(f"{local_site.base_url}/index.html")
+        browser.page.open(f"{local_site.base_url}/index.html")
         frame = browser.cdp.frames.get(selector="#target")
 
         assert frame.url == f"{local_site.base_url}/frame.html"
@@ -395,28 +408,90 @@ def test_page_and_nested_frame_handles_keep_one_explicit_scope(
 ) -> None:
     _write_frame_site(local_site)
     with _browser(chrome_path) as browser:
-        browser.open(f"{local_site.base_url}/index.html")
+        browser.page.open(f"{local_site.base_url}/index.html")
 
         preview = browser.page.frames.get(selector="#target")
         preview.wait_for_text("Nested frame")
-        assert [frame.frame_name for frame in preview.frames.tree()] == ["story"]
+        assert {frame.frame_name for frame in preview.frames.tree()} == {"story", "deep"}
         story = preview.frames.get(selector="#story")
+        deep = story.frames.get(selector="#deep")
         before = story.observe()
         result = before.one(role="button", name="Change").click(wait=Wait.text("Changed"))
         screenshot = story.capture.screenshot(
             local_site.root / "captures" / "story.png",
             wait_ms=0,
         )
+        deep_screenshot = deep.capture.screenshot(
+            local_site.root / "captures" / "deep.png",
+            wait_ms=0,
+        )
         movement = story.scroll.by(y=200)
 
         assert preview.title() == "Nested"
+        assert preview.evaluate("window.appState") == "preview-ready"
+        assert story.evaluate("window.appState") == "story-ready"
+        assert deep.evaluate("Promise.resolve(window.appState)") == "deep-ready"
         assert story.title() == "Story"
+        assert deep.title() == "Deep"
+        assert deep.observe().one(role="heading", name="Deep content")
+        deep_result = (
+            deep.observe()
+            .one(role="button", name="Deep action")
+            .click(wait=Wait.text("Deep changed"))
+        )
+        assert deep_result.after.one(role="button", name="Deep changed")
+        deep.find.css("button").click()
+        deep.find.role("button", name="Deep changed").click()
+        assert deep.find.css("button").text() == "Deep changed"
+        with pytest.raises(BrowserError, match="Evaluation error"):
+            deep.evaluate("throw new Error('deep failure')")
         assert result.after.one(role="button", name="Changed")
         assert movement.moved and movement.after.y > movement.before.y
         assert screenshot.scope is not None
+        assert screenshot.scope.target_id
         assert screenshot.scope.frame_id == story.frame_id
-        assert screenshot.pil().size[0] > 0
+        assert screenshot.scope.url == f"{local_site.base_url}/story.html"
+        assert movement.scope.target_id == screenshot.scope.target_id
+        assert movement.scope.frame_id == story.frame_id
+        image = screenshot.pil(mode="RGB")
+        assert 0 < image.width <= 300 and 0 < image.height <= 150
+        pixels = cast(
+            Iterable[tuple[int, int, int]],
+            image.crop((0, 0, 140, 70)).get_flattened_data(),
+        )
+        assert any(sum(pixel) < 300 for pixel in pixels)
+        deep_image = deep_screenshot.pil(mode="RGB")
+        assert deep_image.width > 0 and deep_image.height > 0
+        deep_pixels = cast(
+            Iterable[tuple[int, int, int]],
+            deep_image.get_flattened_data(),
+        )
+        assert any(sum(pixel) < 300 for pixel in deep_pixels)
         assert browser.page.title() == "Host"
+
+
+def test_host_deadline_bounds_native_evaluation_and_allows_recovery(
+    chrome_path: Path, local_site: LocalSite
+) -> None:
+    (local_site.root / "index.html").write_text("<title>Ready</title>")
+    with _browser(chrome_path) as browser:
+        browser.page.open(f"{local_site.base_url}/index.html")
+        token = bind_host(
+            CallbackHost(
+                OpenTarget(local_site.base_url),
+                lambda _: ImageDelivery("queued"),
+                ExecutionContext(timeout_ms=2_000),
+            )
+        )
+        started = time.monotonic()
+        try:
+            with pytest.raises(BrowserError, match="host deadline") as caught:
+                browser.page.evaluate("new Promise(() => {})")
+            assert caught.value.code == "execution_timeout"
+            assert time.monotonic() - started < 4
+        finally:
+            reset_host(token)
+        assert browser.page.title() == "Ready"
 
 
 def test_completed_page_load_wait_returns_after_navigation(
@@ -424,7 +499,7 @@ def test_completed_page_load_wait_returns_after_navigation(
     local_site: LocalSite,
 ) -> None:
     with _browser(chrome_path) as browser:
-        browser.open(local_site.base_url)
+        browser.page.open(local_site.base_url)
         browser.page.wait_for_load_state("load")
 
 
@@ -439,8 +514,8 @@ def test_allowed_domains_support_a_fresh_local_browser(
     )
 
     with _browser(chrome_path, session=session) as browser:
-        browser.open(local_site.base_url)
-        assert browser.url().startswith(local_site.base_url)
+        browser.page.open(local_site.base_url)
+        assert browser.page.url().startswith(local_site.base_url)
 
 
 def test_accessibility_audit_runs_the_embedded_engine_with_scope(
@@ -504,9 +579,9 @@ def test_implicit_accessible_roles_resolve_through_live_queries(
     chrome_path: Path,
 ) -> None:
     with _browser(chrome_path) as browser:
-        browser.open(_data_url("<h2>Skills</h2>"))
+        browser.page.open(_data_url("<h2>Skills</h2>"))
 
-        assert browser.find.role("heading", name="skills").text() == "Skills"
+        assert browser.page.find.role("heading", name="skills").text() == "Skills"
 
 
 def test_recording_retains_the_active_page_and_survives_invalid_restart(
@@ -517,8 +592,8 @@ def test_recording_retains_the_active_page_and_survives_invalid_restart(
     assert ffprobe and shutil.which("ffmpeg"), "Recording contracts require FFmpeg and ffprobe"
     path = tmp_path / "active-page.webm"
     with _browser(chrome_path) as browser:
-        browser.open(_data_url('<input id="draft">'))
-        browser.evaluate("document.getElementById('draft').value = 'unsaved'")
+        browser.page.open(_data_url('<input id="draft">'))
+        browser.page.evaluate("document.getElementById('draft').value = 'unsaved'")
         active = next(tab for tab in browser.tabs.list() if tab.active)
         frame = browser.cdp.frames.get()
         started = browser.native.data("recording_start", path=str(path), fps=12)
@@ -529,7 +604,7 @@ def test_recording_retains_the_active_page_and_survives_invalid_restart(
         with pytest.raises(BrowserError, match="Invalid fps"):
             browser.native.data("recording_restart", path=str(tmp_path / "invalid.webm"), fps=0)
         assert frame.evaluate("document.getElementById('draft').value") == "unsaved"
-        browser.evaluate(
+        browser.page.evaluate(
             """new Promise(resolve => {
   let frames = 0;
   function paint() {
@@ -574,7 +649,7 @@ def test_recording_restart_navigation_invalidates_held_cdp_frames(
     tmp_path: Path,
 ) -> None:
     with _browser(chrome_path) as browser:
-        browser.open(_data_url("<title>First take</title>"))
+        browser.page.open(_data_url("<title>First take</title>"))
         browser.native.data("recording_start", path=str(tmp_path / "first.webm"))
         frame = browser.cdp.frames.get()
         restarted = browser.native.data(
@@ -584,10 +659,10 @@ def test_recording_restart_navigation_invalidates_held_cdp_frames(
         )
 
         assert restarted["fps"] == 30
-        assert browser.title() == "Second take"
+        assert browser.page.title() == "Second take"
         with pytest.raises(CDPStaleObjectError, match="stale"):
             frame.evaluate("document.title")
-        browser.evaluate(
+        browser.page.evaluate(
             """new Promise(resolve => {
   let frames = 0;
   function paint() {
@@ -620,7 +695,7 @@ window.firstDocument = {
     )
     url = f"{local_site.base_url}/setup.html"
     with _browser(chrome_path) as browser:
-        browser.open(url)
+        browser.page.open(url)
         script = browser.native.data("addinitscript", script="window.initialized = 'ready'")
         browser.native.data("useragent", userAgent="pyagentbrowser-integration")
         browser.native.data("timezone", timezoneId="America/New_York")
@@ -629,19 +704,19 @@ window.firstDocument = {
         else:
             browser.tabs.new(url)
 
-        assert browser.evaluate("window.firstDocument") == {
+        assert browser.page.evaluate("window.firstDocument") == {
             "marker": "ready",
             "userAgent": "pyagentbrowser-integration",
             "timezone": "America/New_York",
         }
         browser.native.data("removeinitscript", identifier=script["identifier"])
-        browser.open(url)
-        assert browser.evaluate("window.firstDocument.marker") is None
+        browser.page.open(url)
+        assert browser.page.evaluate("window.firstDocument.marker") is None
         if new_tab_via_click:
             browser.native.data("click", selector="#next", newTab=True)
         else:
             browser.tabs.new(url)
-        assert browser.evaluate("window.firstDocument.marker") is None
+        assert browser.page.evaluate("window.firstDocument.marker") is None
 
 
 @pytest.mark.parametrize(("content_mode", "embeds_text"), [("text", True), ("none", False)])
@@ -667,7 +742,7 @@ def test_har_content_mode_controls_response_body_capture(
 
     with _browser(chrome_path) as browser:
         browser.network.har_start(content=content_mode)
-        browser.open(f"{local_site.base_url}/{page_name}")
+        browser.page.open(f"{local_site.base_url}/{page_name}")
         browser.page.wait_for_function("document.body.dataset.loaded === 'true'")
         har_path = browser.network.har_stop(tmp_path / f"{content_mode}.har")
 
@@ -701,8 +776,8 @@ def test_webgpu_launch_preset_renders_offscreen_pixels_across_native_boundary(
         LaunchOptions(executable_path=chrome_path, webgpu=True, args=args),
         session=session,
     ) as browser:
-        browser.open(local_site.base_url)
-        result = browser.evaluate(_WEBGPU_RENDER_PROBE)
+        browser.page.open(local_site.base_url)
+        result = browser.page.evaluate(_WEBGPU_RENDER_PROBE)
 
     assert result == {"stage": "pixel", "pixel": [255, 0, 0, 255]}
 
@@ -752,7 +827,7 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
     with _browser(chrome_path) as browser:
         navigation = browser.native.data("navigate", url=f"{local_site.base_url}/{page_name}")
         browser.page.wait_for_function("document.body.dataset.webmcpReady !== undefined")
-        if browser.evaluate("document.body.dataset.webmcpReady") == "unavailable":
+        if browser.page.evaluate("document.body.dataset.webmcpReady") == "unavailable":
             assert sys.platform == "darwin"
             try:
                 assert browser.webmcp.list() == ()
@@ -779,7 +854,9 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
         assert set_message.input_schema["type"] == "object"
         assert completed.status == "completed"
         assert completed.output == {"message": "WebMCP works"}
-        assert browser.evaluate("document.getElementById('result').textContent") == "WebMCP works"
+        assert (
+            browser.page.evaluate("document.getElementById('result').textContent") == "WebMCP works"
+        )
         assert canceled.status == "canceled"
         with pytest.raises(BrowserError) as missing:
             browser.webmcp.invoke("missing_tool")
@@ -813,19 +890,19 @@ def test_private_ca_trust_and_clear_cross_the_native_browser_boundary(
         _browser(chrome_path, session=_session("private-ca-baseline")) as browser,
         pytest.raises(BrowserError),
     ):
-        browser.open(local_https_site.base_url)
+        browser.page.open(local_https_site.base_url)
 
     with Browser.launch(options, session=_session("private-ca")) as browser:
-        browser.open(local_https_site.base_url)
-        assert browser.title() == "Private CA"
+        browser.page.open(local_https_site.base_url)
+        assert browser.page.title() == "Private CA"
 
         browser.native.data(
             "launch",
             executablePath=str(chrome_path),
             headless=True,
         )
-        browser.open(local_https_site.base_url)
-        assert browser.title() == "Private CA"
+        browser.page.open(local_https_site.base_url)
+        assert browser.page.title() == "Private CA"
 
         browser.native.data(
             "launch",
@@ -834,7 +911,7 @@ def test_private_ca_trust_and_clear_cross_the_native_browser_boundary(
             headless=True,
         )
         with pytest.raises(BrowserError):
-            browser.open(local_https_site.base_url)
+            browser.page.open(local_https_site.base_url)
 
 
 def test_confirmation_completes_ref_transition_evidence(chrome_path: Path) -> None:
@@ -845,8 +922,8 @@ def test_confirmation_completes_ref_transition_evidence(chrome_path: Path) -> No
         confirm_actions=("click",),
     )
     with _browser(chrome_path, session=session) as browser:
-        browser.open(_data_url(html))
-        ref = browser.observe().one(name="Delete")
+        browser.page.open(_data_url(html))
+        ref = browser.page.observe().one(name="Delete")
 
         with pytest.raises(ConfirmationRequired) as required:
             ref.click()
@@ -857,6 +934,24 @@ def test_confirmation_completes_ref_transition_evidence(chrome_path: Path) -> No
         assert result.target is ref
         assert result.after.spec == ref.snapshot.spec
         assert isinstance(result.diff, SnapshotDiff)
+
+
+def test_bound_page_gates_only_an_actual_target_switch(chrome_path: Path) -> None:
+    session = SessionOptions(
+        session_id=f"bound-page-policy-{time.monotonic_ns()}",
+        confirm_actions=("tab_switch",),
+    )
+    with _browser(chrome_path, session=session) as browser:
+        browser.page.set_content("<title>First</title>")
+        first = browser.tabs.get(index=1)
+
+        assert first.title() == "First"
+        browser.tabs.new(_data_url("<title>Second</title>"))
+        with pytest.raises(ConfirmationRequired) as required:
+            first.title()
+
+        assert required.value.data["action"] == "tab_switch"
+        assert required.value.pending.confirm() == "First"
 
 
 def test_periodic_restore_autosave_survives_abrupt_browser_exit(
@@ -876,7 +971,7 @@ def test_periodic_restore_autosave_survives_abrupt_browser_exit(
     saved_path: Path | None = None
 
     try:
-        browser.open(local_site.base_url)
+        browser.page.open(local_site.base_url)
         browser.storage.set("periodic", "saved")
         time.sleep(2.2)
         status = _wait_for_restore_save(browser)
@@ -896,7 +991,7 @@ def test_periodic_restore_autosave_survives_abrupt_browser_exit(
 
     restored = _browser(chrome_path, session=session)
     try:
-        restored.open(local_site.base_url)
+        restored.page.open(local_site.base_url)
         assert restored.session.status().restore_status == "loaded"
         assert restored.storage.get("periodic") == "saved"
     finally:
@@ -933,13 +1028,13 @@ def test_browser_attaches_to_an_existing_cdp_target(
             pytest.skip("Chrome CDP endpoint did not become ready")
         target = CDPTarget(port=port)
         with Browser.attach(target, session=session) as browser:
-            browser.open(_data_url("<title>Attached</title>"))
-            assert browser.title() == "Attached"
+            browser.page.open(_data_url("<title>Attached</title>"))
+            assert browser.page.title() == "Attached"
             active = next(tab for tab in browser.tabs.list() if tab.active)
             assert active.target_id
 
         with Browser.attach(target, session=session) as browser:
-            assert browser.title() == "Attached"
+            assert browser.page.title() == "Attached"
             restored = next(tab for tab in browser.tabs.list() if tab.active)
             assert restored.target_id == active.target_id
     finally:
@@ -953,7 +1048,7 @@ def test_async_native_wait_does_not_block_the_event_loop(chrome_path: Path) -> N
             session=_session("async"),
         )
         async with browser:
-            await browser.open(_data_url(_form_html()))
+            await browser.page.open(_data_url(_form_html()))
             wait_task = asyncio.create_task(
                 browser.native.data(
                     "wait",

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from pathlib import Path
 from typing import Any
 
 import pytest
@@ -13,6 +14,7 @@ from agentbrowser import (
     AsyncBrowser,
     AsyncRef,
     AsyncSnapshot,
+    AsyncStaleRefError,
     Browser,
     BrowserError,
     CloseResult,
@@ -178,7 +180,7 @@ def _browser(native: Any) -> Browser:
 
 
 def test_snapshot_binds_refs_and_expresses_cardinality() -> None:
-    page = _browser(TransitionNative()).observe()
+    page = _browser(TransitionNative()).page.observe()
 
     assert isinstance(page, Snapshot)
     assert page.url == page.origin == "https://example.com/form"
@@ -207,7 +209,7 @@ def test_agent_evidence_representations_are_bounded_and_task_focused(asynchronou
 
     async def run() -> tuple[AsyncSnapshot, AsyncRef, ActionResult[AsyncRef, AsyncSnapshot]]:
         async with AsyncBrowser(_native_session=AsyncNativeSession(native=native)) as browser:
-            page = await browser.observe()
+            page = await browser.page.observe()
             ref = page.one(role="button")
             return page, ref, await ref.click()
 
@@ -215,7 +217,7 @@ def test_agent_evidence_representations_are_bounded_and_task_focused(asynchronou
         page, ref, result = asyncio.run(run())
     else:
         with _browser(native) as browser:
-            page = browser.observe()
+            page = browser.page.observe()
             ref = page.one(role="button")
             result = ref.click()
 
@@ -260,13 +262,13 @@ def test_snapshot_decoder_rejects_protocol_drift(
             return json.dumps({"id": command["id"], "success": True, "data": data})
 
     with pytest.raises(NativeParseError, match=message):
-        _browser(MalformedNative()).observe()
+        _browser(MalformedNative()).page.observe()
 
 
 def test_ref_action_returns_reproducible_transition_evidence() -> None:
     native = TransitionNative()
     spec = SnapshotSpec(compact=True, urls=True)
-    before = _browser(native).observe(spec)
+    before = _browser(native).page.observe(spec)
 
     result = before.one(role="button", name="Submit").click(
         wait=Wait.all(Wait.text("Saved"), Wait.url("*/complete"))
@@ -280,15 +282,33 @@ def test_ref_action_returns_reproducible_transition_evidence() -> None:
     assert result.diff.changed is True
 
 
+def test_wait_all_applies_one_shared_timeout_budget() -> None:
+    native = TransitionNative()
+    browser = _browser(native)
+    ref = browser.page.observe().one(name="Submit")
+
+    ref.click(
+        wait=Wait.all(
+            Wait.text("Saved", timeout_ms=2_000),
+            Wait.url("*/complete", timeout_ms=2_000),
+            timeout_ms=1_000,
+        )
+    )
+
+    waits = [command for command in native.commands if command["action"] == "wait"]
+    assert len(waits) == 2
+    assert all(0 <= command["timeout"] <= 1_000 for command in waits)
+
+
 def test_ref_reads_require_typed_native_fields() -> None:
-    ref = _browser(TransitionNative()).observe().ref("e1")
+    ref = _browser(TransitionNative()).page.observe().ref("e1")
 
     assert ref.text() == "Submit"
     assert ref.is_visible() is True
 
 
 def test_confirmed_ref_read_keeps_its_public_type() -> None:
-    ref = _browser(ConfirmedRefReadNative()).observe().ref("e1")
+    ref = _browser(ConfirmedRefReadNative()).page.observe().ref("e1")
 
     with pytest.raises(ConfirmationRequired) as required:
         ref.text()
@@ -299,7 +319,7 @@ def test_confirmed_ref_read_keeps_its_public_type() -> None:
 def test_stale_ref_translation_uses_structured_error_codes() -> None:
     native = StaleNative(structured=True)
     browser = _browser(native)
-    ref = browser.observe().one(name="Submit")
+    ref = browser.page.observe().one(name="Submit")
 
     with pytest.raises(StaleRefError) as stale:
         ref.click()
@@ -311,13 +331,57 @@ def test_stale_ref_translation_uses_structured_error_codes() -> None:
 
     message_browser = _browser(StaleNative(structured=False))
     with pytest.raises(BrowserError) as error:
-        message_browser.observe().one(name="Submit").click()
+        message_browser.page.observe().one(name="Submit").click()
     assert not isinstance(error.value, StaleRefError)
+
+
+def test_new_snapshot_invalidates_older_refs_before_native_dispatch() -> None:
+    native = TransitionNative()
+    browser = _browser(native)
+    old_ref = browser.page.observe().one(name="Submit")
+
+    browser.page.observe()
+
+    with pytest.raises(StaleRefError, match="stale snapshot generation"):
+        old_ref.click()
+    assert [command["action"] for command in native.commands] == ["snapshot", "snapshot"]
+
+
+def test_annotated_screenshot_invalidates_older_refs(tmp_path: Path) -> None:
+    native = ScriptedNative(
+        {
+            "snapshot": _snapshot(),
+            "screenshot": {"path": str(tmp_path / "annotated.png")},
+        }
+    )
+    browser = _browser(native)
+    old_ref = browser.page.observe().one(name="Submit")
+
+    browser.page.capture.screenshot(tmp_path / "annotated.png", annotate=True, wait_ms=0)
+
+    with pytest.raises(StaleRefError, match="stale snapshot generation"):
+        old_ref.click()
+
+
+def test_async_new_snapshot_invalidates_older_refs_before_native_dispatch() -> None:
+    native = TransitionNative()
+
+    async def run() -> None:
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        old_ref = (await browser.page.observe()).one(name="Submit")
+        await browser.page.observe()
+
+        with pytest.raises(AsyncStaleRefError, match="stale snapshot generation"):
+            await old_ref.click()
+        await browser.close()
+
+    asyncio.run(run())
+    assert [command["action"] for command in native.commands[:2]] == ["snapshot", "snapshot"]
 
 
 def test_confirmed_ref_action_finishes_the_same_high_level_contract() -> None:
     browser = _browser(ConfirmedTransitionNative())
-    ref = browser.observe().one(name="Submit")
+    ref = browser.page.observe().one(name="Submit")
 
     with pytest.raises(ConfirmationRequired) as required:
         ref.click(wait=Wait.url("*/complete"))
@@ -330,7 +394,7 @@ def test_confirmed_ref_action_finishes_the_same_high_level_contract() -> None:
 
 def test_post_action_wait_failure_reports_that_the_action_completed() -> None:
     native = WaitFailureNative()
-    ref = _browser(native).observe().one(name="Submit")
+    ref = _browser(native).page.observe().one(name="Submit")
 
     with pytest.raises(ActionTransitionError) as failed:
         ref.click(wait=Wait.text("Saved"))
@@ -348,7 +412,7 @@ def test_async_snapshot_and_action_match_the_sync_contract() -> None:
         browser = AsyncBrowser(
             _native_session=AsyncNativeSession(native=native),
         )
-        page = await browser.observe(SnapshotSpec(compact=True))
+        page = await browser.page.observe(SnapshotSpec(compact=True))
         assert page.url == page.origin
         result = await page.one(name="Submit").click(wait=Wait.text("Saved"))
 

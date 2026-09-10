@@ -143,7 +143,7 @@ class CDPController:
             target_id = self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             client.send("Target.getTargets"),
-            self._browser.url(),
+            self._browser.page.url(),
             label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
@@ -319,7 +319,7 @@ class AsyncCDPController:
             target_id = await self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             await client.send("Target.getTargets"),
-            await self._browser.url(),
+            await self._browser.page.url(),
             label=None if target_id is not None else label,
             url=url,
             target_id=target_id,

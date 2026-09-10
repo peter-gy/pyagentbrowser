@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import math
 from asyncio import sleep as async_sleep
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
-from typing import Any, Protocol, TypeVar, overload
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, overload
+
+if TYPE_CHECKING:
+    from agentbrowser.agent_async import AsyncSnapshot
+    from agentbrowser.query_async import AsyncQueries
 
 from agentbrowser._browser_common import (
     exclusive_source,
@@ -38,18 +43,27 @@ from agentbrowser.command_params import (
     wheel_params,
 )
 from agentbrowser.domains import (
+    _collect_frame_records,
+    _frame_candidates,
+    _merge_frame_records,
     _none,
+    _one_frame,
     _required_path,
     _required_string,
+    _scope_from_data,
+    _scroll_position,
     _tab_selector,
     _tab_with_label,
 )
 from agentbrowser.models import (
     AccessibilityAudit,
+    BrowserError,
     ConfirmationRequired,
     ConsoleMessage,
     Cookie,
     DocumentScope,
+    ElementGeometry,
+    FrameLookupError,
     HarContentMode,
     JSONMapping,
     LoadState,
@@ -93,11 +107,15 @@ DEFAULT_SCREENSHOT_WAIT_MS = 100
 T = TypeVar("T")
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _AsyncScopedBrowser:
-    controller: Any
+    _controller: Any
     target_id: str | None
     frame_id: str | None
+
+    @property
+    def controller(self) -> Any:
+        return self._controller
 
     async def _command(self, action: str, **params: Any) -> Any:
         if self.target_id is not None:
@@ -132,8 +150,8 @@ class AsyncCommandTarget(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class AsyncPage:
-    """Async operations bound to one browser page and its main document."""
+class _AsyncDocument:
+    """Async operations shared by page and frame documents."""
 
     browser: Any
     target_id: str | None = None
@@ -151,24 +169,38 @@ class AsyncPage:
             )
 
     async def _command(self, action: str, **params: Any) -> Any:
-        return await self.browser._command(action, **params)
+        try:
+            result = await self.browser._command(action, **params)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._bind_result)
+            raise
+        return self._bind_result(result)
+
+    def _bind_result(self, result: Any) -> Any:
+        if self.target_id is None:
+            target_id = self.browser.controller._active_target_id
+            if isinstance(target_id, str):
+                object.__setattr__(self, "target_id", target_id)
+                self.browser.target_id = target_id
+        return result
 
     @property
     def scope(self) -> DocumentScope:
         """Return the browser target and frame identity for this handle."""
-        return DocumentScope(self.target_id, self.frame_id, self.frame_url or None)
+        return DocumentScope(
+            self.target_id,
+            self.frame_id,
+            self.frame_url or None,
+            self.browser.controller._ref_generation,
+        )
 
     @property
-    def find(self) -> Any:
+    def find(self) -> AsyncQueries:
         """Return live queries bound to this document."""
         from agentbrowser.query_async import AsyncQueries
 
         return AsyncQueries(self)
-
-    @property
-    def capture(self) -> AsyncCapture:
-        """Return capture operations bound to this document."""
-        return AsyncCapture(self)
 
     @property
     def frames(self) -> AsyncFrames:
@@ -180,24 +212,107 @@ class AsyncPage:
         """Return measured document and container scrolling."""
         return AsyncScroll(self)
 
-    async def observe(self, spec: Any = None) -> Any:
+    async def observe(self, spec: Any = None) -> AsyncSnapshot:
         """Capture an accessibility snapshot bound to this document."""
-        from agentbrowser.agent_async import AsyncSnapshot
         from agentbrowser.models import SnapshotSpec, snapshot_from_data
 
         capture_spec = spec or SnapshotSpec()
-        data = await self._command(
-            "snapshot",
-            _decode=lambda value: snapshot_from_data(value, spec=capture_spec),
-            selector=optional(capture_spec.selector),
-            interactive=capture_spec.interactive,
-            compact=capture_spec.compact,
-            maxDepth=optional(capture_spec.max_depth),
-            urls=capture_spec.urls,
-        )
-        return AsyncSnapshot(self, data)
+        if self.frame_id is not None and capture_spec.selector is not None:
+            raise TypeError("Async frame snapshots capture the selected frame document")
+        try:
+            data = await self._command(
+                "snapshot",
+                _decode=lambda value: snapshot_from_data(value, spec=capture_spec),
+                selector=optional(capture_spec.selector),
+                interactive=capture_spec.interactive,
+                compact=capture_spec.compact,
+                maxDepth=optional(capture_spec.max_depth),
+                urls=capture_spec.urls,
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._snapshot_result)
+            raise
+        return self._snapshot_result(data)
 
-    async def open(
+    def _snapshot_result(self, data: Any) -> Any:
+        from agentbrowser.agent_async import AsyncSnapshot
+
+        controller = self.browser.controller
+        data = replace(
+            data,
+            generation=data.raw.get("refGeneration", controller._ref_generation),
+        )
+        target_id = data.raw.get("targetId")
+        owner = type(self)(
+            controller,
+            target_id=str(target_id) if isinstance(target_id, str) else self.target_id,
+            frame_id=self.frame_id,
+            frame_name=self.frame_name,
+            frame_url=data.origin,
+            parent_frame_id=self.parent_frame_id,
+        )
+        return AsyncSnapshot(owner, data)
+
+    async def geometry(self, selector: str | None = None) -> ElementGeometry:
+        """Measure bounds and overflow for the document or one element."""
+        if selector == "":
+            raise ValueError("geometry selector must not be empty")
+        selector_json = json.dumps(selector)
+        try:
+            data = await self._evaluate_data(
+                f"""(() => {{
+                const element = {selector_json} === null
+                    ? document.documentElement
+                    : document.querySelector({selector_json});
+                if (!element) throw new Error('geometry target not found');
+                const rect = element.getBoundingClientRect();
+                return {{
+                    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+                    clientWidth: element.clientWidth, clientHeight: element.clientHeight,
+                    scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight,
+                }};
+            }})()"""
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda data: self._geometry_result(selector, data)
+                )
+            raise
+        return self._geometry_result(selector, data)
+
+    def _geometry_result(
+        self,
+        selector: str | None,
+        data: Mapping[str, Any],
+    ) -> ElementGeometry:
+        result = data.get("result")
+        if not isinstance(result, Mapping):
+            from agentbrowser.models import NativeParseError
+
+            raise NativeParseError("geometry evaluation must return an object")
+        fields = (
+            "x",
+            "y",
+            "width",
+            "height",
+            "clientWidth",
+            "clientHeight",
+            "scrollWidth",
+            "scrollHeight",
+        )
+        if any(not isinstance(result.get(field), int | float) for field in fields):
+            from agentbrowser.models import NativeParseError
+
+            raise NativeParseError("geometry fields must be numbers")
+        return ElementGeometry(
+            _scope_from_data(self, data),
+            selector or "document",
+            *(float(result[field]) for field in fields),
+        )
+
+    async def _open(
         self,
         url: str,
         *,
@@ -207,8 +322,8 @@ class AsyncPage:
 
         Example:
             ```python
-            await browser.open("https://example.com")
-            print(await browser.title())
+            await browser.page.open("https://example.com")
+            print(await browser.page.title())
             ```
 
         Parameters
@@ -226,10 +341,10 @@ class AsyncPage:
             except ConfirmationRequired as error:
                 if error.pending is not None:
                     error.pending = error.pending.map(
-                        lambda _value: self.open(url, wait_until=wait_until)
+                        lambda _value: self._open(url, wait_until=wait_until)
                     )
                 raise
-        await self.browser._command(
+        await self._command(
             "navigate",
             _decode=_none,
             url=normalize_url(url),
@@ -237,39 +352,38 @@ class AsyncPage:
         )
 
     async def title(self) -> str:
-        """Return the current page title."""
-        return await self.browser._command(
-            "title",
-            _decode=lambda data: _required_string(data, "title", action="title"),
-        )
+        """Return the current document title."""
+        return str(await self.evaluate("document.title"))
 
     async def url(self) -> str:
-        """Return the current page URL."""
-        return await self.browser._command(
-            "url",
-            _decode=lambda data: _required_string(data, "url", action="url"),
-        )
+        """Return the current document URL."""
+        return str(await self.evaluate("location.href"))
 
     async def content(self) -> str:
-        """Return the current page HTML."""
-        return await self.browser._command(
-            "content",
-            _decode=lambda data: _required_string(data, "html", action="content"),
-        )
+        """Return the current document HTML."""
+        return str(await self.evaluate("document.documentElement.outerHTML"))
 
-    async def set_content(self, html: str) -> None:
+    async def _set_content(self, html: str) -> None:
         """Replace the current page document with HTML."""
-        await self.browser._command("setcontent", _decode=_none, html=html)
+        await self._command("setcontent", _decode=_none, html=html)
 
     async def evaluate(self, script: str) -> Any:
         """Evaluate JavaScript in the current page context."""
-        return await self.browser._command(
+        try:
+            return (await self._evaluate_data(script)).get("result")
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda data: data.get("result"))
+            raise
+
+    async def _evaluate_data(self, script: str) -> Mapping[str, Any]:
+        return await self._command(
             "evaluate",
-            _decode=lambda data: data.get("result"),
+            _decode=lambda data: data,
             script=script,
         )
 
-    async def read(
+    async def _read(
         self,
         url: str | None = None,
         *,
@@ -283,7 +397,7 @@ class AsyncPage:
 
         Example:
             ```python
-            result = await browser.read(
+            result = await browser.page.read(
                 "https://example.com",
                 mode=ReadMode.markdown(require=True),
             )
@@ -296,7 +410,7 @@ class AsyncPage:
             except ConfirmationRequired as error:
                 if error.pending is not None:
                     error.pending = error.pending.map(
-                        lambda _value: self.read(
+                        lambda _value: self._read(
                             url,
                             mode=mode,
                             filter=filter,
@@ -307,7 +421,7 @@ class AsyncPage:
                     )
                 raise
         normalized_url = normalize_url(url) if url is not None else None
-        return await self.browser._command(
+        return await self._command(
             "read",
             _decode=read_result_from_data,
             **read_params(
@@ -334,21 +448,21 @@ class AsyncPage:
             timeout_ms=timeout_ms,
         )
 
-    async def back(self) -> None:
+    async def _back(self) -> None:
         """Navigate back in history."""
-        await self.browser._command("back", _decode=_none)
+        await self._command("back", _decode=_none)
 
-    async def forward(self) -> None:
+    async def _forward(self) -> None:
         """Navigate forward in history."""
-        await self.browser._command("forward", _decode=_none)
+        await self._command("forward", _decode=_none)
 
-    async def reload(self) -> None:
+    async def _reload(self) -> None:
         """Reload the current page."""
-        await self.browser._command("reload", _decode=_none)
+        await self._command("reload", _decode=_none)
 
     async def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
         """Wait until text appears."""
-        await self.browser._command(
+        await self._command(
             "wait",
             _decode=_none,
             **wait_params(None, text=text, timeout_ms=timeout_ms),
@@ -362,7 +476,7 @@ class AsyncPage:
         timeout_ms: int | None = None,
     ) -> None:
         """Wait for a selector to reach a state."""
-        await self.browser._command(
+        await self._command(
             "wait",
             _decode=_none,
             **wait_params(None, selector=selector, state=state, timeout_ms=timeout_ms),
@@ -370,7 +484,7 @@ class AsyncPage:
 
     async def wait_for_url(self, pattern: str, *, timeout_ms: int | None = None) -> None:
         """Wait for the page URL to match a pattern."""
-        await self.browser._command(
+        await self._command(
             "wait",
             _decode=_none,
             **wait_params(None, url=pattern, timeout_ms=timeout_ms),
@@ -378,7 +492,7 @@ class AsyncPage:
 
     async def wait_for_function(self, predicate: str, *, timeout_ms: int | None = None) -> None:
         """Wait for a JavaScript predicate to become truthy."""
-        await self.browser._command(
+        await self._command(
             "wait",
             _decode=_none,
             **wait_params(None, predicate=predicate, timeout_ms=timeout_ms),
@@ -386,143 +500,267 @@ class AsyncPage:
 
     async def wait_for_load_state(self, state: LoadState = "load") -> None:
         """Wait for a page load state."""
-        await self.browser._command(
+        await self._command(
             "wait",
             _decode=_none,
             **wait_params(None, load_state=state),
         )
 
 
-class AsyncFrame(AsyncPage):
-    """Async operations bound to one child browsing context."""
+class AsyncPage(_AsyncDocument):
+    """Async operations bound to one browser page and its main document."""
 
-    async def open(self, url: str, *, wait_until: LoadState = "load") -> None:
-        del url, wait_until
-        raise TypeError("AsyncFrame.open() cannot navigate a child browsing context")
+    @property
+    def capture(self) -> AsyncCapture:
+        """Return screenshot and PDF capture for this page."""
+        return AsyncCapture(self)
+
+    async def open(
+        self,
+        url: str,
+        *,
+        wait_until: LoadState = "load",
+    ) -> None:
+        """Navigate this page to a URL."""
+        await self._open(url, wait_until=wait_until)
 
     async def title(self) -> str:
-        """Return this frame document's title."""
-        return str(await self.evaluate("document.title"))
+        """Return the current page title."""
+        return await self._command(
+            "title",
+            _decode=lambda data: _required_string(data, "title", action="title"),
+        )
 
     async def url(self) -> str:
-        """Return this frame document's current URL."""
-        return str(await self.evaluate("location.href"))
+        """Return the current page URL."""
+        return await self._command(
+            "url",
+            _decode=lambda data: _required_string(data, "url", action="url"),
+        )
 
     async def content(self) -> str:
-        """Return this frame document's HTML."""
-        return str(await self.evaluate("document.documentElement.outerHTML"))
+        """Return the current page HTML."""
+        return await self._command(
+            "content",
+            _decode=lambda data: _required_string(data, "html", action="content"),
+        )
+
+    async def set_content(self, html: str) -> None:
+        """Replace the current page document with HTML."""
+        await self._set_content(html)
+
+    async def read(
+        self,
+        url: str | None = None,
+        *,
+        mode: ReadMode | None = None,
+        filter: str | None = None,
+        timeout_ms: int | None = None,
+        headers: Mapping[str, str] | None = None,
+        allowed_domains: Sequence[str] | None = None,
+    ) -> ReadResult:
+        """Return agent-readable content for a URL or this page."""
+        return await self._read(
+            url,
+            mode=mode,
+            filter=filter,
+            timeout_ms=timeout_ms,
+            headers=headers,
+            allowed_domains=allowed_domains,
+        )
+
+    async def back(self) -> None:
+        """Navigate back in this page's history."""
+        await self._back()
+
+    async def forward(self) -> None:
+        """Navigate forward in this page's history."""
+        await self._forward()
+
+    async def reload(self) -> None:
+        """Reload this page."""
+        await self._reload()
+
+
+class AsyncFrame(_AsyncDocument):
+    """Async operations bound to one child browsing context."""
+
+    @property
+    def capture(self) -> AsyncFrameCapture:
+        """Return screenshot capture for this frame."""
+        return AsyncFrameCapture(self)
+
+    async def _command(self, action: str, **params: Any) -> Any:
+        try:
+            return await super()._command(action, **params)
+        except BrowserError as error:
+            if error.code in {"frame_scope", "tab_gone"}:
+                raise FrameLookupError("scope_mismatch", self.frame_id or "<unknown>") from error
+            if error.code == "frame_detached":
+                raise FrameLookupError("detached", self.frame_id or "<unknown>") from error
+            raise
 
 
 @dataclass(frozen=True, slots=True)
 class AsyncFrames:
     """Discover child browsing contexts from one async page or frame."""
 
-    page: AsyncPage
+    page: _AsyncDocument
 
     async def tree(self) -> tuple[AsyncFrame, ...]:
-        """Return descendant frames with stable browser frame identities."""
-        from agentbrowser.domains import _collect_frame_records
+        """Return descendant frames with stable identities and parent links."""
+        return await self.page._command("frame", _decode=self._tree_result, list=True)
 
-        data = await self.page._command("frame", _decode=lambda value: value, list=True)
+    def _tree_result(self, data: Mapping[str, Any]) -> tuple[AsyncFrame, ...]:
+        root = data.get("frameTree")
         records: list[tuple[Mapping[str, Any], str | None]] = []
-        _collect_frame_records(data.get("frameTree"), None, records)
+        _collect_frame_records(root, None, records)
         parent_scope = self.page.frame_id
-        oopif_frames = data.get("oopifFrames")
-        if isinstance(oopif_frames, list):
-            for raw in oopif_frames:
-                if isinstance(raw, Mapping) and isinstance(raw.get("id"), str):
-                    parent_id = raw.get("parentId")
-                    records.append(
-                        (
-                            raw,
-                            str(parent_id) if isinstance(parent_id, str) else parent_scope,
-                        )
-                    )
-        records = list({str(raw["id"]): (raw, parent_id) for raw, parent_id in records}.values())
+        root_frame = root.get("frame") if isinstance(root, Mapping) else None
+        root_id = root_frame.get("id") if isinstance(root_frame, Mapping) else None
+        expected_parent = parent_scope or (str(root_id) if isinstance(root_id, str) else None)
+        oopif_trees = data.get("oopifFrameTrees")
+        if isinstance(oopif_trees, list):
+            known_parents = {str(raw["id"]): parent_id for raw, parent_id in records}
+            for item in oopif_trees:
+                if not isinstance(item, Mapping):
+                    continue
+                root_frame_id = item.get("rootFrameId")
+                parent_id = (
+                    known_parents.get(str(root_frame_id))
+                    if isinstance(root_frame_id, str)
+                    else None
+                )
+                _collect_frame_records(item.get("frameTree"), parent_id, records)
+        records = _merge_frame_records(records)
+        parents = {str(raw["id"]): parent_id for raw, parent_id in records}
+
+        def descendant(frame_id: str) -> bool:
+            visited: set[str] = set()
+            parent = parents.get(frame_id)
+            while parent is not None and parent not in visited:
+                if parent == expected_parent:
+                    return True
+                visited.add(parent)
+                parent = parents.get(parent)
+            return False
+
         return tuple(
             AsyncFrame(
                 self.page.browser.controller,
-                target_id=self.page.target_id,
+                target_id=data.get("targetId") or self.page.target_id,
                 frame_id=str(raw["id"]),
                 frame_name=str(raw.get("name", "")),
                 frame_url=str(raw.get("url", "")),
                 parent_frame_id=parent_id,
             )
             for raw, parent_id in records
-            if parent_id is not None and (parent_scope is None or parent_id == parent_scope)
+            if descendant(str(raw["id"]))
         )
 
     async def get(
         self,
         *,
+        id: str | None = None,
         selector: str | None = None,
         name: str | None = None,
         url: str | None = None,
     ) -> AsyncFrame:
-        """Return one exact child frame selected by element, name, or URL."""
-        selected = [value is not None for value in (selector, name, url)]
-        if sum(selected) != 1:
-            raise ValueError("pass exactly one of selector, name, or url")
-        candidates = await self.tree()
-        if selector is not None:
-            if selector.startswith("@"):
-                data = await self.page._command(
-                    "frame", selector=selector, _decode=lambda value: value
+        """Resolve one child frame by ID, owning element, name, or URL."""
+        if sum(value is not None for value in (id, selector, name, url)) != 1:
+            raise ValueError("pass exactly one of id, selector, name, or url")
+        try:
+            candidates = await self.tree()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda frames: self._get_from_candidates(frames, id, selector, name, url)
                 )
-                frame_id = data.get("frameId")
-                matches = [frame for frame in candidates if frame.frame_id == frame_id]
-            else:
-                from agentbrowser.domains import _frames_for_owner
+            raise
+        return await self._get_from_candidates(candidates, id, selector, name, url)
 
-                selector_json = json.dumps(selector)
-                owner = await self.page.evaluate(
-                    f"""(() => {{
-                        const element = document.querySelector({selector_json});
-                        if (!element || !['IFRAME', 'FRAME'].includes(element.tagName)) return null;
-                        return {{name: element.name || element.id || '', url: element.src || ''}};
-                    }})()"""
+    async def _get_from_candidates(
+        self,
+        candidates: tuple[AsyncFrame, ...],
+        id: str | None,
+        selector: str | None,
+        name: str | None,
+        url: str | None,
+    ) -> AsyncFrame:
+        if selector is None:
+            matches = [
+                frame
+                for frame in candidates
+                if (
+                    frame.frame_id == id
+                    if id is not None
+                    else frame.frame_name == name
+                    if name is not None
+                    else frame.frame_url == url
                 )
-                matches = list(_frames_for_owner(candidates, owner))
-                if not matches and isinstance(owner, Mapping):
-                    data = await self.page._command(
-                        "frame", selector=selector, _decode=lambda value: value
-                    )
-                    frame_id = data.get("frameId")
-                    if isinstance(frame_id, str):
-                        matches = [
-                            AsyncFrame(
-                                self.page.browser.controller,
-                                target_id=self.page.target_id,
-                                frame_id=frame_id,
-                                frame_name=str(owner.get("name", "")),
-                                frame_url=str(owner.get("url", "")),
-                                parent_frame_id=self.page.frame_id,
-                            )
-                        ]
-        elif name is not None:
-            matches = [frame for frame in candidates if frame.frame_name == name]
-        else:
-            matches = [frame for frame in candidates if frame.frame_url == url]
-        criteria = selector if selector is not None else name if name is not None else url
-        if not matches:
-            available = ", ".join(
-                f"{frame.frame_id}:{frame.frame_name or frame.frame_url or '<blank>'}"
-                for frame in candidates[:8]
+            ]
+            return _one_frame(matches, repr(id or name or url), candidates)
+        target_id = self.page.target_id or self.page.browser.controller._active_target_id
+        parent = type(self.page)(
+            self.page.browser.controller,
+            target_id=target_id,
+            frame_id=self.page.frame_id,
+        )
+        if selector.startswith("@"):
+            return await self._resolve_element(parent, selector, candidates)
+        try:
+            count = await parent.evaluate(
+                f"document.querySelectorAll({json.dumps(selector)}).length"
             )
-            raise LookupError(
-                f"no child frame matched {criteria!r}; available frames: {available or '<none>'}"
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda count: self._resolve_count(parent, selector, candidates, count)
+                )
+            raise
+        return await self._resolve_count(parent, selector, candidates, count)
+
+    async def _resolve_count(
+        self,
+        parent: _AsyncDocument,
+        selector: str,
+        candidates: tuple[AsyncFrame, ...],
+        count: Any,
+    ) -> AsyncFrame:
+        if count != 1:
+            raise FrameLookupError(
+                "not_found" if count == 0 else "ambiguous",
+                repr(selector),
+                _frame_candidates(candidates),
             )
-        if len(matches) > 1:
-            ids = ", ".join(frame.frame_id or "" for frame in matches)
-            raise LookupError(f"multiple child frames matched {criteria!r}: {ids}")
-        return matches[0]
+        return await self._resolve_element(parent, selector, candidates)
+
+    async def _resolve_element(
+        self,
+        parent: _AsyncDocument,
+        selector: str,
+        candidates: tuple[AsyncFrame, ...],
+    ) -> AsyncFrame:
+        def decode(data: Mapping[str, Any]) -> AsyncFrame:
+            frame_id = _required_string(data, "frameId", action="frame")
+            for frame in candidates:
+                if frame.frame_id == frame_id:
+                    return frame
+            return AsyncFrame(
+                parent.browser.controller,
+                target_id=data.get("targetId") or parent.target_id,
+                frame_id=frame_id,
+                parent_frame_id=parent.frame_id,
+            )
+
+        return await parent._command("frame", selector=selector, _decode=decode)
 
 
 @dataclass(frozen=True, slots=True)
 class AsyncScroll:
     """Measured scrolling bound to one async page or frame document."""
 
-    page: AsyncPage
+    page: _AsyncDocument
 
     async def by(
         self,
@@ -532,26 +770,43 @@ class AsyncScroll:
         selector: str | None = None,
     ) -> ScrollResult:
         """Scroll a document or container and return its offsets before and after."""
-        from agentbrowser.domains import _scroll_position
-
+        if selector == "":
+            raise ValueError("scroll selector must not be empty")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            for value in (x, y)
+        ):
+            raise ValueError("scroll offsets must be finite numbers")
         selector_json = json.dumps(selector)
-        result = await self.page.evaluate(
-            f"""(() => {{
+        try:
+            data = await self.page._evaluate_data(
+                f"""(() => {{
                 const element = {selector_json} === null
                     ? document.scrollingElement
                     : document.querySelector({selector_json});
                 if (!element) throw new Error('scroll container not found');
                 const before = {{x: element.scrollLeft, y: element.scrollTop}};
-                element.scrollBy({{left: {x!r}, top: {y!r}, behavior: 'instant'}});
+                element.scrollLeft += {x!r};
+                element.scrollTop += {y!r};
                 return {{before, after: {{x: element.scrollLeft, y: element.scrollTop}}}};
             }})()"""
-        )
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda data: self._result(selector, data))
+            raise
+        return self._result(selector, data)
+
+    def _result(self, selector: str | None, data: Mapping[str, Any]) -> ScrollResult:
+        result = data.get("result")
         if not isinstance(result, Mapping):
             from agentbrowser.models import NativeParseError
 
             raise NativeParseError("scroll evaluation must return an object")
         return ScrollResult(
-            self.page.scope,
+            _scope_from_data(self.page, data),
             selector or "document",
             _scroll_position(result.get("before")),
             _scroll_position(result.get("after")),
@@ -559,8 +814,8 @@ class AsyncScroll:
 
 
 @dataclass(frozen=True, slots=True)
-class AsyncCapture:
-    """Async screenshot and PDF capture helpers."""
+class _AsyncScreenshotCapture:
+    """Async screenshot capture shared by page and frame documents."""
 
     browser: AsyncCommandTarget
 
@@ -602,26 +857,47 @@ class AsyncCapture:
         Screenshot
             Parsed screenshot metadata and file path.
         """
+        if path is not None:
+            path = Path(path).expanduser()
+        if output_dir is not None:
+            output_dir = Path(output_dir).expanduser()
+        params = screenshot_params(
+            path=path,
+            selector=selector,
+            full_page=full_page,
+            annotate=annotate,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+        )
         await _wait_before_screenshot(wait_ms)
         if path is not None:
-            Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
         if output_dir is not None:
-            Path(output_dir).expanduser().mkdir(parents=True, exist_ok=True)
-        screenshot = await self.browser._command(
-            "screenshot",
-            _decode=lambda data: screenshot_from_data(data, format=format),
-            **screenshot_params(
-                path=path,
-                selector=selector,
-                full_page=full_page,
-                annotate=annotate,
-                output_dir=output_dir,
-                format=format,
-                quality=quality,
-            ),
+            output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            screenshot = await self.browser._command(
+                "screenshot",
+                _decode=lambda data: screenshot_from_data(data, format=format),
+                **params,
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._result)
+            raise
+        return self._result(screenshot)
+
+    def _result(self, screenshot: Screenshot) -> Screenshot:
+        scope = (
+            _scope_from_data(self.browser, screenshot.raw)
+            if isinstance(self.browser, _AsyncDocument)
+            else None
         )
-        scope = getattr(self.browser, "scope", None)
-        return replace(screenshot, scope=scope if isinstance(scope, DocumentScope) else None)
+        return replace(screenshot, scope=scope)
+
+
+class AsyncCapture(_AsyncScreenshotCapture):
+    """Async page screenshot and PDF capture helpers."""
 
     async def pdf(
         self,
@@ -641,6 +917,30 @@ class AsyncCapture:
                 landscape=landscape,
                 prefer_css_page_size=prefer_css_page_size,
             ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class AsyncFrameCapture:
+    """Async screenshot capture for one rendered frame rectangle."""
+
+    browser: AsyncCommandTarget
+
+    async def screenshot(
+        self,
+        path: str | Path | None = None,
+        *,
+        output_dir: str | Path | None = None,
+        format: str = "png",
+        quality: int | None = None,
+        wait_ms: int = DEFAULT_SCREENSHOT_WAIT_MS,
+    ) -> Screenshot:
+        return await _AsyncScreenshotCapture(self.browser).screenshot(
+            path,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+            wait_ms=wait_ms,
         )
 
 
@@ -736,9 +1036,28 @@ class AsyncTabs:
         selected = [value is not None for value in (id, label, index)]
         if sum(selected) != 1:
             raise ValueError("pass exactly one of id, label, or index")
-        tabs = await self.list()
+        if index is not None and index < 1:
+            raise ValueError("index must be a positive stable tab ID suffix")
+        try:
+            tabs = await self.list()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda tabs: self._get_from_tabs(tabs, id=id, label=label, index=index)
+                )
+            raise
+        return self._get_from_tabs(tabs, id=id, label=label, index=index)
+
+    def _get_from_tabs(
+        self,
+        tabs: Sequence[TabInfo],
+        *,
+        id: str | None,
+        label: str | None,
+        index: int | None,
+    ) -> AsyncPage:
         if index is not None:
-            matches = [tabs[index]] if 0 <= index < len(tabs) else []
+            matches = [tab for tab in tabs if tab.id == f"t{index}"]
         elif label is not None:
             matches = [tab for tab in tabs if tab.label == label]
         else:
@@ -748,7 +1067,11 @@ class AsyncTabs:
         if len(matches) > 1:
             raise LookupError("multiple browser pages matched the requested tab")
         tab = matches[0]
-        return AsyncPage(self.browser, target_id=tab.target_id or tab.id)
+        return AsyncPage(
+            self.browser,
+            target_id=tab.target_id or tab.id,
+            frame_url=tab.url,
+        )
 
     async def new(self, url: str | None = None, *, label: str | None = None) -> TabInfo:
         """Open a new tab and return its metadata."""

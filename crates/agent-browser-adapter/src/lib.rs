@@ -1,5 +1,7 @@
 include!(concat!(env!("OUT_DIR"), "/agent_browser_upstream.rs"));
 
+mod contexts;
+
 /// Run the background maintenance performed by the upstream native daemon.
 ///
 /// The Python extension embeds the native engine in-process, so it does not

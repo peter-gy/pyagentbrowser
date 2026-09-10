@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from time import sleep as sync_sleep
-from typing import Any, Protocol, TypeVar, cast, overload
+from typing import TYPE_CHECKING, Any, Protocol, TypeVar, cast, overload
+
+if TYPE_CHECKING:
+    from agentbrowser._evidence import Snapshot
+    from agentbrowser.query import Queries
 
 from agentbrowser._browser_common import (
     exclusive_source,
@@ -39,10 +44,13 @@ from agentbrowser.command_params import (
 )
 from agentbrowser.models import (
     AccessibilityAudit,
+    BrowserError,
     ConfirmationRequired,
     ConsoleMessage,
     Cookie,
     DocumentScope,
+    ElementGeometry,
+    FrameLookupError,
     HarContentMode,
     JSONMapping,
     LoadState,
@@ -89,18 +97,20 @@ T = TypeVar("T")
 
 
 class _FrameLike(Protocol):
+    frame_id: str | None
     frame_name: str
     frame_url: str
 
 
-PageT = TypeVar("PageT", bound=_FrameLike)
-
-
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class _ScopedBrowser:
-    controller: Any
+    _controller: Any
     target_id: str | None
     frame_id: str | None
+
+    @property
+    def controller(self) -> Any:
+        return self._controller
 
     def _command(self, action: str, **params: Any) -> Any:
         if self.target_id is not None:
@@ -150,8 +160,8 @@ class CommandTarget(Protocol):
 
 
 @dataclass(frozen=True, slots=True)
-class Page:
-    """Operations bound to one browser page and its main document.
+class _Document:
+    """Operations shared by page and frame documents.
 
     Parameters
     ----------
@@ -175,24 +185,38 @@ class Page:
             )
 
     def _command(self, action: str, **params: Any) -> Any:
-        return self.browser._command(action, **params)
+        try:
+            result = self.browser._command(action, **params)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._bind_result)
+            raise
+        return self._bind_result(result)
+
+    def _bind_result(self, result: Any) -> Any:
+        if self.target_id is None:
+            target_id = self.browser.controller._active_target_id
+            if isinstance(target_id, str):
+                object.__setattr__(self, "target_id", target_id)
+                self.browser.target_id = target_id
+        return result
 
     @property
     def scope(self) -> DocumentScope:
         """Return the browser target and frame identity for this handle."""
-        return DocumentScope(self.target_id, self.frame_id, self.frame_url or None)
+        return DocumentScope(
+            self.target_id,
+            self.frame_id,
+            self.frame_url or None,
+            self.browser.controller._ref_generation,
+        )
 
     @property
-    def find(self) -> Any:
+    def find(self) -> Queries:
         """Return live queries bound to this document."""
         from agentbrowser.query import Queries
 
         return Queries(cast(Any, self))
-
-    @property
-    def capture(self) -> Capture:
-        """Return capture operations bound to this document."""
-        return Capture(cast(CommandTarget, self))
 
     @property
     def frames(self) -> Frames:
@@ -204,30 +228,106 @@ class Page:
         """Return measured document and container scrolling."""
         return Scroll(self)
 
-    def observe(self, spec: Any = None) -> Any:
+    def observe(self, spec: Any = None) -> Snapshot:
         """Capture an accessibility snapshot bound to this document."""
-        from agentbrowser._evidence import Snapshot
         from agentbrowser.models import SnapshotSpec, snapshot_from_data
 
         capture_spec = spec or SnapshotSpec()
-        data = self._command(
-            "snapshot",
-            _decode=lambda value: snapshot_from_data(value, spec=capture_spec),
-            selector=optional(capture_spec.selector),
-            interactive=capture_spec.interactive,
-            compact=capture_spec.compact,
-            maxDepth=optional(capture_spec.max_depth),
-            urls=capture_spec.urls,
-        )
-        return Snapshot(self, data)
+        if self.frame_id is not None and capture_spec.selector is not None:
+            raise TypeError("Frame snapshots capture the selected frame document")
+        try:
+            data = self._command(
+                "snapshot",
+                _decode=lambda value: snapshot_from_data(value, spec=capture_spec),
+                selector=optional(capture_spec.selector),
+                interactive=capture_spec.interactive,
+                compact=capture_spec.compact,
+                maxDepth=optional(capture_spec.max_depth),
+                urls=capture_spec.urls,
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._snapshot_result)
+            raise
+        return self._snapshot_result(data)
 
-    def open(self, url: str, *, wait_until: LoadState = "load") -> None:
+    def _snapshot_result(self, data: Any) -> Any:
+        from agentbrowser._evidence import Snapshot
+
+        controller = self.browser.controller
+        data = replace(data, generation=data.raw.get("refGeneration", controller._ref_generation))
+        target_id = data.raw.get("targetId")
+        owner = type(self)(
+            controller,
+            target_id=str(target_id) if isinstance(target_id, str) else self.target_id,
+            frame_id=self.frame_id,
+            frame_name=self.frame_name,
+            frame_url=data.origin,
+            parent_frame_id=self.parent_frame_id,
+        )
+        return Snapshot(owner, data)
+
+    def geometry(self, selector: str | None = None) -> ElementGeometry:
+        """Measure bounds and overflow for the document or one element."""
+        if selector == "":
+            raise ValueError("geometry selector must not be empty")
+        selector_json = json.dumps(selector)
+        try:
+            data = self._evaluate_data(
+                f"""(() => {{
+                const element = {selector_json} === null
+                    ? document.documentElement
+                    : document.querySelector({selector_json});
+                if (!element) throw new Error('geometry target not found');
+                const rect = element.getBoundingClientRect();
+                return {{
+                    x: rect.x, y: rect.y, width: rect.width, height: rect.height,
+                    clientWidth: element.clientWidth, clientHeight: element.clientHeight,
+                    scrollWidth: element.scrollWidth, scrollHeight: element.scrollHeight,
+                }};
+            }})()"""
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda data: self._geometry_result(selector, data)
+                )
+            raise
+        return self._geometry_result(selector, data)
+
+    def _geometry_result(
+        self,
+        selector: str | None,
+        data: Mapping[str, Any],
+    ) -> ElementGeometry:
+        result = data.get("result")
+        if not isinstance(result, Mapping):
+            raise NativeParseError("geometry evaluation must return an object")
+        fields = (
+            "x",
+            "y",
+            "width",
+            "height",
+            "clientWidth",
+            "clientHeight",
+            "scrollWidth",
+            "scrollHeight",
+        )
+        if any(not isinstance(result.get(field), int | float) for field in fields):
+            raise NativeParseError("geometry fields must be numbers")
+        return ElementGeometry(
+            _scope_from_data(self, data),
+            selector or "document",
+            *(float(result[field]) for field in fields),
+        )
+
+    def _open(self, url: str, *, wait_until: LoadState = "load") -> None:
         """Navigate the current page to a URL.
 
         Example:
             ```python
-            browser.open("https://example.com")
-            print(browser.title())
+            browser.page.open("https://example.com")
+            print(browser.page.title())
             ```
 
         Parameters
@@ -245,10 +345,10 @@ class Page:
             except ConfirmationRequired as error:
                 if error.pending is not None:
                     error.pending = error.pending.map(
-                        lambda _value: self.open(url, wait_until=wait_until)
+                        lambda _value: self._open(url, wait_until=wait_until)
                     )
                 raise
-        self.browser._command(
+        self._command(
             "navigate",
             _decode=_none,
             url=normalize_url(url),
@@ -256,39 +356,38 @@ class Page:
         )
 
     def title(self) -> str:
-        """Return the current page title."""
-        return self.browser._command(
-            "title",
-            _decode=lambda data: _required_string(data, "title", action="title"),
-        )
+        """Return the current document title."""
+        return cast(str, self.evaluate("document.title"))
 
     def url(self) -> str:
-        """Return the current page URL."""
-        return self.browser._command(
-            "url",
-            _decode=lambda data: _required_string(data, "url", action="url"),
-        )
+        """Return the current document URL."""
+        return cast(str, self.evaluate("location.href"))
 
     def content(self) -> str:
-        """Return the current page HTML."""
-        return self.browser._command(
-            "content",
-            _decode=lambda data: _required_string(data, "html", action="content"),
-        )
+        """Return the current document HTML."""
+        return cast(str, self.evaluate("document.documentElement.outerHTML"))
 
-    def set_content(self, html: str) -> None:
+    def _set_content(self, html: str) -> None:
         """Replace the current page document with HTML."""
-        self.browser._command("setcontent", _decode=_none, html=html)
+        self._command("setcontent", _decode=_none, html=html)
 
     def evaluate(self, script: str) -> Any:
         """Evaluate JavaScript in the current page context."""
-        return self.browser._command(
+        try:
+            return self._evaluate_data(script).get("result")
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda data: data.get("result"))
+            raise
+
+    def _evaluate_data(self, script: str) -> Mapping[str, Any]:
+        return self._command(
             "evaluate",
-            _decode=lambda data: data.get("result"),
+            _decode=lambda data: data,
             script=script,
         )
 
-    def read(
+    def _read(
         self,
         url: str | None = None,
         *,
@@ -302,7 +401,7 @@ class Page:
 
         Example:
             ```python
-            result = browser.read(
+            result = browser.page.read(
                 "https://example.com",
                 mode=ReadMode.markdown(require=True),
             )
@@ -315,7 +414,7 @@ class Page:
             except ConfirmationRequired as error:
                 if error.pending is not None:
                     error.pending = error.pending.map(
-                        lambda _value: self.read(
+                        lambda _value: self._read(
                             url,
                             mode=mode,
                             filter=filter,
@@ -326,7 +425,7 @@ class Page:
                     )
                 raise
         normalized_url = normalize_url(url) if url is not None else None
-        return self.browser._command(
+        return self._command(
             "read",
             _decode=read_result_from_data,
             **read_params(
@@ -352,21 +451,21 @@ class Page:
             timeout_ms=timeout_ms,
         )
 
-    def back(self) -> None:
+    def _back(self) -> None:
         """Navigate back in history."""
-        self.browser._command("back", _decode=_none)
+        self._command("back", _decode=_none)
 
-    def forward(self) -> None:
+    def _forward(self) -> None:
         """Navigate forward in history."""
-        self.browser._command("forward", _decode=_none)
+        self._command("forward", _decode=_none)
 
-    def reload(self) -> None:
+    def _reload(self) -> None:
         """Reload the current page."""
-        self.browser._command("reload", _decode=_none)
+        self._command("reload", _decode=_none)
 
     def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
         """Wait until text appears."""
-        self.browser._command(
+        self._command(
             "wait",
             _decode=_none,
             **wait_params(None, text=text, timeout_ms=timeout_ms),
@@ -380,7 +479,7 @@ class Page:
         timeout_ms: int | None = None,
     ) -> None:
         """Wait for a selector to reach a state."""
-        self.browser._command(
+        self._command(
             "wait",
             _decode=_none,
             **wait_params(None, selector=selector, state=state, timeout_ms=timeout_ms),
@@ -388,7 +487,7 @@ class Page:
 
     def wait_for_url(self, pattern: str, *, timeout_ms: int | None = None) -> None:
         """Wait for the page URL to match a pattern."""
-        self.browser._command(
+        self._command(
             "wait",
             _decode=_none,
             **wait_params(None, url=pattern, timeout_ms=timeout_ms),
@@ -396,7 +495,7 @@ class Page:
 
     def wait_for_function(self, predicate: str, *, timeout_ms: int | None = None) -> None:
         """Wait for a JavaScript predicate to become truthy."""
-        self.browser._command(
+        self._command(
             "wait",
             _decode=_none,
             **wait_params(None, predicate=predicate, timeout_ms=timeout_ms),
@@ -404,146 +503,257 @@ class Page:
 
     def wait_for_load_state(self, state: LoadState = "load") -> None:
         """Wait for a page load state."""
-        self.browser._command("wait", _decode=_none, **wait_params(None, load_state=state))
+        self._command("wait", _decode=_none, **wait_params(None, load_state=state))
 
 
-class Frame(Page):
-    """Operations bound to one child browsing context."""
+class Page(_Document):
+    """Operations bound to one browser page and its main document."""
+
+    @property
+    def capture(self) -> Capture:
+        """Return screenshot and PDF capture for this page."""
+        return Capture(self)
 
     def open(self, url: str, *, wait_until: LoadState = "load") -> None:
-        del url, wait_until
-        raise TypeError("Frame.open() cannot navigate a child browsing context")
+        """Navigate this page to a URL."""
+        self._open(url, wait_until=wait_until)
 
     def title(self) -> str:
-        """Return this frame document's title."""
-        return cast(str, self.evaluate("document.title"))
+        """Return the current page title."""
+        return self._command(
+            "title",
+            _decode=lambda data: _required_string(data, "title", action="title"),
+        )
 
     def url(self) -> str:
-        """Return this frame document's current URL."""
-        return cast(str, self.evaluate("location.href"))
+        """Return the current page URL."""
+        return self._command(
+            "url",
+            _decode=lambda data: _required_string(data, "url", action="url"),
+        )
 
     def content(self) -> str:
-        """Return this frame document's HTML."""
-        return cast(str, self.evaluate("document.documentElement.outerHTML"))
+        """Return the current page HTML."""
+        return self._command(
+            "content",
+            _decode=lambda data: _required_string(data, "html", action="content"),
+        )
+
+    def set_content(self, html: str) -> None:
+        """Replace the current page document with HTML."""
+        self._set_content(html)
+
+    def read(
+        self,
+        url: str | None = None,
+        *,
+        mode: ReadMode | None = None,
+        filter: str | None = None,
+        timeout_ms: int | None = None,
+        headers: Mapping[str, str] | None = None,
+        allowed_domains: Sequence[str] | None = None,
+    ) -> ReadResult:
+        """Return agent-readable content for a URL or this page."""
+        return self._read(
+            url,
+            mode=mode,
+            filter=filter,
+            timeout_ms=timeout_ms,
+            headers=headers,
+            allowed_domains=allowed_domains,
+        )
+
+    def back(self) -> None:
+        """Navigate back in this page's history."""
+        self._back()
+
+    def forward(self) -> None:
+        """Navigate forward in this page's history."""
+        self._forward()
+
+    def reload(self) -> None:
+        """Reload this page."""
+        self._reload()
+
+
+class Frame(_Document):
+    """Operations bound to one child browsing context."""
+
+    @property
+    def capture(self) -> FrameCapture:
+        """Return screenshot capture for this frame."""
+        return FrameCapture(self)
+
+    def _command(self, action: str, **params: Any) -> Any:
+        try:
+            return super()._command(action, **params)
+        except BrowserError as error:
+            if error.code in {"frame_scope", "tab_gone"}:
+                raise FrameLookupError("scope_mismatch", self.frame_id or "<unknown>") from error
+            if error.code == "frame_detached":
+                raise FrameLookupError("detached", self.frame_id or "<unknown>") from error
+            raise
 
 
 @dataclass(frozen=True, slots=True)
 class Frames:
     """Discover child browsing contexts from one page or frame."""
 
-    page: Page
+    page: _Document
 
     def tree(self) -> tuple[Frame, ...]:
-        """Return descendant frames with stable browser frame identities."""
-        data = self.page._command("frame", _decode=lambda value: value, list=True)
+        """Return descendant frames with stable identities and parent links."""
+        return self.page._command("frame", _decode=self._tree_result, list=True)
+
+    def _tree_result(self, data: Mapping[str, Any]) -> tuple[Frame, ...]:
         root = data.get("frameTree")
         records: list[tuple[Mapping[str, Any], str | None]] = []
         _collect_frame_records(root, None, records)
         parent_scope = self.page.frame_id
-        oopif_frames = data.get("oopifFrames")
-        if isinstance(oopif_frames, list):
-            for raw in oopif_frames:
-                if isinstance(raw, Mapping) and isinstance(raw.get("id"), str):
-                    parent_id = raw.get("parentId")
-                    records.append(
-                        (
-                            raw,
-                            str(parent_id) if isinstance(parent_id, str) else parent_scope,
-                        )
-                    )
-        records = list({str(raw["id"]): (raw, parent_id) for raw, parent_id in records}.values())
+        root_frame = root.get("frame") if isinstance(root, Mapping) else None
+        root_id = root_frame.get("id") if isinstance(root_frame, Mapping) else None
+        expected_parent = parent_scope or (str(root_id) if isinstance(root_id, str) else None)
+        oopif_trees = data.get("oopifFrameTrees")
+        if isinstance(oopif_trees, list):
+            known_parents = {str(raw["id"]): parent_id for raw, parent_id in records}
+            for item in oopif_trees:
+                if not isinstance(item, Mapping):
+                    continue
+                root_frame_id = item.get("rootFrameId")
+                parent_id = (
+                    known_parents.get(str(root_frame_id))
+                    if isinstance(root_frame_id, str)
+                    else None
+                )
+                _collect_frame_records(item.get("frameTree"), parent_id, records)
+        records = _merge_frame_records(records)
+        parents = {str(raw["id"]): parent_id for raw, parent_id in records}
+
+        def descendant(frame_id: str) -> bool:
+            visited: set[str] = set()
+            parent = parents.get(frame_id)
+            while parent is not None and parent not in visited:
+                if parent == expected_parent:
+                    return True
+                visited.add(parent)
+                parent = parents.get(parent)
+            return False
+
         return tuple(
             Frame(
                 self.page.browser.controller,
-                target_id=self.page.target_id,
+                target_id=data.get("targetId") or self.page.target_id,
                 frame_id=str(raw["id"]),
                 frame_name=str(raw.get("name", "")),
                 frame_url=str(raw.get("url", "")),
                 parent_frame_id=parent_id,
             )
             for raw, parent_id in records
-            if parent_id is not None and (parent_scope is None or parent_id == parent_scope)
+            if descendant(str(raw["id"]))
         )
 
     def get(
         self,
         *,
+        id: str | None = None,
         selector: str | None = None,
         name: str | None = None,
         url: str | None = None,
     ) -> Frame:
-        """Return one exact child frame selected by element, name, or URL."""
-        selected = [value is not None for value in (selector, name, url)]
-        if sum(selected) != 1:
-            raise ValueError("pass exactly one of selector, name, or url")
-        candidates = self.tree()
-        if selector is not None:
-            if selector.startswith("@"):
-                data = self.page._command(
-                    "frame",
-                    selector=selector,
-                    _decode=lambda value: value,
+        """Resolve one child frame by ID, owning element, name, or URL."""
+        if sum(value is not None for value in (id, selector, name, url)) != 1:
+            raise ValueError("pass exactly one of id, selector, name, or url")
+        try:
+            candidates = self.tree()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda frames: self._get_from_candidates(frames, id, selector, name, url)
                 )
-                frame_id = data.get("frameId")
-                matches = [frame for frame in candidates if frame.frame_id == frame_id]
-            else:
-                selector_json = json.dumps(selector)
-                owner = self.page.evaluate(
-                    f"""(() => {{
-                        const element = document.querySelector({selector_json});
-                        if (!element || !['IFRAME', 'FRAME'].includes(element.tagName)) return null;
-                        return {{name: element.name || element.id || '', url: element.src || ''}};
-                    }})()"""
+            raise
+        return self._get_from_candidates(candidates, id, selector, name, url)
+
+    def _get_from_candidates(
+        self,
+        candidates: tuple[Frame, ...],
+        id: str | None,
+        selector: str | None,
+        name: str | None,
+        url: str | None,
+    ) -> Frame:
+        if selector is None:
+            matches = [
+                frame
+                for frame in candidates
+                if (
+                    frame.frame_id == id
+                    if id is not None
+                    else frame.frame_name == name
+                    if name is not None
+                    else frame.frame_url == url
                 )
-                matches = _frames_for_owner(candidates, owner)
-                if not matches and isinstance(owner, Mapping):
-                    data = self.page._command(
-                        "frame",
-                        selector=selector,
-                        _decode=lambda value: value,
-                    )
-                    frame_id = data.get("frameId")
-                    if isinstance(frame_id, str):
-                        matches = [
-                            Frame(
-                                self.page.browser.controller,
-                                target_id=self.page.target_id,
-                                frame_id=frame_id,
-                                frame_name=str(owner.get("name", "")),
-                                frame_url=str(owner.get("url", "")),
-                                parent_frame_id=self.page.frame_id,
-                            )
-                        ]
-        elif name is not None:
-            matches = [frame for frame in candidates if frame.frame_name == name]
-        else:
-            matches = [frame for frame in candidates if frame.frame_url == url]
-        criteria = selector if selector is not None else name if name is not None else url
-        if not matches:
-            available = ", ".join(
-                f"{frame.frame_id}:{frame.frame_name or frame.frame_url or '<blank>'}"
-                for frame in candidates[:8]
+            ]
+            return _one_frame(matches, repr(id or name or url), candidates)
+        target_id = self.page.target_id or self.page.browser.controller._active_target_id
+        parent = type(self.page)(
+            self.page.browser.controller,
+            target_id=target_id,
+            frame_id=self.page.frame_id,
+        )
+        if selector.startswith("@"):
+            return self._resolve_element(parent, selector, candidates)
+        try:
+            count = parent.evaluate(f"document.querySelectorAll({json.dumps(selector)}).length")
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda count: self._resolve_count(parent, selector, candidates, count)
+                )
+            raise
+        return self._resolve_count(parent, selector, candidates, count)
+
+    def _resolve_count(
+        self, parent: _Document, selector: str, candidates: tuple[Frame, ...], count: Any
+    ) -> Frame:
+        if count != 1:
+            raise FrameLookupError(
+                "not_found" if count == 0 else "ambiguous",
+                repr(selector),
+                _frame_candidates(candidates),
             )
-            raise LookupError(
-                f"no child frame matched {criteria!r}; available frames: {available or '<none>'}"
+        return self._resolve_element(parent, selector, candidates)
+
+    def _resolve_element(
+        self, parent: _Document, selector: str, candidates: tuple[Frame, ...]
+    ) -> Frame:
+        def decode(data: Mapping[str, Any]) -> Frame:
+            frame_id = _required_string(data, "frameId", action="frame")
+            for frame in candidates:
+                if frame.frame_id == frame_id:
+                    return frame
+            return Frame(
+                parent.browser.controller,
+                target_id=data.get("targetId") or parent.target_id,
+                frame_id=frame_id,
+                parent_frame_id=parent.frame_id,
             )
-        if len(matches) > 1:
-            ids = ", ".join(frame.frame_id or "" for frame in matches)
-            raise LookupError(f"multiple child frames matched {criteria!r}: {ids}")
-        return matches[0]
+
+        return parent._command("frame", selector=selector, _decode=decode)
 
 
-def _frames_for_owner(candidates: Sequence[PageT], owner: Any) -> list[PageT]:
-    if not isinstance(owner, Mapping):
-        return []
-    owner_name = owner.get("name")
-    owner_url = owner.get("url")
-    return [
-        frame
-        for frame in candidates
-        if (owner_name and frame.frame_name == owner_name)
-        or (owner_url and frame.frame_url == owner_url)
-    ]
+def _one_frame(matches: Sequence[T], criteria: str, candidates: Sequence[_FrameLike]) -> T:
+    if not matches:
+        raise FrameLookupError("not_found", criteria, _frame_candidates(candidates))
+    if len(matches) > 1:
+        raise FrameLookupError("ambiguous", criteria, _frame_candidates(candidates))
+    return matches[0]
+
+
+def _frame_candidates(candidates: Sequence[_FrameLike]) -> tuple[str, ...]:
+    return tuple(
+        f"{frame.frame_id or ''} name={frame.frame_name!r} url={frame.frame_url!r}"
+        for frame in candidates[:8]
+    )
 
 
 def _collect_frame_records(
@@ -557,18 +767,33 @@ def _collect_frame_records(
     if not isinstance(raw, Mapping) or not isinstance(raw.get("id"), str):
         return
     frame_id = str(raw["id"])
-    records.append((raw, parent_id))
+    declared_parent = raw.get("parentId")
+    records.append((raw, str(declared_parent) if isinstance(declared_parent, str) else parent_id))
     children = tree.get("childFrames")
     if isinstance(children, list):
         for child in children:
             _collect_frame_records(child, frame_id, records)
 
 
+def _merge_frame_records(
+    records: Sequence[tuple[Mapping[str, Any], str | None]],
+) -> list[tuple[Mapping[str, Any], str | None]]:
+    merged: dict[str, tuple[Mapping[str, Any], str | None]] = {}
+    for raw, parent_id in records:
+        frame_id = str(raw["id"])
+        existing = merged.get(frame_id)
+        if existing is None:
+            merged[frame_id] = (raw, parent_id)
+        else:
+            merged[frame_id] = (raw, existing[1] or parent_id)
+    return list(merged.values())
+
+
 @dataclass(frozen=True, slots=True)
 class Scroll:
     """Measured scrolling bound to one page or frame document."""
 
-    page: Page
+    page: _Document
 
     def by(
         self,
@@ -578,22 +803,41 @@ class Scroll:
         selector: str | None = None,
     ) -> ScrollResult:
         """Scroll a document or container and return its offsets before and after."""
+        if selector == "":
+            raise ValueError("scroll selector must not be empty")
+        if any(
+            isinstance(value, bool)
+            or not isinstance(value, int | float)
+            or not math.isfinite(value)
+            for value in (x, y)
+        ):
+            raise ValueError("scroll offsets must be finite numbers")
         selector_json = json.dumps(selector)
-        result = self.page.evaluate(
-            f"""(() => {{
+        try:
+            data = self.page._evaluate_data(
+                f"""(() => {{
                 const element = {selector_json} === null
                     ? document.scrollingElement
                     : document.querySelector({selector_json});
                 if (!element) throw new Error('scroll container not found');
                 const before = {{x: element.scrollLeft, y: element.scrollTop}};
-                element.scrollBy({{left: {x!r}, top: {y!r}, behavior: 'instant'}});
+                element.scrollLeft += {x!r};
+                element.scrollTop += {y!r};
                 return {{before, after: {{x: element.scrollLeft, y: element.scrollTop}}}};
             }})()"""
-        )
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(lambda data: self._result(selector, data))
+            raise
+        return self._result(selector, data)
+
+    def _result(self, selector: str | None, data: Mapping[str, Any]) -> ScrollResult:
+        result = data.get("result")
         if not isinstance(result, Mapping):
             raise NativeParseError("scroll evaluation must return an object")
         return ScrollResult(
-            self.page.scope,
+            _scope_from_data(self.page, data),
             selector or "document",
             _scroll_position(result.get("before")),
             _scroll_position(result.get("after")),
@@ -610,9 +854,20 @@ def _scroll_position(value: Any) -> ScrollPosition:
     return ScrollPosition(float(x), float(y))
 
 
+def _scope_from_data(page: Any, data: Mapping[str, Any]) -> DocumentScope:
+    target_id = data.get("targetId")
+    origin = data.get("origin")
+    return DocumentScope(
+        str(target_id) if isinstance(target_id, str) else page.target_id,
+        page.frame_id,
+        str(origin) if isinstance(origin, str) else page.frame_url or None,
+        data.get("refGeneration", page.browser.controller._ref_generation),
+    )
+
+
 @dataclass(frozen=True, slots=True)
-class Capture:
-    """Screenshot and PDF capture helpers."""
+class _ScreenshotCapture:
+    """Screenshot capture shared by page and frame documents."""
 
     browser: CommandTarget
 
@@ -654,26 +909,47 @@ class Capture:
         Screenshot
             Parsed screenshot metadata and file path.
         """
+        if path is not None:
+            path = Path(path).expanduser()
+        if output_dir is not None:
+            output_dir = Path(output_dir).expanduser()
+        params = screenshot_params(
+            path=path,
+            selector=selector,
+            full_page=full_page,
+            annotate=annotate,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+        )
         _wait_before_screenshot(wait_ms)
         if path is not None:
-            Path(path).expanduser().parent.mkdir(parents=True, exist_ok=True)
+            path.parent.mkdir(parents=True, exist_ok=True)
         if output_dir is not None:
-            Path(output_dir).expanduser().mkdir(parents=True, exist_ok=True)
-        screenshot = self.browser._command(
-            "screenshot",
-            _decode=lambda data: screenshot_from_data(data, format=format),
-            **screenshot_params(
-                path=path,
-                selector=selector,
-                full_page=full_page,
-                annotate=annotate,
-                output_dir=output_dir,
-                format=format,
-                quality=quality,
-            ),
+            output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            screenshot = self.browser._command(
+                "screenshot",
+                _decode=lambda data: screenshot_from_data(data, format=format),
+                **params,
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._result)
+            raise
+        return self._result(screenshot)
+
+    def _result(self, screenshot: Screenshot) -> Screenshot:
+        scope = (
+            _scope_from_data(self.browser, screenshot.raw)
+            if isinstance(self.browser, _Document)
+            else None
         )
-        scope = getattr(self.browser, "scope", None)
-        return replace(screenshot, scope=scope if isinstance(scope, DocumentScope) else None)
+        return replace(screenshot, scope=scope)
+
+
+class Capture(_ScreenshotCapture):
+    """Page screenshot and PDF capture helpers."""
 
     def pdf(
         self,
@@ -693,6 +969,30 @@ class Capture:
                 landscape=landscape,
                 prefer_css_page_size=prefer_css_page_size,
             ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class FrameCapture:
+    """Screenshot capture for one rendered frame rectangle."""
+
+    browser: CommandTarget
+
+    def screenshot(
+        self,
+        path: str | Path | None = None,
+        *,
+        output_dir: str | Path | None = None,
+        format: str = "png",
+        quality: int | None = None,
+        wait_ms: int = DEFAULT_SCREENSHOT_WAIT_MS,
+    ) -> Screenshot:
+        return _ScreenshotCapture(self.browser).screenshot(
+            path,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+            wait_ms=wait_ms,
         )
 
 
@@ -788,9 +1088,28 @@ class Tabs:
         selected = [value is not None for value in (id, label, index)]
         if sum(selected) != 1:
             raise ValueError("pass exactly one of id, label, or index")
-        tabs = self.list()
+        if index is not None and index < 1:
+            raise ValueError("index must be a positive stable tab ID suffix")
+        try:
+            tabs = self.list()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda tabs: self._get_from_tabs(tabs, id=id, label=label, index=index)
+                )
+            raise
+        return self._get_from_tabs(tabs, id=id, label=label, index=index)
+
+    def _get_from_tabs(
+        self,
+        tabs: Sequence[TabInfo],
+        *,
+        id: str | None,
+        label: str | None,
+        index: int | None,
+    ) -> Page:
         if index is not None:
-            matches = [tabs[index]] if 0 <= index < len(tabs) else []
+            matches = [tab for tab in tabs if tab.id == f"t{index}"]
         elif label is not None:
             matches = [tab for tab in tabs if tab.label == label]
         else:
@@ -801,7 +1120,7 @@ class Tabs:
             raise LookupError("multiple browser pages matched the requested tab")
         tab = matches[0]
         target_id = tab.target_id or tab.id
-        return Page(self.browser, target_id=target_id)
+        return Page(self.browser, target_id=target_id, frame_url=tab.url)
 
     def new(self, url: str | None = None, *, label: str | None = None) -> TabInfo:
         """Open a new tab and return its metadata."""

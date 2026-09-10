@@ -32,7 +32,7 @@ use serde::Deserialize;
 use serde_json::{Value, json};
 use tokio::{
     runtime::{Builder, Runtime},
-    sync::{Mutex, RwLock, oneshot},
+    sync::{Mutex, Notify, RwLock, oneshot},
     task::JoinHandle,
     time::MissedTickBehavior,
 };
@@ -51,6 +51,43 @@ struct PyNativeBrowser {
     runtime: Runtime,
     dashboard: StdMutex<Option<DashboardSidecar>>,
     maintenance: MaintenanceTask,
+}
+
+#[derive(Default)]
+struct CancellationState {
+    cancelled: AtomicBool,
+    notify: Notify,
+}
+
+impl CancellationState {
+    async fn cancelled(&self) {
+        let notified = self.notify.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        if !self.cancelled.load(Ordering::Acquire) {
+            notified.await;
+        }
+    }
+}
+
+#[pyclass(name = "NativeCancellation", module = "agentbrowser._native", frozen)]
+struct PyNativeCancellation {
+    state: Arc<CancellationState>,
+}
+
+#[pymethods]
+impl PyNativeCancellation {
+    #[new]
+    fn new() -> Self {
+        Self {
+            state: Arc::new(CancellationState::default()),
+        }
+    }
+
+    fn cancel(&self) {
+        self.state.cancelled.store(true, Ordering::Release);
+        self.state.notify.notify_waiters();
+    }
 }
 
 #[derive(Default, Deserialize)]
@@ -182,17 +219,65 @@ impl PyNativeBrowser {
         })
     }
 
-    fn execute_json(&self, py: Python<'_>, command_json: &str) -> PyResult<String> {
+    #[pyo3(signature = (command_json, cancellation=None))]
+    fn execute_json(
+        &self,
+        py: Python<'_>,
+        command_json: &str,
+        cancellation: Option<PyRef<'_, PyNativeCancellation>>,
+    ) -> PyResult<String> {
         let command: Value = serde_json::from_str(command_json)
             .map_err(|err| PyValueError::new_err(format!("invalid command JSON: {err}")))?;
 
         if !command.is_object() {
             return Err(PyValueError::new_err("command JSON must be an object"));
         }
+        let cancellation = cancellation.map(|token| Arc::clone(&token.state));
         let response = py.detach(|| {
             self.runtime.block_on(async {
-                let mut state = self.state.lock().await;
-                execute_command(&command, &mut state).await
+                let interruption = async {
+                    tokio::select! {
+                        biased;
+                        () = async {
+                            match cancellation.as_ref() {
+                                Some(token) => token.cancelled().await,
+                                None => std::future::pending().await,
+                            }
+                        } => "execution_cancelled",
+                        () = async {
+                            match command.get("_timeoutMs").and_then(Value::as_u64) {
+                                Some(timeout_ms) => tokio::time::sleep(Duration::from_millis(timeout_ms)).await,
+                                None => std::future::pending().await,
+                            }
+                        } => "execution_timeout",
+                    }
+                };
+                tokio::pin!(interruption);
+                let interrupted = |code: &str| json!({
+                    "id": command.get("id"),
+                    "success": false,
+                    "code": code,
+                    "error": if code == "execution_cancelled" {
+                        "Browser dispatch cancelled. Page effects already sent may have completed. Inspect current state before retrying."
+                    } else {
+                        "Agent host deadline reached. Browser dispatch stopped, but page effects already sent may have completed. Inspect current state before retrying."
+                    }
+                });
+                let mut state = tokio::select! {
+                    biased;
+                    code = &mut interruption => return interrupted(code),
+                    state = self.state.lock() => state,
+                };
+                tokio::select! {
+                    biased;
+                    code = &mut interruption => {
+                        state.ref_map.clear();
+                        let mut response = interrupted(code);
+                        response["refGeneration"] = json!(state.ref_map.generation);
+                        response
+                    }
+                    response = execute_command(&command, &mut state) => response,
+                }
             })
         });
         let response = with_python_error_code(response);
@@ -860,6 +945,7 @@ fn _run_browser_install(with_deps: bool) {
 #[pymodule]
 fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNativeBrowser>()?;
+    m.add_class::<PyNativeCancellation>()?;
     m.add_function(wrap_pyfunction!(browser_cache_dir, m)?)?;
     m.add_function(wrap_pyfunction!(find_chrome_executable, m)?)?;
     m.add_function(wrap_pyfunction!(_run_browser_install, m)?)?;

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, cast
+from dataclasses import dataclass, replace
+from time import monotonic
+from typing import TYPE_CHECKING, Any, cast
 
 from agentbrowser._browser_common import is_stale_ref_error_code
 from agentbrowser.command_params import click_params, wait_params
@@ -22,22 +23,89 @@ from agentbrowser.models import (
     diff_snapshot_data,
 )
 
+if TYPE_CHECKING:
+    from agentbrowser.domains_async import AsyncFrame
+
 
 class AsyncStaleRefError(BrowserError):
     """Raised when an async action targets a ref from an expired snapshot."""
 
-    def __init__(self, ref: AsyncRef, error: BrowserError) -> None:
-        super().__init__(
-            error.action,
-            f"stale snapshot ref {ref.selector}: {error}",
-            error.response,
-            code=error.code,
-        )
+    def __init__(self, ref: AsyncRef, error: BrowserError | None = None) -> None:
+        if error is None:
+            super().__init__(
+                "ref",
+                f"stale snapshot generation for {ref.selector}",
+                {},
+                code="stale_ref",
+            )
+        else:
+            super().__init__(
+                error.action,
+                f"stale snapshot ref {ref.selector}: {error}",
+                error.response,
+                code=error.code,
+            )
         self.ref = ref
 
     async def refresh(self, **criteria: Any) -> AsyncRef:
         """Resolve the ref again from a fresh snapshot."""
         return await self.ref.refresh(**criteria)
+
+
+@dataclass(frozen=True, slots=True)
+class _AsyncRefGenerationController:
+    controller: Any
+    ref: AsyncRef
+
+    async def _command(self, action: str, **params: Any) -> Any:
+        params["_refGeneration"] = self.ref.snapshot.generation
+        try:
+            return await self.controller._command(action, **params)
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise AsyncStaleRefError(self.ref, error) from error
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.controller, name)
+
+
+@dataclass(frozen=True, slots=True)
+class _AsyncRefPendingAction:
+    pending: Any
+    ref: AsyncRef
+
+    @property
+    def confirmation_id(self) -> str:
+        return cast(str, self.pending.confirmation_id)
+
+    @property
+    def action(self) -> str:
+        return cast(str, self.pending.action)
+
+    @property
+    def details(self) -> Any:
+        return self.pending.details
+
+    async def confirm(self) -> Any:
+        try:
+            return await self.pending.confirm()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = _AsyncRefPendingAction(error.pending, self.ref)
+            raise
+        except AsyncStaleRefError:
+            raise
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise AsyncStaleRefError(self.ref, error) from error
+            raise
+
+    async def deny(self) -> None:
+        await self.pending.deny()
+
+    def map(self, complete: Any) -> _AsyncRefPendingAction:
+        return _AsyncRefPendingAction(self.pending.map(complete), self.ref)
 
 
 @dataclass(frozen=True, slots=True)
@@ -180,16 +248,44 @@ class AsyncRef:
         """Scroll the ref into view and return transition evidence."""
         return await self._act("scrollintoview", {"selector": self.selector}, wait=wait)
 
-    async def content_frame(self) -> Any:
+    async def content_frame(self) -> AsyncFrame:
         """Return the child frame owned by this inspected iframe element."""
-        frames = getattr(self.snapshot.browser, "frames", None)
+        self._ensure_current()
+        source = self.snapshot.browser
+        frames = getattr(source, "frames", None)
         if frames is None:
             raise TypeError("the snapshot is not bound to a page or frame handle")
-        return await frames.get(selector=self.selector)
+        owner = replace(
+            source,
+            browser=_AsyncRefGenerationController(source.browser.controller, self),
+        )
+        try:
+            frame = await owner.frames.get(selector=self.selector)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = _AsyncRefPendingAction(
+                    error.pending.map(self._content_frame_result),
+                    self,
+                )
+            raise
+        except AsyncStaleRefError:
+            raise
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise AsyncStaleRefError(self, error) from error
+            raise
+        return self._content_frame_result(frame)
+
+    def _content_frame_result(self, frame: AsyncFrame) -> AsyncFrame:
+        return replace(
+            frame,
+            browser=self.snapshot.browser.browser.controller,
+        )
 
     async def text(self) -> str:
         """Return text content for the ref."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "gettext",
             _decode=lambda data: _string_field(data, "text", action="gettext"),
             selector=self.selector,
@@ -197,7 +293,8 @@ class AsyncRef:
 
     async def inner_text(self) -> str:
         """Return rendered text for the ref."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "innertext",
             _decode=lambda data: _string_field(data, "text", action="innertext"),
             selector=self.selector,
@@ -205,7 +302,8 @@ class AsyncRef:
 
     async def input_value(self) -> str:
         """Return the current form value."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "inputvalue",
             _decode=lambda data: _string_field(data, "value", action="inputvalue"),
             selector=self.selector,
@@ -213,7 +311,8 @@ class AsyncRef:
 
     async def attribute(self, name: str) -> str | None:
         """Return one attribute value."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "getattribute",
             _decode=_optional_attribute,
             selector=self.selector,
@@ -222,7 +321,8 @@ class AsyncRef:
 
     async def is_visible(self) -> bool:
         """Return whether the ref is visible."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "isvisible",
             _decode=lambda data: _bool_field(data, "visible", action="isvisible"),
             selector=self.selector,
@@ -230,7 +330,8 @@ class AsyncRef:
 
     async def is_enabled(self) -> bool:
         """Return whether the ref is enabled."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "isenabled",
             _decode=lambda data: _bool_field(data, "enabled", action="isenabled"),
             selector=self.selector,
@@ -238,7 +339,8 @@ class AsyncRef:
 
     async def is_checked(self) -> bool:
         """Return whether the ref is checked."""
-        return await self.browser._command(
+        self._ensure_current()
+        return await self._command(
             "ischecked",
             _decode=lambda data: _bool_field(data, "checked", action="ischecked"),
             selector=self.selector,
@@ -251,10 +353,32 @@ class AsyncRef:
         *,
         wait: Wait | None,
     ) -> ActionResult[AsyncRef, AsyncSnapshot]:
+        self._ensure_current()
+
         async def run() -> None:
-            await self.browser._command(action, **params)
+            await self._command(action, **params)
 
         return await self._transition(action, run, wait=wait)
+
+    async def _command(self, action: str, **params: Any) -> Any:
+        self._ensure_current()
+        params["_refGeneration"] = self.snapshot.generation
+        try:
+            return await self.browser._command(action, **params)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = _AsyncRefPendingAction(error.pending, self)
+            raise
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise AsyncStaleRefError(self, error) from error
+            raise
+
+    def _ensure_current(self) -> None:
+        controller = getattr(getattr(self.snapshot.browser, "browser", None), "controller", None)
+        current = getattr(controller, "_ref_generation", self.snapshot.generation)
+        if current != self.snapshot.generation:
+            raise AsyncStaleRefError(self)
 
     async def _transition(
         self,
@@ -268,10 +392,6 @@ class AsyncRef:
         except ConfirmationRequired as error:
             if error.pending is not None:
                 error.pending = error.pending.map(lambda _value: self._result(action, wait=wait))
-            raise
-        except BrowserError as error:
-            if is_stale_ref_error_code(error.code):
-                raise AsyncStaleRefError(self, error) from error
             raise
         return await self._result(action, wait=wait)
 
@@ -366,6 +486,11 @@ class AsyncSnapshot:
         return self._data.spec
 
     @property
+    def generation(self) -> int:
+        """Return the controller ref generation captured by this snapshot."""
+        return self._data.generation
+
+    @property
     def raw(self) -> Mapping[str, Any]:
         """Native snapshot response data."""
         return self._data.raw
@@ -429,14 +554,22 @@ class AsyncSnapshot:
 
     async def diff(self) -> SnapshotDiff:
         """Compare this snapshot with the current page state."""
-        return await self.browser._diff_snapshot(self._data)
+        try:
+            current = await self.refresh()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda after: diff_snapshot_data(self._data, after._data)
+                )
+            raise
+        return diff_snapshot_data(self._data, current._data)
 
 
 async def _apply_wait(browser: Any, wait: Wait | None) -> None:
     if wait is None:
         return
     if wait.kind == "all":
-        await _apply_waits(browser, wait.conditions)
+        await _apply_waits(browser, wait.conditions, timeout_ms=wait.timeout_ms)
         return
     await browser._command(
         "wait",
@@ -451,15 +584,39 @@ async def _apply_wait(browser: Any, wait: Wait | None) -> None:
     )
 
 
-async def _apply_waits(browser: Any, conditions: tuple[Wait, ...]) -> None:
+async def _apply_waits(
+    browser: Any,
+    conditions: tuple[Wait, ...],
+    *,
+    timeout_ms: int | None = None,
+) -> None:
+    deadline = None if timeout_ms is None else monotonic() + timeout_ms / 1000
     for index, condition in enumerate(conditions):
+        if deadline is not None:
+            remaining_ms = max(0, int((deadline - monotonic()) * 1000))
+            condition = replace(
+                condition,
+                timeout_ms=(
+                    remaining_ms
+                    if condition.timeout_ms is None
+                    else min(condition.timeout_ms, remaining_ms)
+                ),
+            )
         try:
             await _apply_wait(browser, condition)
         except ConfirmationRequired as error:
             remaining = conditions[index + 1 :]
             if remaining and error.pending is not None:
                 error.pending = error.pending.map(
-                    lambda _value, remaining=remaining: _apply_waits(browser, remaining)
+                    lambda _value, remaining=remaining: _apply_waits(
+                        browser,
+                        remaining,
+                        timeout_ms=(
+                            None
+                            if deadline is None
+                            else max(0, int((deadline - monotonic()) * 1000))
+                        ),
+                    )
                 )
             raise
 

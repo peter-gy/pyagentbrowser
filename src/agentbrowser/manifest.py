@@ -3,11 +3,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass, field, is_dataclass
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
-from typing import Any, cast
+from typing import Any
 
+from agentbrowser._evidence import Ref, Snapshot
+from agentbrowser.agent_async import AsyncRef, AsyncSnapshot
 from agentbrowser.host import ImageDelivery
+from agentbrowser.models import (
+    ActionResult,
+    DocumentScope,
+    ElementGeometry,
+    Screenshot,
+    ScrollPosition,
+    ScrollResult,
+    SnapshotDiff,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,9 +94,50 @@ def _json_value(value: object) -> Any:
         return {str(key): _json_value(item) for key, item in value.items()}
     if isinstance(value, tuple | list):
         return [_json_value(item) for item in value]
-    if is_dataclass(value) and not isinstance(value, type):
-        return _json_value(asdict(cast(Any, value)))
-    if hasattr(value, "origin") and hasattr(value, "text"):
-        evidence = cast(Any, value)
-        return {"origin": str(evidence.origin), "text": str(evidence.text)}
+    if isinstance(value, Snapshot | AsyncSnapshot):
+        return {
+            "origin": value.origin,
+            "generation": value.generation,
+            "scope": _json_value(_snapshot_scope(value)),
+            "text": value.text,
+        }
+    if isinstance(value, Ref | AsyncRef):
+        return {
+            "id": value.id,
+            "selector": value.selector,
+            "role": value.role,
+            "name": value.name,
+            "generation": value.snapshot.generation,
+            "scope": _json_value(_snapshot_scope(value.snapshot)),
+        }
+    if isinstance(value, ActionResult):
+        return {
+            "action": value.action,
+            "target": _json_value(value.target),
+            "before": _json_value(value.before),
+            "after": _json_value(value.after),
+            "diff": _json_value(value.diff),
+        }
+    if isinstance(value, Screenshot):
+        return {
+            "path": str(value.path),
+            "format": value.format,
+            "scope": _json_value(value.scope),
+            "annotations": _json_value(value.annotations),
+        }
+    if isinstance(
+        value,
+        DocumentScope
+        | ElementGeometry
+        | ScrollPosition
+        | ScrollResult
+        | SnapshotDiff
+        | ImageDelivery
+        | EvidenceAssertion,
+    ):
+        return _json_value(asdict(value))
     return repr(value)
+
+
+def _snapshot_scope(value: Snapshot | AsyncSnapshot) -> DocumentScope:
+    return replace(value.browser.scope, generation=value.generation)

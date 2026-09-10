@@ -15,6 +15,8 @@ from agentbrowser._browser_common import (
     action_closes_browser,
     response_data_mapping,
 )
+from agentbrowser._native import NativeCancellation
+from agentbrowser.host import _execution_params
 from agentbrowser.models import BrowserResponse, DashboardOptions, JSONValue, RestoreOptions
 from agentbrowser.session import (
     DEFAULT_TIMEOUT_MS,
@@ -34,6 +36,8 @@ class _AsyncCommand:
     future: asyncio.Future[BrowserResponse]
     cancelled: Event
     started: Event
+    cancellation: NativeCancellation | None
+    settled: asyncio.Future[None]
 
 
 @dataclass(frozen=True, slots=True)
@@ -120,14 +124,38 @@ class AsyncNativeSession:
         loop = asyncio.get_running_loop()
         future: asyncio.Future[BrowserResponse] = loop.create_future()
         cancelled = Event()
-        command = _AsyncCommand(action, params, loop, future, cancelled, Event())
+        if action not in {"close", INTERNAL_SHUTDOWN_ACTION}:
+            params = _execution_params(params)
+        command = _AsyncCommand(
+            action,
+            params,
+            loop,
+            future,
+            cancelled,
+            Event(),
+            None if action in {"close", INTERNAL_SHUTDOWN_ACTION} else NativeCancellation(),
+            loop.create_future(),
+        )
         future.add_done_callback(lambda done: self._finish_command(command, done))
         with self._pending_lock:
             if self._closed:
                 raise RuntimeError("AsyncNativeSession is closed")
             self._pending_commands.append(command)
         self._queue.put(command)
-        return await future
+        try:
+            return await asyncio.shield(future)
+        except asyncio.CancelledError:
+            if command.cancellation is not None:
+                command.cancelled.set()
+                command.cancellation.cancel()
+                future.cancel()
+            if command.started.is_set() or command.cancellation is None:
+                while not command.settled.done():
+                    try:
+                        await asyncio.shield(command.settled)
+                    except asyncio.CancelledError:
+                        continue
+            raise
 
     async def shutdown_native(self) -> BrowserResponse | None:
         """Close native browser state without allowing queued user work to run."""
@@ -144,6 +172,8 @@ class AsyncNativeSession:
             future,
             Event(),
             Event(),
+            None,
+            loop.create_future(),
         )
         self._queue.put(command)
         return await future
@@ -190,6 +220,8 @@ class AsyncNativeSession:
     ) -> None:
         if future.cancelled():
             command.cancelled.set()
+            if command.cancellation is not None:
+                command.cancellation.cancel()
         with self._pending_lock, suppress(ValueError):
             self._pending_commands.remove(command)
 
@@ -197,9 +229,12 @@ class AsyncNativeSession:
         with self._pending_lock:
             pending = list(self._pending_commands)
         for command in pending:
-            if command.started.is_set():
+            if command.cancellation is None:
                 continue
             command.cancelled.set()
+            command.cancellation.cancel()
+            if command.started.is_set():
+                continue
             _call_soon(
                 command.loop,
                 _set_future_exception,
@@ -249,11 +284,14 @@ def _run_async_native_session(
         if not isinstance(command, _AsyncCommand):
             continue
         if command.cancelled.is_set():
+            _call_soon(command.loop, _set_future_result, command.settled, None)
             continue
 
         try:
             command.started.set()
-            response = session.execute(command.action, **command.params)
+            response = session.execute(
+                command.action, _cancellation=command.cancellation, **command.params
+            )
         except BaseException as err:
             _call_soon(command.loop, _set_future_exception, command.future, err)
             if command.action == INTERNAL_SHUTDOWN_ACTION:
@@ -271,12 +309,14 @@ def _run_async_native_session(
             if command.action == INTERNAL_SHUTDOWN_ACTION:
                 session.discard_pending_confirmations()
                 return
+        finally:
+            _call_soon(command.loop, _set_future_result, command.settled, None)
 
 
 def _call_soon(
     loop: asyncio.AbstractEventLoop,
     callback: Any,
-    future: asyncio.Future[BrowserResponse],
+    future: asyncio.Future[Any],
     value: Any,
 ) -> None:
     with suppress(RuntimeError):
@@ -284,10 +324,10 @@ def _call_soon(
 
 
 def _set_future_result(
-    future: asyncio.Future[BrowserResponse],
-    value: BrowserResponse,
+    future: asyncio.Future[Any],
+    value: Any,
 ) -> None:
-    if not future.cancelled():
+    if not future.done():
         future.set_result(value)
 
 
@@ -295,7 +335,7 @@ def _set_future_exception(
     future: asyncio.Future[BrowserResponse],
     err: BaseException,
 ) -> None:
-    if not future.cancelled():
+    if not future.done():
         future.set_exception(err)
 
 

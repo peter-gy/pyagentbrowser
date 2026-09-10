@@ -15,6 +15,7 @@ from agentbrowser import (
     AgentBrowserError,
     AsyncBrowser,
     AsyncFrame,
+    AsyncPage,
     AsyncQuery,
     AsyncRef,
     AsyncSnapshot,
@@ -25,9 +26,11 @@ from agentbrowser import (
     ConfirmationRequired,
     DashboardOptions,
     DocumentScope,
+    ElementGeometry,
     EvidenceAssertion,
     EvidenceManifest,
     Frame,
+    FrameLookupError,
     LaunchOptions,
     NativeParseError,
     Page,
@@ -169,7 +172,7 @@ def test_page_and_frame_handles_apply_explicit_native_scope() -> None:
 
     def evaluate_reply(command: dict[str, Any]) -> dict[str, Any]:
         if "querySelector" in command["script"]:
-            return {"result": {"name": "preview", "url": "https://example.com/preview"}}
+            return {"result": 1}
         return {"result": "Preview", "origin": "https://example.com/preview"}
 
     native = ScriptedNative(
@@ -192,13 +195,14 @@ def test_page_and_frame_handles_apply_explicit_native_scope() -> None:
 
     assert isinstance(frame, Frame)
     assert frame.frame_id == "preview"
-    assert snapshot.browser is frame
+    assert snapshot.browser == frame
     assert snapshot.one(role="button", name="Save").content_frame
     assert title == "Preview"
     assert native.commands[0]["_frameId"] == ""
     assert native.commands[1]["_frameId"] == ""
-    assert native.commands[2]["_frameId"] == "preview"
+    assert native.commands[2]["_frameId"] == ""
     assert native.commands[3]["_frameId"] == "preview"
+    assert native.commands[4]["_frameId"] == "preview"
 
 
 def test_frame_tree_is_scoped_to_direct_children() -> None:
@@ -210,6 +214,54 @@ def test_frame_tree_is_scoped_to_direct_children() -> None:
 
     assert preview.parent_frame_id == "main"
     assert story.parent_frame_id == "preview"
+
+
+def test_frame_lookup_error_exposes_reason_and_bounded_candidates() -> None:
+    native = ScriptedNative({"frame": {"frameTree": _frame_tree()}})
+    browser = _browser(native)
+
+    with pytest.raises(FrameLookupError) as missing:
+        browser.page.frames.get(name="missing")
+
+    assert missing.value.reason == "not_found"
+    assert missing.value.candidates == (
+        "preview name='preview' url='https://example.com/preview'",
+        "story name='story' url='https://example.com/story'",
+    )
+
+
+def test_frame_selector_rejects_multiple_iframe_elements() -> None:
+    native = ScriptedNative(
+        {
+            "frame": {"frameTree": _frame_tree()},
+            "evaluate": {"result": 2},
+        }
+    )
+    browser = _browser(native)
+
+    with pytest.raises(FrameLookupError) as ambiguous:
+        browser.page.frames.get(selector="iframe[title='Preview']")
+
+    assert ambiguous.value.reason == "ambiguous"
+
+
+def test_frame_command_maps_detached_context_failure() -> None:
+    native = ScriptedNative(
+        {
+            "evaluate": {
+                "success": False,
+                "code": "frame_detached",
+                "error": "frame execution context detached",
+            }
+        }
+    )
+    browser = _browser(native)
+    frame = Frame(browser, frame_id="detached")
+
+    with pytest.raises(FrameLookupError) as detached:
+        frame.evaluate("document.title")
+
+    assert detached.value.reason == "detached"
 
 
 def test_tabs_get_returns_page_bound_to_exact_target() -> None:
@@ -238,13 +290,35 @@ def test_tabs_get_returns_page_bound_to_exact_target() -> None:
     assert native.commands[1]["_frameId"] == ""
 
 
+def test_tabs_get_index_uses_the_stable_tab_id_suffix() -> None:
+    native = ScriptedNative(
+        {
+            "tab_list": {
+                "tabs": [
+                    {"tabId": "t2", "targetId": "B" * 16, "url": "https://two.example"},
+                    {"tabId": "t1", "targetId": "A" * 16, "url": "https://one.example"},
+                ]
+            }
+        }
+    )
+    browser = _browser(native)
+
+    page = browser.tabs.get(index=1)
+
+    assert page.target_id == "A" * 16
+
+
 def test_screenshot_creates_artifact_directory_and_exposes_host_content(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "capture.png"
 
     def capture(_command: dict[str, Any]) -> dict[str, Any]:
         assert path.parent.is_dir()
         path.write_bytes(b"png-bytes")
-        return {"path": str(path)}
+        return {
+            "path": str(path),
+            "origin": "https://example.com",
+            "targetId": "A" * 16,
+        }
 
     native = ScriptedNative({"screenshot": capture})
     browser = _browser(native)
@@ -252,14 +326,20 @@ def test_screenshot_creates_artifact_directory_and_exposes_host_content(tmp_path
     screenshot = browser.page.capture.screenshot(path, wait_ms=0)
 
     assert path.parent.is_dir()
-    assert screenshot.scope == DocumentScope()
+    assert screenshot.scope == DocumentScope("A" * 16, url="https://example.com")
     assert screenshot.content().data == b"png-bytes"
     assert screenshot.content().media_type == "image/png"
 
 
 def test_scroll_returns_measured_scope_and_offsets() -> None:
     native = ScriptedNative(
-        {"evaluate": {"result": {"before": {"x": 0, "y": 100}, "after": {"x": 0, "y": 700}}}}
+        {
+            "evaluate": {
+                "result": {"before": {"x": 0, "y": 100}, "after": {"x": 0, "y": 700}},
+                "origin": "https://example.com",
+                "targetId": "A" * 16,
+            }
+        }
     )
     browser = _browser(native)
 
@@ -270,6 +350,35 @@ def test_scroll_returns_measured_scope_and_offsets() -> None:
     assert result.before.y == 100
     assert result.after.y == 700
     assert result.moved
+    assert result.scope.target_id == "A" * 16
+
+
+def test_geometry_reports_bounds_and_overflow() -> None:
+    native = ScriptedNative(
+        {
+            "evaluate": {
+                "result": {
+                    "x": 10,
+                    "y": 20,
+                    "width": 390,
+                    "height": 844,
+                    "clientWidth": 390,
+                    "clientHeight": 844,
+                    "scrollWidth": 420,
+                    "scrollHeight": 1200,
+                },
+                "origin": "https://example.com",
+                "targetId": "A" * 16,
+            }
+        }
+    )
+    browser = _browser(native)
+
+    geometry = browser.page.geometry("main")
+
+    assert isinstance(geometry, ElementGeometry)
+    assert geometry.overflows_x and geometry.overflows_y
+    assert geometry.scope == DocumentScope("A" * 16, url="https://example.com")
 
 
 def test_capabilities_and_healthcheck_do_not_launch_browser() -> None:
@@ -304,6 +413,57 @@ def test_evidence_manifest_separates_capture_delivery_and_assessment(tmp_path: P
     assert manifest.to_dict()["records"] == [data]
 
 
+def test_evidence_manifest_serializes_browser_evidence_without_controller_state(
+    tmp_path: Path,
+) -> None:
+    snapshots = iter(
+        [
+            {
+                "snapshot": "button Save [ref=e1]",
+                "origin": "https://example.com",
+                "refs": {"e1": {"role": "button", "name": "Save"}},
+            },
+            {
+                "snapshot": "button Saved [ref=e1]",
+                "origin": "https://example.com",
+                "refs": {"e1": {"role": "button", "name": "Saved"}},
+            },
+        ]
+    )
+    native = ScriptedNative(
+        {
+            "snapshot": lambda _command: next(snapshots),
+            "click": {},
+            "evaluate": {"result": {"before": {"x": 0, "y": 0}, "after": {"x": 0, "y": 10}}},
+        }
+    )
+    browser = _browser(native)
+    snapshot = browser.page.observe()
+    action = snapshot.one(name="Save").click()
+    scroll = browser.page.scroll.by(y=10)
+    path = tmp_path / "capture.png"
+    path.write_bytes(b"png")
+    screenshot = Screenshot(path, "png", (), {}, scope=browser.page.scope)
+    manifest = EvidenceManifest()
+
+    for name, value in (
+        ("snapshot", snapshot),
+        ("action", action),
+        ("screenshot", screenshot),
+        ("scroll", scroll),
+    ):
+        manifest.record(name, value)
+
+    records = manifest.to_dict()["records"]
+    assert [record["kind"] for record in records] == [
+        "Snapshot",
+        "ActionResult",
+        "Screenshot",
+        "ScrollResult",
+    ]
+    assert records[1]["value"]["after"]["text"] == "button Saved [ref=e1]"
+
+
 def test_async_frame_handles_apply_the_same_explicit_scope() -> None:
     def frame_reply(command: dict[str, Any]) -> dict[str, Any]:
         if command.get("list"):
@@ -312,7 +472,7 @@ def test_async_frame_handles_apply_the_same_explicit_scope() -> None:
 
     def evaluate_reply(command: dict[str, Any]) -> dict[str, Any]:
         if "querySelector" in command["script"]:
-            return {"result": {"name": "preview", "url": "https://example.com/preview"}}
+            return {"result": 1}
         return {"result": "Preview", "origin": "https://example.com/preview"}
 
     native = ScriptedNative(
@@ -346,9 +506,9 @@ def test_browser_core_is_agent_first_and_returns_typed_values() -> None:
     )
     browser = _browser(native)
 
-    assert browser.open("example.com", wait_until="domcontentloaded") is browser
-    assert browser.title() == "Example"
-    assert browser.url() == "https://example.com/"
+    assert browser.page.open("example.com", wait_until="domcontentloaded") is None
+    assert browser.page.title() == "Example"
+    assert browser.page.url() == "https://example.com/"
     assert _command_without_id(native.commands[1]) == {
         "action": "navigate",
         "url": "https://example.com",
@@ -361,7 +521,7 @@ def test_browser_core_rejects_missing_typed_fields(action: str, field: str) -> N
     browser = _browser(ScriptedNative({action: {}}))
 
     with pytest.raises(NativeParseError, match=field):
-        getattr(browser, action)()
+        getattr(browser.page, action)()
 
 
 def test_live_queries_share_one_type_and_capability_set() -> None:
@@ -373,8 +533,8 @@ def test_live_queries_share_one_type_and_capability_set() -> None:
     )
     browser = _browser(native)
 
-    css = browser.find.css("#save")
-    role = browser.find.role("button", name="Save", exact=True)
+    css = browser.page.find.css("#save")
+    role = browser.page.find.role("button", name="Save", exact=True)
 
     assert isinstance(css, Query)
     assert isinstance(role, Query)
@@ -394,9 +554,9 @@ def test_query_factories_validate_empty_and_negative_inputs() -> None:
     browser = _browser(ScriptedNative(default={}))
 
     with pytest.raises(ValueError, match="selector"):
-        browser.find.css("")
+        browser.page.find.css("")
     with pytest.raises(ValueError, match="expression"):
-        browser.find.xpath("xpath=")
+        browser.page.find.xpath("xpath=")
     with pytest.raises(ValueError, match="exactly one"):
         Query(browser)
     with pytest.raises(ValueError, match="exactly one"):
@@ -681,7 +841,7 @@ def test_screenshot_rejects_a_missing_native_path() -> None:
     browser = _browser(ScriptedNative({"screenshot": {}}))
 
     with pytest.raises(NativeParseError, match="path"):
-        browser.capture.screenshot(wait_ms=0)
+        browser.page.capture.screenshot(wait_ms=0)
 
 
 def test_accessibility_audit_returns_typed_results_and_serializes_scope() -> None:
@@ -1088,7 +1248,7 @@ def test_path_namespaces_return_typed_paths(tmp_path: Path) -> None:
     )
     browser = _browser(native)
 
-    assert browser.capture.pdf(pdf, landscape=True) == pdf
+    assert browser.page.capture.pdf(pdf, landscape=True) == pdf
     assert browser.state.save(state, unsafe_export_all=True) == state
     browser.state.load(state, unsafe_import_all=True)
     assert browser.downloads.wait() == download
@@ -1249,7 +1409,7 @@ def test_screenshot_value_exposes_annotations_bytes_and_copy(tmp_path: Path) -> 
     )
     browser = _browser(native)
 
-    shot = browser.capture.screenshot(path, annotate=True, wait_ms=0)
+    shot = browser.page.capture.screenshot(path, annotate=True, wait_ms=0)
     copied = shot.save(tmp_path / "copy.png")
 
     assert shot.bytes() == b"png-bytes"
@@ -1274,7 +1434,7 @@ def test_read_returns_typed_content_and_serializes_mode() -> None:
     )
     browser = _browser(native)
 
-    result = browser.read(
+    result = browser.page.read(
         "example.com/docs",
         mode=ReadMode.outline_only(),
         timeout_ms=1_000,
@@ -1292,7 +1452,7 @@ def test_typed_confirmation_resumes_the_original_decoder(tmp_path: Path) -> None
     browser = _browser(ConfirmationNative(action="screenshot", result={"path": str(path)}))
 
     with pytest.raises(ConfirmationRequired) as required:
-        browser.capture.screenshot(path, wait_ms=0)
+        browser.page.capture.screenshot(path, wait_ms=0)
 
     result = required.value.pending.confirm()
     assert isinstance(result, Screenshot)
@@ -1303,14 +1463,14 @@ def test_confirmed_page_value_keeps_its_public_type() -> None:
     browser = _browser(ConfirmationNative(action="title", result={"title": "Confirmed"}))
 
     with pytest.raises(ConfirmationRequired) as required:
-        browser.title()
+        browser.page.title()
 
     assert required.value.pending.confirm() == "Confirmed"
 
 
 def test_confirmed_query_action_returns_the_same_query() -> None:
     browser = _browser(ConfirmationNative(action="click", result={}))
-    query = browser.find.css("#save")
+    query = browser.page.find.css("#save")
 
     with pytest.raises(ConfirmationRequired) as required:
         query.click()
@@ -1633,8 +1793,8 @@ def test_async_core_uses_the_same_nouns() -> None:
             _native_session=AsyncNativeSession(native=native),
         )
 
-        assert await browser.open("example.com") is browser
-        assert await browser.title() == "Async"
+        assert await browser.page.open("example.com") is None
+        assert await browser.page.title() == "Async"
         assert (await browser.session.status()).restore_status == "loaded"
         result = await browser.close()
         assert result.save_status == "saved"
@@ -1948,6 +2108,8 @@ def _public_methods(target: type[Any]) -> set[str]:
 def test_sync_and_async_public_surfaces_keep_method_and_signature_parity() -> None:
     type_pairs = (
         (Browser, AsyncBrowser),
+        (Page, AsyncPage),
+        (Frame, AsyncFrame),
         (Query, AsyncQuery),
         (Ref, AsyncRef),
         (Snapshot, AsyncSnapshot),
@@ -1986,10 +2148,19 @@ def test_sync_and_async_public_surfaces_keep_method_and_signature_parity() -> No
             async_parameters = inspect.signature(getattr(async_namespace, method)).parameters
             assert async_parameters == sync_parameters, f"{name}.{method}"
 
+    sync_frame_capture = Frame(sync_browser, frame_id="frame").capture
+    async_frame_capture = AsyncFrame(async_browser, frame_id="frame").capture
+    assert _public_methods(type(sync_frame_capture)) == {"screenshot"}
+    assert _public_methods(type(async_frame_capture)) == {"screenshot"}
+    assert (
+        inspect.signature(sync_frame_capture.screenshot).parameters
+        == inspect.signature(async_frame_capture.screenshot).parameters
+    )
+
 
 @pytest.mark.parametrize("reply", [{"success": False, "error": "failed"}, {}])
 def test_error_types_share_one_catchable_base(reply: dict[str, Any]) -> None:
     native = ScriptedNative({"title": reply})
 
     with pytest.raises(AgentBrowserError, match="title"):
-        _browser(native).title()
+        _browser(native).page.title()

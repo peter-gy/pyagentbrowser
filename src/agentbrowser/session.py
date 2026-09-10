@@ -7,8 +7,11 @@ from itertools import count
 from pathlib import Path
 from typing import Any, Protocol, cast
 
+import agentbrowser._native as _native
 from agentbrowser._allowlist import DomainAllowlist
-from agentbrowser._native import NativeBrowser
+from agentbrowser._browser_common import INTERNAL_SHUTDOWN_ACTION
+from agentbrowser._native import NativeBrowser, NativeCancellation
+from agentbrowser.host import _execution_params
 from agentbrowser.models import (
     OMIT,
     BrowserError,
@@ -139,13 +142,22 @@ class NativeSession:
         response = self.execute(action, **params)
         return _checked_response(action, response).data
 
-    def execute(self, action: str, **params: Any) -> BrowserResponse:
+    def execute(
+        self, action: str, *, _cancellation: NativeCancellation | None = None, **params: Any
+    ) -> BrowserResponse:
         """Run a native command and return the full response envelope."""
+        if action not in {"close", INTERNAL_SHUTDOWN_ACTION}:
+            params = _execution_params(params)
+        params.pop("_executionDeadline", None)
         command = self.build_command(action, **params)
         prepared = self._allowlist.prepare(command)
         pending_confirmation = self._consume_pending_confirmation(prepared.command)
         try:
-            raw_json = self._ensure_native().execute_json(json.dumps(prepared.command))
+            native = self._ensure_native()
+            if _cancellation is not None and isinstance(native, _native.NativeBrowser):
+                raw_json = native.execute_json(json.dumps(prepared.command), _cancellation)
+            else:
+                raw_json = native.execute_json(json.dumps(prepared.command))
         except Exception:
             self._restore_pending_confirmation(prepared.command, pending_confirmation)
             raise

@@ -4,7 +4,6 @@ import os
 from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, replace
-from pathlib import Path
 from typing import TYPE_CHECKING, Any, Generic, Literal, Self, TypeVar, cast, overload
 from weakref import proxy as weak_proxy
 
@@ -20,13 +19,10 @@ from agentbrowser._browser_common import (
     response_browser_launched,
     response_confirmation_id,
     response_data_mapping,
-    snapshot_diff_from_data,
 )
-from agentbrowser._evidence import Snapshot
 from agentbrowser.command_params import (
     geolocation_params,
     media_params,
-    optional,
     permissions_params,
     viewport_params,
 )
@@ -65,16 +61,8 @@ from agentbrowser.models import (
     ConfirmationRequired,
     JSONMapping,
     JSONValue,
-    LoadState,
-    ReadMode,
-    ReadResult,
     RestoreSaveError,
-    SnapshotData,
-    SnapshotDiff,
-    SnapshotSpec,
     close_result_from_data,
-    path_value,
-    snapshot_from_data,
 )
 from agentbrowser.session import (
     NativeSession,
@@ -354,10 +342,10 @@ class PendingAction(Generic[T]):
 class Browser:
     """Synchronous owner for one native browser session.
 
-    Use `launch()` for a local process, `attach()` for an existing CDP target,
-    and `observe()` for browser-bound snapshots and refs. Focused operations
-    live under `page`, `find`, `tabs`, `capture`, `network`, `diagnostics`,
-    `session`, `webmcp`, `cdp`, and `native`.
+    Use `launch()` for a local process and `attach()` for an existing CDP
+    target. Document operations live under `page`. Browser-wide operations live
+    under `tabs`, `network`, `diagnostics`, `session`, `webmcp`, `cdp`, and
+    `native`.
     """
 
     def __init__(
@@ -460,11 +448,12 @@ class Browser:
         self._close_error: BaseException | None = None
         self._cdp_controller: CDPController | None = None
         self._pending_cdp_invalidations: set[str] = set()
+        self._ref_generation = 0
 
         command_target = cast(CommandTarget, weak_proxy(self))
         browser_proxy = cast(Browser, weak_proxy(self))
-        self.page = Page(self)
-        self.capture = self.page.capture
+        self._page_target_id: str | None = None
+        self._active_target_id: str | None = None
         self.cdp = CDP(browser_proxy)
         self.clipboard = Clipboard(command_target)
         self.cookies = Cookies(command_target)
@@ -474,7 +463,6 @@ class Browser:
         self.diff = Diff(command_target)
         self.downloads = Downloads(command_target)
         self.emulation = Emulation(browser_proxy)
-        self.find = self.page.find
         self.keyboard = Keyboard(command_target)
         self.mouse = Mouse(command_target)
         self.native = Native(browser_proxy)
@@ -488,6 +476,11 @@ class Browser:
 
     def __enter__(self) -> Self:
         return self
+
+    @property
+    def page(self) -> Page:
+        """Return a main-document handle for the configured page target."""
+        return Page(self, target_id=self._page_target_id or self._active_target_id)
 
     def __exit__(self, exc_type: object, _exc: object, _tb: object) -> None:
         if exc_type is None:
@@ -571,71 +564,6 @@ class Browser:
             raise
         return browser
 
-    def observe(
-        self,
-        spec: SnapshotSpec | None = None,
-    ) -> Snapshot:
-        """Capture an accessibility snapshot bound to this browser."""
-        return self.page.observe(spec)
-
-    def open(self, url: str, *, wait_until: LoadState = "load") -> Self:
-        """Navigate the active tab and return this browser."""
-        try:
-            self.page.open(url, wait_until=wait_until)
-        except ConfirmationRequired as error:
-            if error.pending is not None:
-                error.pending = error.pending.map(lambda _value: self)
-            raise
-        return self
-
-    def title(self) -> str:
-        """Return the active page title."""
-        return self.page.title()
-
-    def url(self) -> str:
-        """Return the active page URL."""
-        return self.page.url()
-
-    def content(self) -> str:
-        """Return the active page HTML."""
-        return self.page.content()
-
-    def evaluate(self, script: str) -> Any:
-        """Evaluate JavaScript in the active page."""
-        return self.page.evaluate(script)
-
-    def read(
-        self,
-        url: str | None = None,
-        *,
-        mode: ReadMode | None = None,
-        filter: str | None = None,
-        timeout_ms: int | None = None,
-        headers: Mapping[str, str] | None = None,
-        allowed_domains: Sequence[str] | None = None,
-    ) -> ReadResult:
-        """Return agent-readable content for a URL or the active page."""
-        return self.page.read(
-            url,
-            mode=mode,
-            filter=filter,
-            timeout_ms=timeout_ms,
-            headers=headers,
-            allowed_domains=allowed_domains,
-        )
-
-    def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
-        """Wait until text appears in the active page."""
-        self.page.wait_for_text(text, timeout_ms=timeout_ms)
-
-    def wait_for_url(self, url: str, *, timeout_ms: int | None = None) -> None:
-        """Wait until the active URL matches a pattern."""
-        self.page.wait_for_url(url, timeout_ms=timeout_ms)
-
-    def wait_for_load(self, state: LoadState = "load") -> None:
-        """Wait for a page load state."""
-        self.page.wait_for_load_state(state)
-
     @overload
     def _command(
         self,
@@ -706,6 +634,7 @@ class Browser:
         confirmation_consumed = False
         try:
             raw_response = self._session.execute(action, **params)
+            self._record_native_metadata(raw_response)
             confirmation_consumed = action == "confirm" and raw_response.success
             response = _checked_response(action, raw_response)
         except ConfirmationRequired as err:
@@ -743,6 +672,7 @@ class Browser:
         pending_id, compound_invalidation = self._cdp_invalidation_context(action, params)
         try:
             response = self._session.execute(action, **params)
+            self._record_native_metadata(response)
         except BaseException:
             if compound_invalidation:
                 self._invalidate_cdp()
@@ -840,6 +770,16 @@ class Browser:
         if enabled and next_id is not None:
             self._pending_cdp_invalidations.add(next_id)
 
+    def _record_native_metadata(self, response: BrowserResponse) -> None:
+        generation = response.raw.get("refGeneration")
+        if isinstance(generation, int):
+            self._ref_generation = generation
+        target_id = response.raw.get("targetId")
+        if isinstance(target_id, str):
+            self._active_target_id = target_id
+        if response.raw.get("scopeSwitched"):
+            self._invalidate_cdp()
+
     def _record_successful_action(
         self,
         response: BrowserResponse,
@@ -848,6 +788,11 @@ class Browser:
         force_cdp_invalidation: bool = False,
     ) -> None:
         action = response.action
+        if response.raw.get("refGeneration") is None and (
+            action in {"snapshot", "diff_snapshot", "diff_url"}
+            or (action == "screenshot" and bool((params or {}).get("annotate")))
+        ):
+            self._ref_generation += 1
         browser_launched = response_browser_launched(response)
         if browser_launched is not None:
             self._launched = browser_launched
@@ -990,65 +935,6 @@ class Browser:
     def _ensure_open(self) -> None:
         if self._closed:
             raise RuntimeError("Browser is closed")
-
-    def _snapshot_data(
-        self,
-        spec: SnapshotSpec | None = None,
-    ) -> SnapshotData:
-        spec = spec or SnapshotSpec(interactive=False)
-        return self._command(
-            "snapshot",
-            _decode=lambda data: snapshot_from_data(data, spec=spec),
-            selector=optional(spec.selector),
-            interactive=spec.interactive,
-            compact=spec.compact,
-            maxDepth=optional(spec.max_depth),
-            urls=spec.urls,
-        )
-
-    def _diff_snapshot(
-        self,
-        baseline: str | Path | SnapshotData | None = None,
-        *,
-        selector: str | None = None,
-        compact: bool = False,
-        max_depth: int | None = None,
-    ) -> SnapshotDiff:
-        """Compare the current snapshot with a baseline snapshot.
-
-        Parameters
-        ----------
-        baseline
-            Baseline snapshot text, path, `Snapshot`, or `None` to let the native
-            engine choose its baseline behavior.
-        selector
-            Optional selector that scopes the snapshot.
-        compact
-            Request compact snapshot text.
-        max_depth
-            Maximum accessibility tree depth.
-
-        Returns
-        -------
-        SnapshotDiff
-            Parsed diff counts and raw response data.
-        """
-        baseline_value: str | Path | None
-        if isinstance(baseline, SnapshotData):
-            selector = baseline.spec.selector if selector is None else selector
-            compact = baseline.spec.compact
-            max_depth = baseline.spec.max_depth if max_depth is None else max_depth
-        baseline_value = baseline.text if isinstance(baseline, SnapshotData) else baseline
-        return self._command(
-            "diff_snapshot",
-            _decode=snapshot_diff_from_data,
-            baseline=optional(
-                path_value(baseline_value) if isinstance(baseline_value, Path) else baseline_value
-            ),
-            selector=optional(selector),
-            compact=compact,
-            maxDepth=optional(max_depth),
-        )
 
     def activate(self) -> Self:
         """Bring the browser window to the foreground."""

@@ -651,7 +651,7 @@ def test_async_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
 def test_page_evaluate_without_context_uses_native_command() -> None:
     browser = Browser(_native_session=NativeSession(native=PublicPathNative()))
 
-    assert browser.evaluate("1 + 1") == 2
+    assert browser.page.evaluate("1 + 1") == 2
 
 
 def _browser_with_public_path_cdp(monkeypatch: pytest.MonkeyPatch) -> Browser:

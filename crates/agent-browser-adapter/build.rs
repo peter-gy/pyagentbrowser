@@ -183,7 +183,10 @@ fn write_native_module(out_dir: &Path) -> PathBuf {
         let module_path = match *name {
             "actions" => rewrite_actions_module(out_dir, &path),
             "browser" => rewrite_browser_module(out_dir, &path),
+            "cdp" => rewrite_cdp_module(out_dir, &path),
+            "element" => rewrite_element_module(out_dir, &path),
             "screenshot" => rewrite_screenshot_module(out_dir, &path),
+            "snapshot" => rewrite_snapshot_module(out_dir, &path),
             "state" => rewrite_state_module(out_dir, &path),
             "stream" => rewrite_stream_module(out_dir, &path),
             "tab_binding" => rewrite_tab_binding_module(out_dir, &path),
@@ -219,6 +222,297 @@ fn read_rewrite_source(source: &Path, module: &str) -> String {
     fs::read_to_string(source)
         .unwrap_or_else(|err| panic!("failed to read upstream {module}: {err}"))
         .replace("\r\n", "\n")
+}
+
+fn rewrite_cdp_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let root = source.parent().expect("CDP module directory");
+    let client_source = root.join("client.rs");
+    require_file(&client_source);
+    let contents = read_rewrite_source(&client_source, "CDP client");
+    let contents = replace_once_named(
+        contents, "context index field", "    next_id: AtomicU64,",
+        "    contexts: Arc<std::sync::Mutex<crate::contexts::Contexts>>,\n    active_frame: std::sync::Mutex<Option<String>>,\n    strict_refs: std::sync::atomic::AtomicBool,\n    next_id: AtomicU64,",
+    );
+    let contents = replace_once_named(
+        contents, "context index construction", "        let pending_clone = pending.clone();",
+        "        let contexts = Arc::new(std::sync::Mutex::new(crate::contexts::Contexts::default()));\n        let reader_contexts = contexts.clone();\n        let pending_clone = pending.clone();",
+    );
+    let contents = replace_once_named(
+        contents, "context event indexing", "                    let routed = event.session_id.as_deref().is_some_and(|sid| {",
+        "                    reader_contexts.lock().unwrap_or_else(|e| e.into_inner()).apply(&event);\n                    let routed = event.session_id.as_deref().is_some_and(|sid| {",
+    );
+    let contents = replace_once_named(
+        contents, "context client initialization", "            next_id: AtomicU64::new(1),",
+        "            contexts,\n            active_frame: std::sync::Mutex::new(None),\n            strict_refs: std::sync::atomic::AtomicBool::new(false),\n            next_id: AtomicU64::new(1),",
+    );
+    let contents = replace_once_named(
+        contents, "context lookup", "    pub fn subscribe(&self) -> broadcast::Receiver<CdpEvent> {",
+        "    pub(crate) fn document_context(&self, session: &str, frame: &str) -> Option<crate::contexts::DocumentContext> {\n        self.contexts.lock().unwrap_or_else(|e| e.into_inner()).document(session, frame)\n    }\n\n    pub(crate) fn set_active_frame(&self, frame: Option<&str>) {\n        *self.active_frame.lock().unwrap_or_else(|e| e.into_inner()) = frame.map(str::to_owned);\n    }\n\n    pub(crate) fn active_frame(&self) -> Option<String> {\n        self.active_frame.lock().unwrap_or_else(|e| e.into_inner()).clone()\n    }\n\n    pub(crate) fn set_strict_refs(&self, strict: bool) {\n        self.strict_refs.store(strict, std::sync::atomic::Ordering::Relaxed);\n    }\n\n    pub(crate) fn strict_refs(&self) -> bool {\n        self.strict_refs.load(std::sync::atomic::Ordering::Relaxed)\n    }\n\n    pub fn subscribe(&self) -> broadcast::Receiver<CdpEvent> {",
+    );
+    let client = out_dir.join("agent_browser_cdp_client.rs");
+    fs::write(&client, contents).expect("write CDP client");
+    let mut module = String::new();
+    for name in [
+        "chrome",
+        "client",
+        "discovery",
+        "lightpanda",
+        "types",
+        "windows_process",
+    ] {
+        let path = if name == "client" {
+            client.clone()
+        } else {
+            root.join(format!("{name}.rs"))
+        };
+        require_file(&path);
+        if name == "windows_process" {
+            module.push_str("#[cfg(windows)]\n");
+        }
+        line(
+            &mut module,
+            format_args!("#[path = \"{}\"] pub mod {name};", path_literal(&path)),
+        );
+    }
+    let destination = out_dir.join("agent_browser_cdp.rs");
+    fs::write(&destination, module).expect("write CDP module");
+    destination
+}
+
+fn rewrite_element_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let contents = read_rewrite_source(source, "element file");
+    let contents = replace_once_named(contents, "ref map generation field",
+        "pub struct RefMap {\n    map: HashMap<String, RefEntry>,",
+        "static REF_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);\n\npub struct RefMap {\n    pub generation: u64,\n    map: HashMap<String, RefEntry>,");
+    let contents = replace_once_named(contents, "ref map generation initialization",
+        "            map: HashMap::new(),\n            next_ref: 1,",
+        "            generation: REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),\n            map: HashMap::new(),\n            next_ref: 1,");
+    let contents = replace_once_named(contents, "ref map generation invalidation",
+        "    pub fn clear(&mut self) {\n        self.map.clear();",
+        "    pub fn clear(&mut self) {\n        self.generation = REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        self.map.clear();");
+    let contents = rewrite_element_scope(contents);
+    let destination = out_dir.join("agent_browser_element.rs");
+    fs::write(&destination, contents).expect("write element module");
+    destination
+}
+
+fn rewrite_element_scope(contents: String) -> String {
+    let contents = replace_once_named(
+        contents,
+        "per-client frame scope",
+        r###"/// Mirror of DaemonState.active_frame_id, refreshed before every command
+/// (commands are serialized by the daemon's state lock, so this cannot
+/// race). It lets CSS-selector resolution honor `frame <sel>` without
+/// threading a parameter through every interaction signature; snapshot refs
+/// already carry their frame through the ref map.
+static ACTIVE_FRAME: std::sync::OnceLock<std::sync::Mutex<Option<String>>> =
+    std::sync::OnceLock::new();
+
+pub fn set_active_frame(frame_id: Option<&str>) {
+    *ACTIVE_FRAME
+        .get_or_init(|| std::sync::Mutex::new(None))
+        .lock()
+        .unwrap() = frame_id.map(String::from);
+}
+
+fn active_frame() -> Option<String> {
+    ACTIVE_FRAME.get().and_then(|m| m.lock().unwrap().clone())
+}
+
+"###,
+        "",
+    );
+    let contents = replace_n_named(
+        contents,
+        "client frame lookup",
+        "active_frame()",
+        "client.active_frame()",
+        2,
+    );
+    let contents = replace_n_named(
+        contents,
+        "element owning session",
+        "    if let Some(ref_id) = parse_ref(selector_or_ref) {",
+        r#"    let frame = parse_ref(selector_or_ref)
+        .and_then(|reference| ref_map.get(&reference))
+        .and_then(|entry| entry.frame_id.clone())
+        .or_else(|| client.active_frame());
+    let session_id = match frame.as_deref() {
+        Some(frame) => crate::contexts::session_for_frame(client, session_id, iframe_sessions, frame).await?,
+        None => session_id,
+    };
+    if let Some(ref_id) = parse_ref(selector_or_ref) {"#,
+        2,
+    );
+    let contents = replace_once_named(
+        contents,
+        "default world element lookup",
+        r###"/// Find a selector inside a same-process iframe and return its center in
+/// top-level viewport coordinates (input events dispatch in that space).
+/// Same-origin access to contentDocument is what makes this possible; a
+/// cross-origin frame never takes this path because it has its own session.
+async fn resolve_center_in_same_process_frame(
+    client: &CdpClient,
+    session_id: &str,
+    frame_id: &str,
+    selector: &str,
+) -> Result<(f64, f64), String> {
+    let owner_object_id = frame_owner_object_id(client, session_id, frame_id).await?;
+    let find_expr = build_find_element_js_in("doc", selector);
+    let function = format!(
+        r#"function() {{
+            const doc = this.contentDocument;
+            if (!doc) return null;
+            const el = {find_expr};
+            if (!el) return null;
+            if (el.scrollIntoViewIfNeeded) el.scrollIntoViewIfNeeded(true);
+            else el.scrollIntoView({{ block: 'center', inline: 'center' }});
+            const rect = el.getBoundingClientRect();
+            let x = rect.x + rect.width / 2;
+            let y = rect.y + rect.height / 2;
+            let win = doc.defaultView;
+            while (win && win.frameElement) {{
+                const frameRect = win.frameElement.getBoundingClientRect();
+                x += frameRect.x + win.frameElement.clientLeft;
+                y += frameRect.y + win.frameElement.clientTop;
+                win = win.parent;
+            }}
+            const blockerAt = {BLOCKER_AT_JS};
+            const topDoc = win ? win.document : doc;
+            return {{ x: x, y: y, blocker: blockerAt(topDoc, el, x, y) }};
+        }}"#,
+    );
+    let result = client
+        .send_command(
+            "Runtime.callFunctionOn",
+            Some(serde_json::json!({
+                "objectId": owner_object_id,
+                "functionDeclaration": function,
+                "returnByValue": true,
+            })),
+            Some(session_id),
+        )
+        .await?;
+    let value = result.get("result").and_then(|r| r.get("value"));
+    if let Some(blocker) = value
+        .and_then(|v| v.get("blocker"))
+        .and_then(|v| v.as_str())
+    {
+        return Err(intercepted_error(selector, blocker));
+    }
+    let x = value.and_then(|v| v.get("x")).and_then(|v| v.as_f64());
+    let y = value.and_then(|v| v.get("y")).and_then(|v| v.as_f64());
+    match (x, y) {
+        (Some(x), Some(y)) => Ok((x, y)),
+        _ => Err(format!(
+            "Element not found in the selected frame: {}",
+            selector
+        )),
+    }
+}
+
+/// Find a selector inside a same-process iframe and return its object handle.
+async fn resolve_object_in_same_process_frame(
+    client: &CdpClient,
+    session_id: &str,
+    frame_id: &str,
+    selector: &str,
+) -> Result<String, String> {
+    let owner_object_id = frame_owner_object_id(client, session_id, frame_id).await?;
+    let find_expr = build_find_element_js_in("doc", selector);
+    let function = format!(
+        "function() {{ const doc = this.contentDocument; if (!doc) return null; return {find_expr}; }}",
+    );
+    let result = client
+        .send_command(
+            "Runtime.callFunctionOn",
+            Some(serde_json::json!({
+                "objectId": owner_object_id,
+                "functionDeclaration": function,
+                "returnByValue": false,
+            })),
+            Some(session_id),
+        )
+        .await?;
+    result
+        .get("result")
+        .and_then(|r| r.get("objectId"))
+        .and_then(|v| v.as_str())
+        .map(String::from)
+        .ok_or_else(|| format!("Element not found in the selected frame: {}", selector))
+}
+
+"###,
+        r###"async fn resolve_object_in_same_process_frame(
+    client: &CdpClient,
+    session_id: &str,
+    frame_id: &str,
+    selector: &str,
+) -> Result<String, String> {
+    let (_, result) = crate::contexts::evaluate_remote(
+        client, session_id, &HashMap::new(), frame_id,
+        &build_find_element_js(selector), false,
+    ).await?;
+    result.pointer("/result/objectId").and_then(Value::as_str).map(str::to_owned)
+        .ok_or_else(|| format!("Element not found in the selected frame: {}", selector))
+}
+
+async fn resolve_center_in_same_process_frame(
+    client: &CdpClient,
+    session_id: &str,
+    frame_id: &str,
+    selector: &str,
+) -> Result<(f64, f64), String> {
+    let object = resolve_object_in_same_process_frame(client, session_id, frame_id, selector).await?;
+    let node = client.send_command("DOM.describeNode", Some(serde_json::json!({"objectId": object})), Some(session_id)).await?;
+    let backend = node.pointer("/node/backendNodeId").and_then(Value::as_i64)
+        .ok_or_else(|| format!("Element is not a DOM node: {}", selector))?;
+    scroll_node_into_view(client, session_id, backend).await;
+    let result: DomGetBoxModelResult = client.send_command_typed(
+        "DOM.getBoxModel", &DomGetBoxModelParams {
+            backend_node_id: Some(backend), node_id: None, object_id: None,
+        }, Some(session_id),
+    ).await?;
+    let (x, y) = box_model_center(&result.model);
+    check_node_interception(client, session_id, backend, selector, x, y).await?;
+    Ok((x, y))
+}
+
+"###,
+    );
+    let contents = replace_n_named(
+        contents,
+        "typed refs retain captured node identity",
+        "        // Fallback: re-query the accessibility tree to find a fresh node by role/name",
+        "        if client.strict_refs() {\n            return Err(format!(\"stale_ref: Captured node for {} is detached\", selector_or_ref));\n        }\n\n        // Fallback: re-query the accessibility tree to find a fresh node by role/name",
+        2,
+    );
+    let contents = replace_once_named(
+        contents,
+        "typed ref object connectivity",
+        r#"                if let Some(object_id) = r.object.object_id {
+                    return Ok((object_id, effective_session_id.to_string()));
+                }"#,
+        r#"                if let Some(object_id) = r.object.object_id {
+                    if client.strict_refs() {
+                        let connected = client.send_command("Runtime.callFunctionOn", Some(serde_json::json!({
+                            "objectId": object_id,
+                            "functionDeclaration": "function() { return this.isConnected; }",
+                            "returnByValue": true,
+                        })), Some(effective_session_id)).await?;
+                        if connected.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
+                            return Err(format!("stale_ref: Captured node for {} is detached", selector_or_ref));
+                        }
+                    }
+                    return Ok((object_id, effective_session_id.to_string()));
+                }"#,
+    );
+    replace_once_named(
+        contents,
+        "frame geometry owner access",
+        "pub(super) async fn frame_owner_object_id(",
+        "pub(crate) async fn frame_owner_object_id(",
+    )
 }
 
 fn rewrite_browser_module(out_dir: &Path, source: &Path) -> PathBuf {
@@ -391,17 +685,43 @@ fn rewrite_frame_capture(contents: String) -> String {
     };
 
     let result = screenshot::take_screenshot("#;
+    const UPSTREAM_SCREENSHOT_RESULT: &str =
+        r#"    let mut response = json!({ "path": result.path });"#;
+    const SCOPED_SCREENSHOT_RESULT: &str = r#"    let origin = eval_body_in_active_frame(
+        mgr,
+        state.active_frame_id.as_deref(),
+        &session_id,
+        &state.iframe_sessions,
+        "(root) => root.defaultView.location.href",
+    )
+    .await?
+    .as_str()
+    .unwrap_or_default()
+    .to_string();
+    let target_id = mgr.active_target_id().ok();
+    let mut response = json!({
+        "path": result.path,
+        "origin": origin,
+        "targetId": target_id,
+        "frameId": state.active_frame_id.clone(),
+    });"#;
     let rewritten = replace_once_named(
         contents,
         "frame screenshot options",
         UPSTREAM_OPTIONS_END,
         FRAME_OPTIONS_END,
     );
-    replace_once_named(
+    let rewritten = replace_once_named(
         rewritten,
         "frame diff screenshot options",
         UPSTREAM_DIFF_OPTIONS,
         FRAME_DIFF_OPTIONS,
+    );
+    replace_once_named(
+        rewritten,
+        "screenshot document identity",
+        UPSTREAM_SCREENSHOT_RESULT,
+        SCOPED_SCREENSHOT_RESULT,
     )
 }
 
@@ -425,10 +745,7 @@ fn rewrite_screenshot_module(out_dir: &Path, source: &Path) -> PathBuf {
     const UPSTREAM_CAPTURE_BRANCH: &str = r#"    if options.full_page {
         let metrics: Value = client"#;
     const FRAME_CAPTURE_BRANCH: &str = r#"    if let Some(frame_id) = options.frame_id.as_deref() {
-        let owner = super::element::frame_owner_object_id(client, session_id, frame_id).await?;
-        let rect = get_rect_for_object(client, session_id, &owner)
-            .await?
-            .ok_or_else(|| format!("Could not measure the owner element of frame {}", frame_id))?;
+        let rect = crate::contexts::frame_rect(client, session_id, iframe_sessions, frame_id).await?;
         params.clip = Some(Viewport {
             x: rect.x,
             y: rect.y,
@@ -461,17 +778,73 @@ fn rewrite_screenshot_module(out_dir: &Path, source: &Path) -> PathBuf {
     destination
 }
 
+fn rewrite_snapshot_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let destination = out_dir.join("agent_browser_snapshot.rs");
+    let contents = read_rewrite_source(source, "snapshot file");
+    const UPSTREAM_AX_SCOPE: &str = r#"    let (ax_params, effective_session_id) =
+        resolve_ax_session(frame_id, session_id, iframe_sessions);"#;
+    const NESTED_AX_SCOPE: &str = r#"    let parent_session_id = match frame_id {
+        Some(frame) => crate::contexts::session_for_frame(client, session_id, iframe_sessions, frame).await?,
+        None => session_id,
+    };
+    let (ax_params, effective_session_id) =
+        resolve_ax_session(frame_id, parent_session_id, iframe_sessions);"#;
+
+    let rewritten = replace_once_named(
+        contents,
+        "nested frame accessibility session",
+        UPSTREAM_AX_SCOPE,
+        NESTED_AX_SCOPE,
+    );
+    fs::write(destination.as_path(), rewritten).expect("failed to write generated snapshot file");
+    destination
+}
+
 fn rewrite_scoped_page_commands(contents: String) -> String {
     const UPSTREAM_SCOPE_SYNC: &str = r#"    // Keep element resolution in sync with the `frame` selection (see
     // element::set_active_frame for why this is mirrored).
     super::element::set_active_frame(state.active_frame_id.as_deref());"#;
-    const SCOPED_SYNC: &str = r#"    if let Some(target_id) = cmd.get("_targetId").and_then(Value::as_str) {
+    const SCOPED_SYNC: &str =
+        r#"    // Explicit page and frame scope is applied after policy admission."#;
+    const UPSTREAM_POLICY_ACTIONS: &str =
+        r#"    let policy_actions = policy_actions_for_command(cmd, action, needs_launch);"#;
+    const SCOPED_POLICY_ACTIONS: &str = r#"    let needs_scope_switch = cmd
+        .get("_targetId")
+        .and_then(Value::as_str)
+        .is_some_and(|target_id| {
+            needs_launch
+                || state
+                    .browser
+                    .as_ref()
+                    .and_then(|manager| manager.active_target_id().ok())
+                    != Some(target_id)
+        });
+    let mut policy_actions = policy_actions_for_command(cmd, action, needs_launch);
+    if needs_scope_switch {
+        policy_actions.insert(0, "tab_switch".to_string());
+    }"#;
+    const UPSTREAM_ACTION_DISPATCH: &str = r#"    let result = match action {"#;
+    const SCOPED_ACTION_DISPATCH: &str = r#"    if let Some(expected) = cmd.get("_refGeneration").and_then(Value::as_u64) {
+        if expected != state.ref_map.generation {
+            return json!({ "id": id, "success": false, "code": "stale_ref", "error": "Snapshot ref generation expired" });
+        }
+    }
+
+    if let Some(target_id) = cmd.get("_targetId").and_then(Value::as_str) {
         let current_target = state
             .browser
             .as_ref()
             .and_then(|manager| manager.active_target_id().ok());
         if current_target != Some(target_id) {
-            let switch = json!({ "tabId": target_id });
+            let tab_id = state.browser.as_ref()
+                .and_then(|manager| manager.tab_list().into_iter().find(|tab| tab["targetId"].as_str() == Some(target_id)))
+                .and_then(|tab| tab["tabId"].as_str().map(str::to_owned));
+            let Some(tab_id) = tab_id else {
+                let mut response = error_response(&id, &format!("No tab with target id: {}", target_id));
+                response["code"] = json!("frame_scope");
+                return response;
+            };
+            let switch = json!({ "tabId": tab_id });
             if let Err(error) = handle_tab_switch(&switch, state).await {
                 return error_response(&id, &super::browser::to_ai_friendly_error(&error));
             }
@@ -482,43 +855,80 @@ fn rewrite_scoped_page_commands(contents: String) -> String {
         state.active_frame_id = (!frame_id.is_empty()).then(|| frame_id.to_string());
     }
 
-    // Keep element resolution in sync with the explicit command scope.
-    super::element::set_active_frame(state.active_frame_id.as_deref());"#;
+    // Element resolution belongs to this native session's client.
+    if let Some(manager) = state.browser.as_ref() {
+        manager.client.set_active_frame(state.active_frame_id.as_deref());
+        manager.client.set_strict_refs(cmd.get("_refGeneration").is_some());
+    }
+
+    let result = match action {"#;
     const UPSTREAM_INTERNAL_FIELDS: &str = r#"            || cmd.get("restoreCheckFn").is_some();"#;
     const SCOPED_INTERNAL_FIELDS: &str = r#"            || cmd.get("restoreCheckFn").is_some()
             || cmd.get("_targetId").is_some()
-            || cmd.get("_frameId").is_some();"#;
+            || cmd.get("_frameId").is_some()
+            || cmd.get("_refGeneration").is_some();"#;
     const UPSTREAM_REMOVE_INTERNAL: &str = r#"                obj.remove("restoreCheckFn");"#;
     const SCOPED_REMOVE_INTERNAL: &str = r#"                obj.remove("restoreCheckFn");
                 obj.remove("_targetId");
-                obj.remove("_frameId");"#;
+                obj.remove("_frameId");
+                obj.remove("_refGeneration");"#;
+    const UPSTREAM_SAME_PROCESS_EVALUATE: &str = r#"        Some(fid) if !iframe_sessions.contains_key(fid) => {
+            let owner =
+                super::element::frame_owner_object_id(&mgr.client, top_session, fid).await?;
+            let func = format!(
+                "function() {{ const d = this.contentDocument; if (!d) return null; return ({body})(d); }}"
+            );
+            let res = mgr
+                .client
+                .send_command(
+                    "Runtime.callFunctionOn",
+                    Some(serde_json::json!({
+                        "objectId": owner,
+                        "functionDeclaration": func,
+                        "returnByValue": true,
+                    })),
+                    Some(top_session),
+                )
+                .await?;
+            Ok(res
+                .get("result")
+                .and_then(|r| r.get("value"))
+                .cloned()
+                .unwrap_or(Value::Null))
+        }"#;
+    const AWAITED_SAME_PROCESS_EVALUATE: &str = r#"        Some(fid) if !iframe_sessions.contains_key(fid) => {
+            crate::contexts::evaluate(&mgr.client, top_session, iframe_sessions, fid, &format!("({body})(document)")).await
+        }"#;
+    const UPSTREAM_OOPIF_EVALUATE: &str = r#"                        expression: format!("({body})(document)"),
+                        return_by_value: Some(true),
+                        await_promise: Some(false),"#;
+    const AWAITED_OOPIF_EVALUATE: &str = r#"                        expression: format!("({body})(document)"),
+                        return_by_value: Some(true),
+                        await_promise: Some(true),"#;
+    const UPSTREAM_OOPIF_RESULT: &str =
+        r#"            Ok(res.result.value.unwrap_or(Value::Null))"#;
+    const CHECKED_OOPIF_RESULT: &str = r#"            if let Some(details) = res.exception_details {
+                let message = details
+                    .exception
+                    .as_ref()
+                    .and_then(|value| value.description.as_deref())
+                    .unwrap_or(&details.text);
+                return Err(format!("Evaluation error: {}", message));
+            }
+            Ok(res.result.value.unwrap_or(Value::Null))"#;
     const UPSTREAM_EVALUATE: &str = r#"    let result = mgr.evaluate(script, None).await?;
     let url = mgr.get_url().await.unwrap_or_default();
     Ok(json!({ "result": result, "origin": url }))"#;
-    const SCOPED_EVALUATE: &str = r#"    let session_id = mgr.active_session_id()?.to_string();
-    let script_json = serde_json::to_string(script).unwrap_or_else(|_| "\"\"".to_string());
-    let body = format!("(root) => root.defaultView.eval({script_json})");
-    let result = eval_body_in_active_frame(
-        mgr,
-        state.active_frame_id.as_deref(),
-        &session_id,
-        &state.iframe_sessions,
-        &body,
-    )
-    .await?;
-    let origin_body = "(root) => root.defaultView.location.href";
-    let origin = eval_body_in_active_frame(
-        mgr,
-        state.active_frame_id.as_deref(),
-        &session_id,
-        &state.iframe_sessions,
-        origin_body,
-    )
-    .await?
-    .as_str()
-    .unwrap_or_default()
-    .to_string();
-    Ok(json!({ "result": result, "origin": origin }))"#;
+    const SCOPED_EVALUATE: &str = r#"    let target_id = mgr.active_target_id().ok();
+    let (result, origin) = if let Some(frame) = state.active_frame_id.as_deref() {
+        let session = mgr.active_session_id()?;
+        let result = crate::contexts::evaluate(&mgr.client, session, &state.iframe_sessions, frame, script).await?;
+        let origin = crate::contexts::evaluate(&mgr.client, session, &state.iframe_sessions, frame, "location.href").await?;
+        (result, origin)
+    } else {
+        (mgr.evaluate(script, None).await?, json!(mgr.get_url().await?))
+    };
+    Ok(json!({ "result": result, "origin": origin, "targetId": target_id }))"#;
 
     let rewritten = replace_once_named(
         contents,
@@ -528,9 +938,87 @@ fn rewrite_scoped_page_commands(contents: String) -> String {
     );
     let rewritten = replace_once_named(
         rewritten,
+        "conditional scoped tab policy action",
+        UPSTREAM_POLICY_ACTIONS,
+        SCOPED_POLICY_ACTIONS,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "post-policy command scope",
+        UPSTREAM_ACTION_DISPATCH,
+        SCOPED_ACTION_DISPATCH,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "scope switching through blocked dialogs",
+        "        let safe_during_dialog = (skip_launch && !read_touches_active_tab)",
+        "        let safe_during_dialog = needs_scope_switch || (skip_launch && !read_touches_active_tab)",
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "native evidence and target metadata",
+        "    attach_webmcp_availability(&mut resp, action, state).await;",
+        "    attach_webmcp_availability(&mut resp, action, state).await;\n    resp[\"refGeneration\"] = json!(state.ref_map.generation);\n    resp[\"scopeSwitched\"] = json!(needs_scope_switch);\n    let current_target = state.browser.as_ref().and_then(|manager| manager.active_target_id().ok());\n    resp[\"targetId\"] = json!(current_target);\n    if let Some(data) = resp.get_mut(\"data\").and_then(Value::as_object_mut) {\n        data.insert(\"refGeneration\".to_string(), json!(state.ref_map.generation));\n        data.entry(\"targetId\".to_string()).or_insert_with(|| json!(current_target));\n    }",
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "navigation invalidates snapshot refs",
+        "                    let session_matches = if let Some(ref browser) = self.browser {",
+        "                    if matches!(event.method.as_str(), \"Page.frameNavigated\" | \"Page.frameDetached\") {\n                        self.ref_map.clear();\n                    }\n\n                    let session_matches = if let Some(ref browser) = self.browser {",
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "process detach invalidates snapshot refs",
+        "                                detached_iframe_sessions.push(sid.to_string());",
+        "                                self.ref_map.clear();\n                                detached_iframe_sessions.push(sid.to_string());",
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "typed document scope errors",
+        r#"    let mut resp = match result {
+        Ok(data) => success_response(&id, data),
+        Err(e) => error_response(&id, &super::browser::to_ai_friendly_error(&e)),
+    };"#,
+        r#"    let mut resp = match result {
+        Ok(data) => success_response(&id, data),
+        Err(e) => {
+            let mut response = error_response(&id, &super::browser::to_ai_friendly_error(&e));
+            if e.starts_with("Frame execution context detached:") || e.starts_with("Frame parent detached:")
+                || (e.starts_with("CDP error (") && (e.contains("Frame with the given frameId is not found")
+                    || e.contains("Cannot find context with specified id")
+                    || e.contains("Cannot find context with specified unique id")))
+            {
+                response["code"] = json!("frame_detached");
+            } else if e.starts_with("stale_ref:") {
+                response["code"] = json!("stale_ref");
+            }
+            response
+        }
+    };"#,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
         "frame-scoped evaluation",
         UPSTREAM_EVALUATE,
         SCOPED_EVALUATE,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "semantic role owning session",
+        r#"    let (ax_params, effective_session_id) = super::element::resolve_ax_session(
+        state.active_frame_id.as_deref(),
+        &session_id,
+        &state.iframe_sessions,
+    );"#,
+        r#"    let owner_session = match state.active_frame_id.as_deref() {
+        Some(frame) => crate::contexts::session_for_frame(&mgr.client, &session_id, &state.iframe_sessions, frame).await?,
+        None => &session_id,
+    };
+    let (ax_params, effective_session_id) = super::element::resolve_ax_session(
+        state.active_frame_id.as_deref(),
+        owner_session,
+        &state.iframe_sessions,
+    );"#,
     );
     let rewritten = replace_once_named(
         rewritten,
@@ -538,11 +1026,29 @@ fn rewrite_scoped_page_commands(contents: String) -> String {
         UPSTREAM_INTERNAL_FIELDS,
         SCOPED_INTERNAL_FIELDS,
     );
-    replace_once_named(
+    let rewritten = replace_once_named(
         rewritten,
         "scoped command broadcast filtering",
         UPSTREAM_REMOVE_INTERNAL,
         SCOPED_REMOVE_INTERNAL,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "awaited same-process frame evaluation",
+        UPSTREAM_SAME_PROCESS_EVALUATE,
+        AWAITED_SAME_PROCESS_EVALUATE,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "awaited out-of-process frame evaluation",
+        UPSTREAM_OOPIF_EVALUATE,
+        AWAITED_OOPIF_EVALUATE,
+    );
+    replace_once_named(
+        rewritten,
+        "out-of-process frame evaluation errors",
+        UPSTREAM_OOPIF_RESULT,
+        CHECKED_OOPIF_RESULT,
     )
 }
 
@@ -561,26 +1067,22 @@ fn rewrite_frame_commands(contents: String) -> String {
         .await?;
 
     if cmd.get("list").and_then(Value::as_bool) == Some(true) {
-        let mut oopif_frames = Vec::new();
+        let mut oopif_frame_trees = Vec::new();
         for (frame_id, frame_session) in &state.iframe_sessions {
             let result = mgr
                 .client
                 .send_command_no_params("Page.getFrameTree", Some(frame_session))
                 .await?;
-            if let Some(mut frame) = result
-                .get("frameTree")
-                .and_then(|tree| tree.get("frame"))
-                .cloned()
-            {
-                if frame.get("id").and_then(Value::as_str).is_none() {
-                    frame["id"] = Value::String(frame_id.clone());
-                }
-                oopif_frames.push(frame);
+            if let Some(frame_tree) = result.get("frameTree").cloned() {
+                oopif_frame_trees.push(json!({
+                    "rootFrameId": frame_id,
+                    "frameTree": frame_tree,
+                }));
             }
         }
         return Ok(json!({
             "frameTree": tree_result.get("frameTree").cloned().unwrap_or(Value::Null),
-            "oopifFrames": oopif_frames,
+            "oopifFrameTrees": oopif_frame_trees,
         }));
     }
 
@@ -655,26 +1157,41 @@ fn rewrite_frame_commands(contents: String) -> String {
         );
         let result = mgr.evaluate(&js, None).await?;
         let frame_name = result.as_str().ok_or("Could not find frame for selector")?;
-        if let Some(frame_id) = find_frame(frame_tree, Some(frame_name), None) {"##;
-    const SCOPED_SELECTOR_EVALUATE: &str = r##"        let selector = serde_json::to_string(sel).unwrap_or_default();
-        let selector_body = format!(r#"(root) => {{
-            const el = root.querySelector({selector});
-            if (!el) return null;
-            if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {{
-                return el.name || el.id || el.src || null;
-            }}
-            return null;
-        }}"#);
-        let result = eval_body_in_active_frame(
-            mgr,
-            state.active_frame_id.as_deref(),
-            &session_id,
-            &state.iframe_sessions,
-            &selector_body,
-        )
-        .await?;
-        let frame_name = result.as_str().ok_or("Could not find frame for selector")?;
-        if let Some(frame_id) = find_frame(search_tree, Some(frame_name), None) {"##;
+        if let Some(frame_id) = find_frame(frame_tree, Some(frame_name), None) {
+            state.active_frame_id = Some(frame_id);
+            return Ok(json!({ "frame": frame_name }));
+        }"##;
+    const SCOPED_SELECTOR_EVALUATE: &str = r##"        let (object_id, effective_session) =
+            super::element::resolve_element_object_id(
+                &mgr.client,
+                &session_id,
+                &state.ref_map,
+                sel,
+                &state.iframe_sessions,
+            )
+            .await?;
+        let described = mgr
+            .client
+            .send_command(
+                "DOM.describeNode",
+                Some(json!({ "objectId": object_id, "depth": 1 })),
+                Some(&effective_session),
+            )
+            .await?;
+        let node = &described["node"];
+        let node_name = node.get("nodeName").and_then(Value::as_str).unwrap_or("");
+        if node_name != "IFRAME" && node_name != "FRAME" {
+            return Err(format!("Selector {} does not point to an iframe element", sel));
+        }
+        let frame_id = node
+            .get("contentDocument")
+            .and_then(|document| document.get("frameId"))
+            .or_else(|| node.get("frameId"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| format!("Could not resolve frame ID for selector {}", sel))?
+            .to_string();
+        state.active_frame_id = Some(frame_id.clone());
+        return Ok(json!({ "frame": sel, "frameId": frame_id }));"##;
 
     let mut rewritten = replace_once_named(
         contents,
@@ -700,13 +1217,6 @@ fn rewrite_frame_commands(contents: String) -> String {
         UPSTREAM_SELECTOR_EVALUATE,
         SCOPED_SELECTOR_EVALUATE,
     );
-    rewritten = replace_n_named(
-        rewritten,
-        "resolved frame identity",
-        "return Ok(json!({ \"frame\": frame_name }));",
-        "return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));",
-        1,
-    );
     rewritten = replace_once_named(
         rewritten,
         "ref frame identity",
@@ -724,13 +1234,7 @@ fn rewrite_frame_commands(contents: String) -> String {
         "retained resolved frame identity",
         "state.active_frame_id = Some(frame_id);",
         "state.active_frame_id = Some(frame_id.clone());",
-        2,
-    );
-    rewritten = replace_once_named(
-        rewritten,
-        "selector OOPIF fallback",
-        "        if let Some(frame_id) = find_frame(search_tree, Some(frame_name), None) {\n            state.active_frame_id = Some(frame_id.clone());\n            return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));\n        }\n    }",
-        "        if let Some(frame_id) = find_frame(search_tree, Some(frame_name), None) {\n            state.active_frame_id = Some(frame_id.clone());\n            return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));\n        }\n        if let Some(frame_id) = find_oopif(mgr, &state.iframe_sessions, Some(frame_name), None).await? {\n            state.active_frame_id = Some(frame_id.clone());\n            return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));\n        }\n    }",
+        1,
     );
     rewritten = replace_once_named(
         rewritten,
@@ -809,6 +1313,39 @@ fn rewrite_scoped_waits(contents: String) -> String {
         }
         return Ok(json!({ "waited": "function" }));
     }"#;
+    const UPSTREAM_WAIT_LOAD: &str = r#"    if let Some(load_state) = cmd.get("loadState").and_then(|v| v.as_str()) {
+        let wait_until = WaitUntil::from_str(load_state);
+        mgr.wait_for_lifecycle_external(wait_until, &session_id)
+            .await?;
+        return Ok(json!({ "waited": "load", "state": load_state }));
+    }"#;
+    const SCOPED_WAIT_LOAD: &str = r#"    if let Some(load_state) = cmd.get("loadState").and_then(|v| v.as_str()) {
+        if state.active_frame_id.is_some() {
+            let body = match load_state {
+                "none" => "(root) => true",
+                "domcontentloaded" => "(root) => ['interactive', 'complete'].includes(root.readyState)",
+                "load" => "(root) => root.readyState === 'complete'",
+                "networkidle" => {
+                    return Err("Frame load waits support none, domcontentloaded, and load".to_string())
+                }
+                _ => return Err(format!("Unknown load state: {}", load_state)),
+            };
+            poll_active_frame(
+                mgr,
+                state.active_frame_id.as_deref(),
+                &session_id,
+                &state.iframe_sessions,
+                body,
+                timeout_ms,
+                |value| value.as_bool() == Some(true),
+            )
+            .await?;
+        } else {
+            let wait_until = WaitUntil::from_str(load_state);
+            mgr.wait_for_lifecycle_external(wait_until, &session_id).await?;
+        }
+        return Ok(json!({ "waited": "load", "state": load_state }));
+    }"#;
     const EVAL_HELPER_ANCHOR: &str = r#"async fn eval_body_in_active_frame(
     mgr: &BrowserManager,"#;
     const POLL_HELPER: &str = r#"async fn poll_active_frame<F>(
@@ -858,6 +1395,15 @@ async fn eval_body_in_active_frame(
     };
 
     let refs: serde_json::Map<String, Value> = state"#;
+    const UPSTREAM_SNAPSHOT_RESULT: &str =
+        r#"    Ok(json!({ "snapshot": tree, "origin": url, "refs": refs }))"#;
+    const SCOPED_SNAPSHOT_RESULT: &str = r#"    let target_id = mgr.active_target_id().ok();
+    Ok(json!({
+        "snapshot": tree,
+        "origin": url,
+        "refs": refs,
+        "targetId": target_id,
+    }))"#;
 
     let rewritten = replace_once_named(
         contents,
@@ -879,15 +1425,27 @@ async fn eval_body_in_active_frame(
     );
     let rewritten = replace_once_named(
         rewritten,
+        "frame-scoped load wait",
+        UPSTREAM_WAIT_LOAD,
+        SCOPED_WAIT_LOAD,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
         "frame wait polling helper",
         EVAL_HELPER_ANCHOR,
         POLL_HELPER,
     );
-    replace_once_named(
+    let rewritten = replace_once_named(
         rewritten,
         "frame snapshot origin",
         UPSTREAM_SNAPSHOT_ORIGIN,
         SCOPED_SNAPSHOT_ORIGIN,
+    );
+    replace_once_named(
+        rewritten,
+        "snapshot target identity",
+        UPSTREAM_SNAPSHOT_RESULT,
+        SCOPED_SNAPSHOT_RESULT,
     )
 }
 
@@ -1992,7 +2550,7 @@ fn replace_once_named(
 }
 
 fn replace_n_named(
-    mut contents: String,
+    contents: String,
     patch_name: &str,
     expected: &str,
     replacement: &str,
@@ -2003,10 +2561,7 @@ fn replace_n_named(
         occurrences == expected_count,
         "generated upstream rewrite expected exactly {expected_count} {patch_name} blocks, found {occurrences}"
     );
-    for _ in 0..expected_count {
-        contents = contents.replacen(expected, replacement, 1);
-    }
-    contents
+    contents.replace(expected, replacement)
 }
 
 fn upstream_cli_src_dir() -> PathBuf {

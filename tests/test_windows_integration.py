@@ -37,7 +37,7 @@ from pathlib import Path
 from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser:
-    browser.open('data:text/html,<title>Owned tree</title><h1>Renderer</h1>')
+    browser.page.open('data:text/html,<title>Owned tree</title><h1>Renderer</h1>')
     processes = browser.cdp.send('SystemInfo.getProcessInfo')['processInfo']
     ready = Path(sys.argv[2])
     staging = ready.with_suffix('.tmp')

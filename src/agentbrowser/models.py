@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import builtins
-import importlib
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from difflib import SequenceMatcher, unified_diff
@@ -186,6 +185,22 @@ class BrowserError(AgentBrowserError):
         self.action = action
         self.response = dict(response)
         self.code = code or _error_code_from_response(response)
+
+
+class FrameLookupError(AgentBrowserError, LookupError):
+    """Raised when frame criteria have no unique match in one parent scope."""
+
+    def __init__(
+        self,
+        reason: Literal["not_found", "ambiguous", "detached", "scope_mismatch"],
+        criteria: str,
+        candidates: Sequence[str] = (),
+    ) -> None:
+        self.reason = reason
+        self.criteria = criteria
+        self.candidates = tuple(candidates)
+        available = ", ".join(self.candidates) or "<none>"
+        super().__init__(f"frame {reason.replace('_', ' ')} for {criteria}: {available}")
 
 
 class ConfirmationRequired(BrowserError, Generic[T]):
@@ -560,9 +575,9 @@ class Wait:
         return cls("load", state, timeout_ms)
 
     @classmethod
-    def all(cls, *conditions: Wait) -> Wait:
-        """Apply several wait conditions in order."""
-        return cls("all", conditions=tuple(conditions))
+    def all(cls, *conditions: Wait, timeout_ms: int | None = None) -> Wait:
+        """Apply several wait conditions within an optional shared timeout."""
+        return cls("all", timeout_ms=timeout_ms, conditions=tuple(conditions))
 
 
 @dataclass(frozen=True, slots=True)
@@ -586,6 +601,7 @@ class SnapshotData:
     refs: Mapping[str, Mapping[str, Any]]
     raw: Mapping[str, Any]
     spec: SnapshotSpec = field(default_factory=SnapshotSpec)
+    generation: int = 0
 
     def ref(self, ref_id: str) -> SnapshotRef:
         """Return one snapshot ref by id.
@@ -878,6 +894,7 @@ class DocumentScope:
     target_id: str | None = None
     frame_id: str | None = None
     url: str | None = None
+    generation: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -901,6 +918,32 @@ class ScrollResult:
     def moved(self) -> bool:
         """Return whether either scroll offset changed."""
         return self.before != self.after
+
+
+@dataclass(frozen=True, slots=True)
+class ElementGeometry:
+    """Element bounds and overflow measurements in CSS pixels."""
+
+    scope: DocumentScope
+    selector: str
+    x: float
+    y: float
+    width: float
+    height: float
+    client_width: float
+    client_height: float
+    scroll_width: float
+    scroll_height: float
+
+    @property
+    def overflows_x(self) -> bool:
+        """Return whether content exceeds the client width."""
+        return self.scroll_width > self.client_width
+
+    @property
+    def overflows_y(self) -> bool:
+        """Return whether content exceeds the client height."""
+        return self.scroll_height > self.client_height
 
 
 @dataclass(frozen=True, slots=True)
@@ -985,7 +1028,7 @@ class RequestDetail:
 
 @dataclass(frozen=True, slots=True)
 class ReadResult:
-    """Markdown-oriented content returned by `browser.read()`."""
+    """Markdown-oriented content returned by `browser.page.read()`."""
 
     url: str
     final_url: str
@@ -999,7 +1042,7 @@ class ReadResult:
 
 @dataclass(frozen=True, slots=True)
 class ReadMode:
-    """Native read mode passed to `browser.read(mode=...)`."""
+    """Native read mode passed to `browser.page.read(mode=...)`."""
 
     raw: bool = False
     require_markdown: bool = False
@@ -1176,32 +1219,6 @@ class Screenshot:
         """Return notebook display data for the screenshot image."""
         del include, exclude
         return {_image_mime_type(self.format): self.bytes()}, {}
-
-    def marimo(
-        self,
-        *,
-        alt: str | None = None,
-        width: int | str | None = None,
-        height: int | str | None = None,
-        rounded: bool = False,
-        caption: str | None = None,
-        style: Mapping[str, Any] | None = None,
-    ) -> Any:
-        """Return a `marimo.image` view for this screenshot."""
-        try:
-            mo = importlib.import_module("marimo")
-        except ModuleNotFoundError as exc:
-            raise ImportError("marimo is required for Screenshot.marimo().") from exc
-        image = cast(Any, mo).image
-        return image(
-            src=str(self.path),
-            alt=alt,
-            width=width,
-            height=height,
-            rounded=rounded,
-            caption=caption,
-            style=dict(style) if style is not None else None,
-        )
 
     def save(self, path: str | Path) -> Screenshot:
         """Copy the screenshot file and return metadata for the new path."""

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
-from typing import Any, cast
+from dataclasses import dataclass, replace
+from time import monotonic
+from typing import TYPE_CHECKING, Any, cast
 
 from agentbrowser._browser_common import is_stale_ref_error_code
 from agentbrowser.command_params import click_params, wait_params
@@ -22,22 +23,89 @@ from agentbrowser.models import (
     diff_snapshot_data,
 )
 
+if TYPE_CHECKING:
+    from agentbrowser.domains import Frame
+
 
 class StaleRefError(BrowserError):
     """Raised when an action targets a ref from an expired snapshot."""
 
-    def __init__(self, ref: Ref, error: BrowserError) -> None:
-        super().__init__(
-            error.action,
-            f"stale snapshot ref {ref.selector}: {error}",
-            error.response,
-            code=error.code,
-        )
+    def __init__(self, ref: Ref, error: BrowserError | None = None) -> None:
+        if error is None:
+            super().__init__(
+                "ref",
+                f"stale snapshot generation for {ref.selector}",
+                {},
+                code="stale_ref",
+            )
+        else:
+            super().__init__(
+                error.action,
+                f"stale snapshot ref {ref.selector}: {error}",
+                error.response,
+                code=error.code,
+            )
         self.ref = ref
 
     def refresh(self, **criteria: Any) -> Ref:
         """Resolve the ref again from a fresh snapshot."""
         return self.ref.refresh(**criteria)
+
+
+@dataclass(frozen=True, slots=True)
+class _RefGenerationController:
+    controller: Any
+    ref: Ref
+
+    def _command(self, action: str, **params: Any) -> Any:
+        params["_refGeneration"] = self.ref.snapshot.generation
+        try:
+            return self.controller._command(action, **params)
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise StaleRefError(self.ref, error) from error
+            raise
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.controller, name)
+
+
+@dataclass(frozen=True, slots=True)
+class _RefPendingAction:
+    pending: Any
+    ref: Ref
+
+    @property
+    def confirmation_id(self) -> str:
+        return cast(str, self.pending.confirmation_id)
+
+    @property
+    def action(self) -> str:
+        return cast(str, self.pending.action)
+
+    @property
+    def details(self) -> Any:
+        return self.pending.details
+
+    def confirm(self) -> Any:
+        try:
+            return self.pending.confirm()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = _RefPendingAction(error.pending, self.ref)
+            raise
+        except StaleRefError:
+            raise
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise StaleRefError(self.ref, error) from error
+            raise
+
+    def deny(self) -> None:
+        self.pending.deny()
+
+    def map(self, complete: Any) -> _RefPendingAction:
+        return _RefPendingAction(self.pending.map(complete), self.ref)
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,16 +239,44 @@ class Ref:
         """Scroll the ref into view and return transition evidence."""
         return self._act("scrollintoview", {"selector": self.selector}, wait=wait)
 
-    def content_frame(self) -> Any:
+    def content_frame(self) -> Frame:
         """Return the child frame owned by this inspected iframe element."""
-        frames = getattr(self.snapshot.browser, "frames", None)
+        self._ensure_current()
+        source = self.snapshot.browser
+        frames = getattr(source, "frames", None)
         if frames is None:
             raise TypeError("the snapshot is not bound to a page or frame handle")
-        return frames.get(selector=self.selector)
+        owner = replace(
+            source,
+            browser=_RefGenerationController(source.browser.controller, self),
+        )
+        try:
+            frame = owner.frames.get(selector=self.selector)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = _RefPendingAction(
+                    error.pending.map(self._content_frame_result),
+                    self,
+                )
+            raise
+        except StaleRefError:
+            raise
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise StaleRefError(self, error) from error
+            raise
+        return self._content_frame_result(frame)
+
+    def _content_frame_result(self, frame: Frame) -> Frame:
+        return replace(
+            frame,
+            browser=self.snapshot.browser.browser.controller,
+        )
 
     def text(self) -> str:
         """Return text content for the ref."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "gettext",
             _decode=lambda data: _string_field(data, "text", action="gettext"),
             selector=self.selector,
@@ -188,7 +284,8 @@ class Ref:
 
     def inner_text(self) -> str:
         """Return rendered text for the ref."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "innertext",
             _decode=lambda data: _string_field(data, "text", action="innertext"),
             selector=self.selector,
@@ -196,7 +293,8 @@ class Ref:
 
     def input_value(self) -> str:
         """Return the current form value."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "inputvalue",
             _decode=lambda data: _string_field(data, "value", action="inputvalue"),
             selector=self.selector,
@@ -204,7 +302,8 @@ class Ref:
 
     def attribute(self, name: str) -> str | None:
         """Return one attribute value."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "getattribute",
             _decode=_optional_attribute,
             selector=self.selector,
@@ -213,7 +312,8 @@ class Ref:
 
     def is_visible(self) -> bool:
         """Return whether the ref is visible."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "isvisible",
             _decode=lambda data: _bool_field(data, "visible", action="isvisible"),
             selector=self.selector,
@@ -221,7 +321,8 @@ class Ref:
 
     def is_enabled(self) -> bool:
         """Return whether the ref is enabled."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "isenabled",
             _decode=lambda data: _bool_field(data, "enabled", action="isenabled"),
             selector=self.selector,
@@ -229,7 +330,8 @@ class Ref:
 
     def is_checked(self) -> bool:
         """Return whether the ref is checked."""
-        return self.browser._command(
+        self._ensure_current()
+        return self._command(
             "ischecked",
             _decode=lambda data: _bool_field(data, "checked", action="ischecked"),
             selector=self.selector,
@@ -242,11 +344,32 @@ class Ref:
         *,
         wait: Wait | None,
     ) -> ActionResult[Ref, Snapshot]:
+        self._ensure_current()
         return self._transition(
             action,
-            lambda: self.browser._command(action, **params),
+            lambda: self._command(action, **params),
             wait=wait,
         )
+
+    def _command(self, action: str, **params: Any) -> Any:
+        self._ensure_current()
+        params["_refGeneration"] = self.snapshot.generation
+        try:
+            return self.browser._command(action, **params)
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = _RefPendingAction(error.pending, self)
+            raise
+        except BrowserError as error:
+            if is_stale_ref_error_code(error.code):
+                raise StaleRefError(self, error) from error
+            raise
+
+    def _ensure_current(self) -> None:
+        controller = getattr(getattr(self.snapshot.browser, "browser", None), "controller", None)
+        current = getattr(controller, "_ref_generation", self.snapshot.generation)
+        if current != self.snapshot.generation:
+            raise StaleRefError(self)
 
     def _transition(
         self,
@@ -260,10 +383,6 @@ class Ref:
         except ConfirmationRequired as error:
             if error.pending is not None:
                 error.pending = error.pending.map(lambda _value: self._result(action, wait=wait))
-            raise
-        except BrowserError as error:
-            if is_stale_ref_error_code(error.code):
-                raise StaleRefError(self, error) from error
             raise
         return self._result(action, wait=wait)
 
@@ -354,6 +473,11 @@ class Snapshot:
         return self._data.spec
 
     @property
+    def generation(self) -> int:
+        """Return the controller ref generation captured by this snapshot."""
+        return self._data.generation
+
+    @property
     def raw(self) -> Mapping[str, Any]:
         """Native snapshot response data."""
         return self._data.raw
@@ -416,14 +540,22 @@ class Snapshot:
 
     def diff(self) -> SnapshotDiff:
         """Compare this snapshot with the current page state."""
-        return self.browser._diff_snapshot(self._data)
+        try:
+            current = self.refresh()
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(
+                    lambda after: diff_snapshot_data(self._data, after._data)
+                )
+            raise
+        return diff_snapshot_data(self._data, current._data)
 
 
 def _apply_wait(browser: Any, wait: Wait | None) -> None:
     if wait is None:
         return
     if wait.kind == "all":
-        _apply_waits(browser, wait.conditions)
+        _apply_waits(browser, wait.conditions, timeout_ms=wait.timeout_ms)
         return
     browser._command(
         "wait",
@@ -438,15 +570,39 @@ def _apply_wait(browser: Any, wait: Wait | None) -> None:
     )
 
 
-def _apply_waits(browser: Any, conditions: tuple[Wait, ...]) -> None:
+def _apply_waits(
+    browser: Any,
+    conditions: tuple[Wait, ...],
+    *,
+    timeout_ms: int | None = None,
+) -> None:
+    deadline = None if timeout_ms is None else monotonic() + timeout_ms / 1000
     for index, condition in enumerate(conditions):
+        if deadline is not None:
+            remaining_ms = max(0, int((deadline - monotonic()) * 1000))
+            condition = replace(
+                condition,
+                timeout_ms=(
+                    remaining_ms
+                    if condition.timeout_ms is None
+                    else min(condition.timeout_ms, remaining_ms)
+                ),
+            )
         try:
             _apply_wait(browser, condition)
         except ConfirmationRequired as error:
             remaining = conditions[index + 1 :]
             if remaining and error.pending is not None:
                 error.pending = error.pending.map(
-                    lambda _value, remaining=remaining: _apply_waits(browser, remaining)
+                    lambda _value, remaining=remaining: _apply_waits(
+                        browser,
+                        remaining,
+                        timeout_ms=(
+                            None
+                            if deadline is None
+                            else max(0, int((deadline - monotonic()) * 1000))
+                        ),
+                    )
                 )
             raise
 
