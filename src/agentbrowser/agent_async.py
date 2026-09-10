@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
-
-if TYPE_CHECKING:
-    from agentbrowser.browser_async import AsyncBrowser
+from typing import Any, cast
 
 from agentbrowser._browser_common import is_stale_ref_error_code
 from agentbrowser.command_params import click_params, wait_params
@@ -51,7 +48,7 @@ class AsyncRef:
     _ref: SnapshotRef
 
     @property
-    def browser(self) -> AsyncBrowser:
+    def browser(self) -> Any:
         """Browser that captured this ref."""
         return self.snapshot.browser
 
@@ -182,6 +179,13 @@ class AsyncRef:
     ) -> ActionResult[AsyncRef, AsyncSnapshot]:
         """Scroll the ref into view and return transition evidence."""
         return await self._act("scrollintoview", {"selector": self.selector}, wait=wait)
+
+    async def content_frame(self) -> Any:
+        """Return the child frame owned by this inspected iframe element."""
+        frames = getattr(self.snapshot.browser, "frames", None)
+        if frames is None:
+            raise TypeError("the snapshot is not bound to a page or frame handle")
+        return await frames.get(selector=self.selector)
 
     async def text(self) -> str:
         """Return text content for the ref."""
@@ -338,7 +342,7 @@ class AsyncRef:
 class AsyncSnapshot:
     """Immutable accessibility snapshot bound to an async browser."""
 
-    browser: AsyncBrowser
+    browser: Any
     _data: SnapshotData
 
     @property

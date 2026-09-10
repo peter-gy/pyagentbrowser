@@ -32,8 +32,6 @@ from agentbrowser.command_params import (
 )
 from agentbrowser.domains import (
     CDP,
-    ActiveFrame,
-    Capture,
     Clipboard,
     CommandTarget,
     Cookies,
@@ -78,7 +76,6 @@ from agentbrowser.models import (
     path_value,
     snapshot_from_data,
 )
-from agentbrowser.query import Queries
 from agentbrowser.session import (
     NativeSession,
     _checked_response,
@@ -465,8 +462,8 @@ class Browser:
 
         command_target = cast(CommandTarget, weak_proxy(self))
         browser_proxy = cast(Browser, weak_proxy(self))
-        self.active_frame = ActiveFrame(command_target)
-        self.capture = Capture(command_target)
+        self.page = Page(self)
+        self.capture = self.page.capture
         self.cdp = CDP(browser_proxy)
         self.clipboard = Clipboard(command_target)
         self.cookies = Cookies(command_target)
@@ -476,12 +473,11 @@ class Browser:
         self.diff = Diff(command_target)
         self.downloads = Downloads(command_target)
         self.emulation = Emulation(browser_proxy)
-        self.find = Queries(browser_proxy)
+        self.find = self.page.find
         self.keyboard = Keyboard(command_target)
         self.mouse = Mouse(command_target)
         self.native = Native(browser_proxy)
         self.network = Network(command_target)
-        self.page = Page(browser_proxy)
         self.scripts = Scripts(command_target)
         self.session = Session(command_target)
         self.state = State(command_target)
@@ -567,13 +563,7 @@ class Browser:
         spec: SnapshotSpec | None = None,
     ) -> Snapshot:
         """Capture an accessibility snapshot bound to this browser."""
-        try:
-            data = self._snapshot_data(spec or SnapshotSpec())
-        except ConfirmationRequired as error:
-            if error.pending is not None:
-                error.pending = error.pending.map(lambda result: Snapshot(self, result))
-            raise
-        return Snapshot(self, data)
+        return self.page.observe(spec)
 
     def open(self, url: str, *, wait_until: LoadState = "load") -> Self:
         """Navigate the active tab and return this browser."""

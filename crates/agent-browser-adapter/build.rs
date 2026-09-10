@@ -346,10 +346,443 @@ fn rewrite_actions_module(out_dir: &Path, source: &Path) -> PathBuf {
     let contents = read_rewrite_source(source, "actions file");
     let contents = rewrite_confirmation_handling(contents);
     let contents = rewrite_actions_namespace(contents);
+    let contents = rewrite_scoped_page_commands(contents);
+    let contents = rewrite_frame_commands(contents);
+    let contents = rewrite_scoped_waits(contents);
     let contents = rewrite_dashboard_streaming(contents);
     let contents = rewrite_stream_result_success(contents);
     fs::write(destination.as_path(), contents).expect("failed to write generated actions file");
     destination
+}
+
+fn rewrite_scoped_page_commands(contents: String) -> String {
+    const UPSTREAM_SCOPE_SYNC: &str = r#"    // Keep element resolution in sync with the `frame` selection (see
+    // element::set_active_frame for why this is mirrored).
+    super::element::set_active_frame(state.active_frame_id.as_deref());"#;
+    const SCOPED_SYNC: &str = r#"    if let Some(target_id) = cmd.get("_targetId").and_then(Value::as_str) {
+        let current_target = state
+            .browser
+            .as_ref()
+            .and_then(|manager| manager.active_target_id().ok());
+        if current_target != Some(target_id) {
+            let switch = json!({ "tabId": target_id });
+            if let Err(error) = handle_tab_switch(&switch, state).await {
+                return error_response(&id, &super::browser::to_ai_friendly_error(&error));
+            }
+        }
+    }
+
+    if let Some(frame_id) = cmd.get("_frameId").and_then(Value::as_str) {
+        state.active_frame_id = (!frame_id.is_empty()).then(|| frame_id.to_string());
+    }
+
+    // Keep element resolution in sync with the explicit command scope.
+    super::element::set_active_frame(state.active_frame_id.as_deref());"#;
+    const UPSTREAM_INTERNAL_FIELDS: &str = r#"            || cmd.get("restoreCheckFn").is_some();"#;
+    const SCOPED_INTERNAL_FIELDS: &str = r#"            || cmd.get("restoreCheckFn").is_some()
+            || cmd.get("_targetId").is_some()
+            || cmd.get("_frameId").is_some();"#;
+    const UPSTREAM_REMOVE_INTERNAL: &str = r#"                obj.remove("restoreCheckFn");"#;
+    const SCOPED_REMOVE_INTERNAL: &str = r#"                obj.remove("restoreCheckFn");
+                obj.remove("_targetId");
+                obj.remove("_frameId");"#;
+    const UPSTREAM_EVALUATE: &str = r#"    let result = mgr.evaluate(script, None).await?;
+    let url = mgr.get_url().await.unwrap_or_default();
+    Ok(json!({ "result": result, "origin": url }))"#;
+    const SCOPED_EVALUATE: &str = r#"    let session_id = mgr.active_session_id()?.to_string();
+    let script_json = serde_json::to_string(script).unwrap_or_else(|_| "\"\"".to_string());
+    let body = format!("(root) => root.defaultView.eval({script_json})");
+    let result = eval_body_in_active_frame(
+        mgr,
+        state.active_frame_id.as_deref(),
+        &session_id,
+        &state.iframe_sessions,
+        &body,
+    )
+    .await?;
+    let origin_body = "(root) => root.defaultView.location.href";
+    let origin = eval_body_in_active_frame(
+        mgr,
+        state.active_frame_id.as_deref(),
+        &session_id,
+        &state.iframe_sessions,
+        origin_body,
+    )
+    .await?
+    .as_str()
+    .unwrap_or_default()
+    .to_string();
+    Ok(json!({ "result": result, "origin": origin }))"#;
+
+    let rewritten = replace_once_named(
+        contents,
+        "explicit page and frame command scope",
+        UPSTREAM_SCOPE_SYNC,
+        SCOPED_SYNC,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "frame-scoped evaluation",
+        UPSTREAM_EVALUATE,
+        SCOPED_EVALUATE,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "scoped command broadcast detection",
+        UPSTREAM_INTERNAL_FIELDS,
+        SCOPED_INTERNAL_FIELDS,
+    );
+    replace_once_named(
+        rewritten,
+        "scoped command broadcast filtering",
+        UPSTREAM_REMOVE_INTERNAL,
+        SCOPED_REMOVE_INTERNAL,
+    )
+}
+
+fn rewrite_frame_commands(contents: String) -> String {
+    const UPSTREAM_REQUIRE_SELECTOR: &str = r#"    if selector.is_none() && name.is_none() && url.is_none() {
+        return Err("At least one of 'selector', 'name', or 'url' is required".to_string());
+    }
+
+    let tree_result = mgr
+        .client
+        .send_command_no_params("Page.getFrameTree", Some(&session_id))
+        .await?;"#;
+    const FRAME_TREE_SUPPORT: &str = r#"    let tree_result = mgr
+        .client
+        .send_command_no_params("Page.getFrameTree", Some(&session_id))
+        .await?;
+
+    if cmd.get("list").and_then(Value::as_bool) == Some(true) {
+        let mut oopif_frames = Vec::new();
+        for (frame_id, frame_session) in &state.iframe_sessions {
+            let result = mgr
+                .client
+                .send_command_no_params("Page.getFrameTree", Some(frame_session))
+                .await?;
+            if let Some(mut frame) = result
+                .get("frameTree")
+                .and_then(|tree| tree.get("frame"))
+                .cloned()
+            {
+                if frame.get("id").and_then(Value::as_str).is_none() {
+                    frame["id"] = Value::String(frame_id.clone());
+                }
+                oopif_frames.push(frame);
+            }
+        }
+        return Ok(json!({
+            "frameTree": tree_result.get("frameTree").cloned().unwrap_or(Value::Null),
+            "oopifFrames": oopif_frames,
+        }));
+    }
+
+    if selector.is_none() && name.is_none() && url.is_none() {
+        return Err("Pass selector, name, or url to resolve one frame".to_string());
+    }"#;
+    const UPSTREAM_FRAME_TREE: &str = r#"    let frame_tree = &tree_result["frameTree"];
+
+    // If selector is a ref (@e1), resolve the iframe element from the ref map"#;
+    const SCOPED_FRAME_TREE: &str = r#"    let frame_tree = &tree_result["frameTree"];
+    fn frame_subtree<'a>(tree: &'a Value, frame_id: &str) -> Option<&'a Value> {
+        if tree
+            .get("frame")
+            .and_then(|frame| frame.get("id"))
+            .and_then(Value::as_str)
+            == Some(frame_id)
+        {
+            return Some(tree);
+        }
+        tree.get("childFrames")
+            .and_then(Value::as_array)
+            .and_then(|children| children.iter().find_map(|child| frame_subtree(child, frame_id)))
+    }
+    let search_tree = state
+        .active_frame_id
+        .as_deref()
+        .and_then(|frame_id| frame_subtree(frame_tree, frame_id))
+        .unwrap_or(frame_tree);
+
+    // If selector is a ref (@e1), resolve the iframe element from the ref map"#;
+    const UPSTREAM_FRAME_RESOLVER_END: &str = r#"        None
+    }
+
+    let frame_tree = &tree_result["frameTree"];"#;
+    const OOPIF_RESOLVER: &str = r#"        None
+    }
+
+    async fn find_oopif(
+        mgr: &BrowserManager,
+        sessions: &HashMap<String, String>,
+        name: Option<&str>,
+        url: Option<&str>,
+    ) -> Result<Option<String>, String> {
+        for (frame_id, session_id) in sessions {
+            let result = mgr
+                .client
+                .send_command_no_params("Page.getFrameTree", Some(session_id))
+                .await?;
+            let frame = &result["frameTree"]["frame"];
+            let frame_name = frame.get("name").and_then(Value::as_str).unwrap_or("");
+            let frame_url = frame.get("url").and_then(Value::as_str).unwrap_or("");
+            if name.is_some_and(|value| value == frame_name)
+                || url.is_some_and(|value| frame_url.contains(value))
+            {
+                return Ok(Some(frame_id.clone()));
+            }
+        }
+        Ok(None)
+    }
+
+    let frame_tree = &tree_result["frameTree"];"#;
+    const UPSTREAM_SELECTOR_EVALUATE: &str = r##"        let js = format!(
+            r#"(() => {{
+                const el = document.querySelector({});
+                if (!el) return null;
+                if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {{
+                    return el.name || el.id || el.src || null;
+                }}
+                return null;
+            }})()"#,
+            serde_json::to_string(sel).unwrap_or_default()
+        );
+        let result = mgr.evaluate(&js, None).await?;
+        let frame_name = result.as_str().ok_or("Could not find frame for selector")?;
+        if let Some(frame_id) = find_frame(frame_tree, Some(frame_name), None) {"##;
+    const SCOPED_SELECTOR_EVALUATE: &str = r##"        let selector = serde_json::to_string(sel).unwrap_or_default();
+        let selector_body = format!(r#"(root) => {{
+            const el = root.querySelector({selector});
+            if (!el) return null;
+            if (el.tagName === 'IFRAME' || el.tagName === 'FRAME') {{
+                return el.name || el.id || el.src || null;
+            }}
+            return null;
+        }}"#);
+        let result = eval_body_in_active_frame(
+            mgr,
+            state.active_frame_id.as_deref(),
+            &session_id,
+            &state.iframe_sessions,
+            &selector_body,
+        )
+        .await?;
+        let frame_name = result.as_str().ok_or("Could not find frame for selector")?;
+        if let Some(frame_id) = find_frame(search_tree, Some(frame_name), None) {"##;
+
+    let mut rewritten = replace_once_named(
+        contents,
+        "native frame tree inspection",
+        UPSTREAM_REQUIRE_SELECTOR,
+        FRAME_TREE_SUPPORT,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "parent-scoped frame tree",
+        UPSTREAM_FRAME_TREE,
+        SCOPED_FRAME_TREE,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "out-of-process frame resolver",
+        UPSTREAM_FRAME_RESOLVER_END,
+        OOPIF_RESOLVER,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "parent-scoped frame selector",
+        UPSTREAM_SELECTOR_EVALUATE,
+        SCOPED_SELECTOR_EVALUATE,
+    );
+    rewritten = replace_n_named(
+        rewritten,
+        "resolved frame identity",
+        "return Ok(json!({ \"frame\": frame_name }));",
+        "return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));",
+        1,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "ref frame identity",
+        "state.active_frame_id = Some(frame_id.to_string());\n            return Ok(json!({ \"frame\": label }));",
+        "state.active_frame_id = Some(frame_id.to_string());\n            return Ok(json!({ \"frame\": label, \"frameId\": frame_id }));",
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "named frame identity",
+        "return Ok(json!({ \"frame\": label }));\n    }\n\n    Err(\"Frame not found\".to_string())",
+        "return Ok(json!({ \"frame\": label, \"frameId\": frame_id }));\n    }\n\n    Err(\"Frame not found; inspect the frame tree and choose one exact frame\".to_string())",
+    );
+    rewritten = replace_n_named(
+        rewritten,
+        "retained resolved frame identity",
+        "state.active_frame_id = Some(frame_id);",
+        "state.active_frame_id = Some(frame_id.clone());",
+        2,
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "selector OOPIF fallback",
+        "        if let Some(frame_id) = find_frame(search_tree, Some(frame_name), None) {\n            state.active_frame_id = Some(frame_id.clone());\n            return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));\n        }\n    }",
+        "        if let Some(frame_id) = find_frame(search_tree, Some(frame_name), None) {\n            state.active_frame_id = Some(frame_id.clone());\n            return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));\n        }\n        if let Some(frame_id) = find_oopif(mgr, &state.iframe_sessions, Some(frame_name), None).await? {\n            state.active_frame_id = Some(frame_id.clone());\n            return Ok(json!({ \"frame\": frame_name, \"frameId\": frame_id }));\n        }\n    }",
+    );
+    rewritten = replace_once_named(
+        rewritten,
+        "named OOPIF fallback",
+        "    if let Some(frame_id) = find_frame(frame_tree, name, url) {\n        let label = name.or(url).unwrap_or(\"frame\");\n        state.active_frame_id = Some(frame_id.clone());\n        return Ok(json!({ \"frame\": label, \"frameId\": frame_id }));\n    }",
+        "    if let Some(frame_id) = find_frame(search_tree, name, url) {\n        let label = name.or(url).unwrap_or(\"frame\");\n        state.active_frame_id = Some(frame_id.clone());\n        return Ok(json!({ \"frame\": label, \"frameId\": frame_id }));\n    }\n    if let Some(frame_id) = find_oopif(mgr, &state.iframe_sessions, name, url).await? {\n        let label = name.or(url).unwrap_or(\"frame\");\n        state.active_frame_id = Some(frame_id.clone());\n        return Ok(json!({ \"frame\": label, \"frameId\": frame_id }));\n    }",
+    );
+    rewritten
+}
+
+fn rewrite_scoped_waits(contents: String) -> String {
+    const UPSTREAM_WAIT_TEXT: &str = r#"    if let Some(text) = cmd.get("text").and_then(|v| v.as_str()) {
+        wait_for_text(&mgr.client, &session_id, text, timeout_ms).await?;
+        return Ok(json!({ "waited": "text", "text": text }));
+    }"#;
+    const SCOPED_WAIT_TEXT: &str = r#"    if let Some(text) = cmd.get("text").and_then(|v| v.as_str()) {
+        if state.active_frame_id.is_some() {
+            let text_json = serde_json::to_string(text).unwrap_or_default();
+            let body = format!("(root) => (root.body?.innerText || '').includes({text_json})");
+            poll_active_frame(
+                mgr,
+                state.active_frame_id.as_deref(),
+                &session_id,
+                &state.iframe_sessions,
+                &body,
+                timeout_ms,
+                |value| value.as_bool() == Some(true),
+            )
+            .await?;
+        } else {
+            wait_for_text(&mgr.client, &session_id, text, timeout_ms).await?;
+        }
+        return Ok(json!({ "waited": "text", "text": text }));
+    }"#;
+    const UPSTREAM_WAIT_URL: &str = r#"    if let Some(url_pattern) = cmd.get("url").and_then(|v| v.as_str()) {
+        wait_for_url(mgr, url_pattern, timeout_ms).await?;
+        return Ok(json!({ "waited": "url", "url": url_pattern }));
+    }"#;
+    const SCOPED_WAIT_URL: &str = r#"    if let Some(url_pattern) = cmd.get("url").and_then(|v| v.as_str()) {
+        if state.active_frame_id.is_some() {
+            poll_active_frame(
+                mgr,
+                state.active_frame_id.as_deref(),
+                &session_id,
+                &state.iframe_sessions,
+                "(root) => root.defaultView.location.href",
+                timeout_ms,
+                |value| value.as_str().is_some_and(|url| route_url_matches(url_pattern, url)),
+            )
+            .await?;
+        } else {
+            wait_for_url(mgr, url_pattern, timeout_ms).await?;
+        }
+        return Ok(json!({ "waited": "url", "url": url_pattern }));
+    }"#;
+    const UPSTREAM_WAIT_FUNCTION: &str = r#"    if let Some(fn_str) = cmd.get("function").and_then(|v| v.as_str()) {
+        wait_for_function(&mgr.client, &session_id, fn_str, timeout_ms).await?;
+        return Ok(json!({ "waited": "function" }));
+    }"#;
+    const SCOPED_WAIT_FUNCTION: &str = r#"    if let Some(fn_str) = cmd.get("function").and_then(|v| v.as_str()) {
+        if state.active_frame_id.is_some() {
+            let expression = serde_json::to_string(fn_str).unwrap_or_default();
+            let body = format!("(root) => !!root.defaultView.eval({expression})");
+            poll_active_frame(
+                mgr,
+                state.active_frame_id.as_deref(),
+                &session_id,
+                &state.iframe_sessions,
+                &body,
+                timeout_ms,
+                |value| value.as_bool() == Some(true),
+            )
+            .await?;
+        } else {
+            wait_for_function(&mgr.client, &session_id, fn_str, timeout_ms).await?;
+        }
+        return Ok(json!({ "waited": "function" }));
+    }"#;
+    const EVAL_HELPER_ANCHOR: &str = r#"async fn eval_body_in_active_frame(
+    mgr: &BrowserManager,"#;
+    const POLL_HELPER: &str = r#"async fn poll_active_frame<F>(
+    mgr: &BrowserManager,
+    frame_id: Option<&str>,
+    top_session: &str,
+    iframe_sessions: &HashMap<String, String>,
+    body: &str,
+    timeout_ms: u64,
+    matches: F,
+) -> Result<(), String>
+where
+    F: Fn(&Value) -> bool,
+{
+    let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_millis(timeout_ms);
+    loop {
+        let value = eval_body_in_active_frame(mgr, frame_id, top_session, iframe_sessions, body).await?;
+        if matches(&value) {
+            return Ok(());
+        }
+        if tokio::time::Instant::now() >= deadline {
+            return Err(format!("Wait timed out after {}ms", timeout_ms));
+        }
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+    }
+}
+
+async fn eval_body_in_active_frame(
+    mgr: &BrowserManager,"#;
+    const UPSTREAM_SNAPSHOT_ORIGIN: &str = r#"    let url = mgr.get_url().await.unwrap_or_default();
+
+    let refs: serde_json::Map<String, Value> = state"#;
+    const SCOPED_SNAPSHOT_ORIGIN: &str = r#"    let url = if state.active_frame_id.is_some() {
+        eval_body_in_active_frame(
+            mgr,
+            state.active_frame_id.as_deref(),
+            &session_id,
+            &state.iframe_sessions,
+            "(root) => root.defaultView.location.href",
+        )
+        .await?
+        .as_str()
+        .unwrap_or_default()
+        .to_string()
+    } else {
+        mgr.get_url().await.unwrap_or_default()
+    };
+
+    let refs: serde_json::Map<String, Value> = state"#;
+
+    let rewritten = replace_once_named(
+        contents,
+        "frame-scoped text wait",
+        UPSTREAM_WAIT_TEXT,
+        SCOPED_WAIT_TEXT,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "frame-scoped URL wait",
+        UPSTREAM_WAIT_URL,
+        SCOPED_WAIT_URL,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "frame-scoped function wait",
+        UPSTREAM_WAIT_FUNCTION,
+        SCOPED_WAIT_FUNCTION,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "frame wait polling helper",
+        EVAL_HELPER_ANCHOR,
+        POLL_HELPER,
+    );
+    replace_once_named(
+        rewritten,
+        "frame snapshot origin",
+        UPSTREAM_SNAPSHOT_ORIGIN,
+        SCOPED_SNAPSHOT_ORIGIN,
+    )
 }
 
 fn rewrite_confirmation_handling(contents: String) -> String {

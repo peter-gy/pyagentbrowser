@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, cast
-
-if TYPE_CHECKING:
-    from agentbrowser.browser import Browser
+from typing import Any, cast
 
 from agentbrowser._browser_common import is_stale_ref_error_code
 from agentbrowser.command_params import click_params, wait_params
@@ -51,7 +48,7 @@ class Ref:
     _ref: SnapshotRef
 
     @property
-    def browser(self) -> Browser:
+    def browser(self) -> Any:
         """Browser that captured this ref."""
         return self.snapshot.browser
 
@@ -173,6 +170,13 @@ class Ref:
     def scroll_into_view(self, *, wait: Wait | None = None) -> ActionResult[Ref, Snapshot]:
         """Scroll the ref into view and return transition evidence."""
         return self._act("scrollintoview", {"selector": self.selector}, wait=wait)
+
+    def content_frame(self) -> Any:
+        """Return the child frame owned by this inspected iframe element."""
+        frames = getattr(self.snapshot.browser, "frames", None)
+        if frames is None:
+            raise TypeError("the snapshot is not bound to a page or frame handle")
+        return frames.get(selector=self.selector)
 
     def text(self) -> str:
         """Return text content for the ref."""
@@ -326,7 +330,7 @@ class Ref:
 class Snapshot:
     """Immutable accessibility snapshot bound to its browser."""
 
-    browser: Browser
+    browser: Any
     _data: SnapshotData
 
     @property

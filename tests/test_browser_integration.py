@@ -34,6 +34,7 @@ from agentbrowser import (
     SessionOptions,
     SessionStatus,
     SnapshotDiff,
+    Wait,
 )
 from agentbrowser.cdp import CDPStaleObjectError
 
@@ -304,9 +305,17 @@ def _form_html() -> str:
 
 def _write_frame_site(site: LocalSite) -> None:
     (site.root / "index.html").write_text(
-        '<title>Host</title><iframe id="target" src="/frame.html"></iframe>'
+        "<title>Host</title>"
+        '<iframe title="Preview" hidden src="about:blank"></iframe>'
+        '<iframe id="target" name="preview" title="Preview" src="/frame.html"></iframe>'
     )
-    (site.root / "frame.html").write_text("<title>Nested</title><h1>Nested frame</h1>")
+    (site.root / "frame.html").write_text(
+        "<title>Nested</title><h1>Nested frame</h1>"
+        '<iframe id="story" name="story" sandbox="allow-scripts" src="/story.html"></iframe>'
+    )
+    (site.root / "story.html").write_text(
+        "<title>Story</title><button onclick=\"this.textContent='Changed'\">Change</button>"
+    )
 
 
 def _free_port() -> int:
@@ -377,6 +386,27 @@ def test_cdp_frame_resolution_uses_the_active_native_target(
 
         assert frame.url == f"{local_site.base_url}/frame.html"
         assert frame.evaluate("document.title") == "Nested"
+
+
+def test_page_and_nested_frame_handles_keep_one_explicit_scope(
+    chrome_path: Path,
+    local_site: LocalSite,
+) -> None:
+    _write_frame_site(local_site)
+    with _browser(chrome_path) as browser:
+        browser.open(f"{local_site.base_url}/index.html")
+
+        preview = browser.page.frames.get(selector="#target")
+        preview.wait_for_text("Nested frame")
+        assert [frame.frame_name for frame in preview.frames.tree()] == ["story"]
+        story = preview.frames.get(selector="#story")
+        before = story.observe()
+        result = before.one(role="button", name="Change").click(wait=Wait.text("Changed"))
+
+        assert preview.title() == "Nested"
+        assert story.title() == "Story"
+        assert result.after.one(role="button", name="Changed")
+        assert browser.page.title() == "Host"
 
 
 def test_completed_page_load_wait_returns_after_navigation(

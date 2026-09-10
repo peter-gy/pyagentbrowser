@@ -11,8 +11,8 @@ A `Browser` or `AsyncBrowser` controller owns one native session. The session or
 Browser or AsyncBrowser controller
   -> native session
      -> local browser process or attached browser endpoint
-        -> active tab
-           -> active document and selected native frame
+        -> page handle
+           -> main document or frame handle
 ```
 
 ## Canonical terms
@@ -22,9 +22,9 @@ Browser or AsyncBrowser controller
 | Controller | The Python `Browser` or `AsyncBrowser` object used by application code. |
 | Native session | The ordered command, policy, identity, and persistence boundary owned by the controller. |
 | Browser process | A locally launched Chrome or Chromium process. An attached endpoint is externally owned. |
-| Tab | A browser page target. One tab is active for the controller at a time. |
-| Native frame | The document frame selected through `browser.active_frame` for later engine actions. |
-| Direct CDP handle | A target, frame, or execution context from the direct Chrome DevTools Protocol API. Frame and context handles are generation-bound. |
+| Page | A handle bound to one browser page target. `browser.page` follows the active target and `browser.tabs.get()` binds an exact target. |
+| Frame | A handle bound to one child browsing context. Observation, queries, evaluation, waits, and ref actions carry its frame identity. |
+| Direct CDP handle | An execution context or raw protocol target from the direct Chrome DevTools Protocol API. Context handles are generation-bound. |
 
 ## Choose a startup mode
 

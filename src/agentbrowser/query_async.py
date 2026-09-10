@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self, TypeVar
-
-if TYPE_CHECKING:
-    from agentbrowser.browser_async import AsyncBrowser
+from typing import Any, Self, TypeVar
 
 from agentbrowser.command_params import optional
 from agentbrowser.models import NativeParseError
@@ -17,7 +14,7 @@ T = TypeVar("T")
 class AsyncQueries:
     """Factory for async live selector and semantic queries."""
 
-    browser: AsyncBrowser
+    browser: Any
 
     def css(self, selector: str) -> AsyncQuery:
         """Create a live CSS query."""
@@ -99,7 +96,7 @@ class AsyncQueries:
 class AsyncQuery:
     """Live async query resolved by the native engine at action time."""
 
-    browser: AsyncBrowser
+    browser: Any
     selector: str | None = None
     action: str | None = None
     params: Mapping[str, Any] | None = None

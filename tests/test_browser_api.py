@@ -14,6 +14,7 @@ from agentbrowser import (
     AccessibilityAudit,
     AgentBrowserError,
     AsyncBrowser,
+    AsyncFrame,
     AsyncQuery,
     AsyncRef,
     AsyncSnapshot,
@@ -23,8 +24,10 @@ from agentbrowser import (
     CloseResult,
     ConfirmationRequired,
     DashboardOptions,
+    Frame,
     LaunchOptions,
     NativeParseError,
+    Page,
     Query,
     ReadMode,
     ReadResult,
@@ -49,7 +52,7 @@ def _browser(native: Any) -> Browser:
 
 
 def _command_without_id(command: dict[str, Any]) -> dict[str, Any]:
-    return {key: value for key, value in command.items() if key != "id"}
+    return {key: value for key, value in command.items() if key != "id" and not key.startswith("_")}
 
 
 class _InvalidationProbe:
@@ -128,6 +131,138 @@ def _accessibility_audit_data() -> dict[str, Any]:
         ],
         "incomplete": [],
     }
+
+
+def _frame_tree() -> dict[str, Any]:
+    return {
+        "frame": {"id": "main", "name": "", "url": "https://example.com"},
+        "childFrames": [
+            {
+                "frame": {
+                    "id": "preview",
+                    "name": "preview",
+                    "url": "https://example.com/preview",
+                },
+                "childFrames": [
+                    {
+                        "frame": {
+                            "id": "story",
+                            "name": "story",
+                            "url": "https://example.com/story",
+                        }
+                    }
+                ],
+            }
+        ],
+    }
+
+
+def test_page_and_frame_handles_apply_explicit_native_scope() -> None:
+    def frame_reply(command: dict[str, Any]) -> dict[str, Any]:
+        if command.get("list"):
+            return {"frameTree": _frame_tree()}
+        return {"frame": "preview", "frameId": "preview"}
+
+    def evaluate_reply(command: dict[str, Any]) -> dict[str, Any]:
+        if "querySelector" in command["script"]:
+            return {"result": {"name": "preview", "url": "https://example.com/preview"}}
+        return {"result": "Preview", "origin": "https://example.com/preview"}
+
+    native = ScriptedNative(
+        {
+            "frame": frame_reply,
+            "snapshot": {
+                "snapshot": "button Save [ref=e1]",
+                "origin": "https://example.com/preview",
+                "refs": {"e1": {"role": "button", "name": "Save"}},
+            },
+            "evaluate": evaluate_reply,
+        }
+    )
+    browser = _browser(native)
+
+    assert isinstance(browser.page, Page)
+    frame = browser.page.frames.get(selector="#preview")
+    snapshot = frame.observe()
+    title = frame.evaluate("document.title")
+
+    assert isinstance(frame, Frame)
+    assert frame.frame_id == "preview"
+    assert snapshot.browser is frame
+    assert snapshot.one(role="button", name="Save").content_frame
+    assert title == "Preview"
+    assert native.commands[0]["_frameId"] == ""
+    assert native.commands[1]["_frameId"] == ""
+    assert native.commands[2]["_frameId"] == "preview"
+    assert native.commands[3]["_frameId"] == "preview"
+
+
+def test_frame_tree_is_scoped_to_direct_children() -> None:
+    native = ScriptedNative({"frame": {"frameTree": _frame_tree()}})
+    browser = _browser(native)
+
+    preview = browser.page.frames.get(name="preview")
+    story = preview.frames.get(name="story")
+
+    assert preview.parent_frame_id == "main"
+    assert story.parent_frame_id == "preview"
+
+
+def test_tabs_get_returns_page_bound_to_exact_target() -> None:
+    native = ScriptedNative(
+        {
+            "tab_list": {
+                "tabs": [
+                    {
+                        "tabId": "t1",
+                        "targetId": "0123456789ABCDEF",
+                        "url": "https://example.com",
+                        "title": "Example",
+                        "active": True,
+                    }
+                ]
+            },
+            "title": {"title": "Example"},
+        }
+    )
+    browser = _browser(native)
+
+    page = browser.tabs.get(id="t1")
+
+    assert page.title() == "Example"
+    assert native.commands[1]["_targetId"] == "0123456789ABCDEF"
+    assert native.commands[1]["_frameId"] == ""
+
+
+def test_async_frame_handles_apply_the_same_explicit_scope() -> None:
+    def frame_reply(command: dict[str, Any]) -> dict[str, Any]:
+        if command.get("list"):
+            return {"frameTree": _frame_tree()}
+        return {"frame": "preview", "frameId": "preview"}
+
+    def evaluate_reply(command: dict[str, Any]) -> dict[str, Any]:
+        if "querySelector" in command["script"]:
+            return {"result": {"name": "preview", "url": "https://example.com/preview"}}
+        return {"result": "Preview", "origin": "https://example.com/preview"}
+
+    native = ScriptedNative(
+        {
+            "frame": frame_reply,
+            "evaluate": evaluate_reply,
+        },
+        default={},
+    )
+
+    async def run() -> None:
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        frame = await browser.page.frames.get(selector="#preview")
+
+        assert isinstance(frame, AsyncFrame)
+        assert await frame.evaluate("document.title") == "Preview"
+        assert native.commands[-1]["_frameId"] == "preview"
+        await browser.close()
+
+    asyncio.run(run())
 
 
 def test_browser_core_is_agent_first_and_returns_typed_values() -> None:
@@ -820,11 +955,6 @@ def test_typed_namespaces_decode_successful_native_data(
             lambda browser: browser.page.set_content("<h1>Ready</h1>"),
             "setcontent",
             {"html": "<h1>Ready</h1>"},
-        ),
-        (
-            lambda browser: browser.active_frame.select(name="checkout"),
-            "frame",
-            {"name": "checkout"},
         ),
         (
             lambda browser: browser.clipboard.write("copied"),

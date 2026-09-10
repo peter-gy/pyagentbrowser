@@ -5,25 +5,30 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 
 # Capability namespace reference
 
-`Browser` and `AsyncBrowser` expose the same 23 capability namespaces. Asynchronous methods await the same operation and return the same model unless this page states a difference.
+`Browser` and `AsyncBrowser` expose the same capability namespaces. Asynchronous methods await the same operation and return the same model unless this page states a difference.
 
 | Namespace | Job |
 | --- | --- |
-| `page` | Active document, navigation, content, reading, and waits |
-| `find` | Live element queries |
+| `page` | Page identity, navigation, frames, content, reading, queries, capture, and waits |
+| `find` | Live element queries for the active page |
 | `capture`, `diff`, `downloads` | Files and page evidence |
 | `tabs`, `session` | Browser targets and session status |
 | `cookies`, `storage`, `state` | Live and serialized browser data |
 | `network` | Routing, requests, credentials, and HAR capture |
 | `keyboard`, `mouse`, `clipboard` | User input |
 | `emulation` | Device and environment settings |
-| `scripts`, `active_frame` | Page code and native frame selection |
+| `scripts` | Page code and initialization scripts |
 | `diagnostics`, `dialogs` | Runtime inspection and JavaScript dialogs |
 | `webmcp`, `dashboard` | Agent tools and session observability |
 | `cdp` | Direct Chrome DevTools Protocol access |
 | `native` | Complete pinned engine protocol |
 
 ## `browser.page`
+
+`browser.page` follows the active tab. `browser.tabs.get()` returns a `Page`
+bound to one exact browser target. `page.frames.get()` returns a `Frame` whose
+observation, queries, evaluation, waits, capture, and ref actions share one
+frame scope.
 
 | Method | Contract |
 | --- | --- |
@@ -41,6 +46,9 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 | `wait_for_url(pattern, *, timeout_ms=None)` | Wait for a URL pattern. |
 | `wait_for_function(predicate, *, timeout_ms=None)` | Wait for a JavaScript predicate. |
 | `wait_for_load_state(state="load")` | Wait for a load state. |
+| `observe(spec=None)` | Capture a `Snapshot` bound to this page or frame. |
+| `frames.tree()` | Return direct child frame handles with browser frame IDs, names, URLs, and parent IDs. |
+| `frames.get(*, selector=None, name=None, url=None)` | Resolve exactly one direct child frame. |
 
 ## `browser.find`
 
@@ -75,6 +83,7 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 | Method | Contract |
 | --- | --- |
 | `list()` | Return open tabs as `tuple[TabInfo, ...]`. |
+| `get(*, id=None, label=None, index=None)` | Return a `Page` bound to one exact browser target. |
 | `new(url=None, *, label=None)` | Create a tab. The optional URL is forwarded as given. |
 | `open(url, *, label=None, reuse=True, wait_until="load")` | Normalize and open a URL. Reuse a matching label by default. `wait_until` applies to reused-tab navigation, while new-tab creation requires an explicit readiness wait. |
 | `switch(*, id=None, label=None, index=None)` | Switch by exactly one selector and return `TabSwitchResult`. `index=1` maps to stable ID `t1` and is not positional. |
@@ -179,10 +188,6 @@ If `response=` is present, it takes precedence over response shorthand fields.
 | `add_style(content=None, *, url=None)` | Inject CSS into the current document. |
 
 Supply one inline value or URL according to the method signature.
-
-## `browser.active_frame`
-
-`select(*, selector=None, name=None, url=None)` selects the native frame used by later engine actions. `main()` returns selection to the main frame.
 
 ## `browser.dialogs` and `browser.dashboard`
 

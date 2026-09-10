@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from pathlib import Path
@@ -84,6 +85,30 @@ DEFAULT_SCREENSHOT_WAIT_MS = 100
 T = TypeVar("T")
 
 
+class _FrameLike(Protocol):
+    frame_name: str
+    frame_url: str
+
+
+PageT = TypeVar("PageT", bound=_FrameLike)
+
+
+@dataclass(frozen=True, slots=True)
+class _ScopedBrowser:
+    controller: Any
+    target_id: str | None
+    frame_id: str | None
+
+    def _command(self, action: str, **params: Any) -> Any:
+        if self.target_id is not None:
+            params["_targetId"] = self.target_id
+        params["_frameId"] = self.frame_id or ""
+        return self.controller._command(action, **params)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.controller, name)
+
+
 def _required_string(data: Mapping[str, Any], field: str, *, action: str) -> str:
     value = data.get(field)
     if not isinstance(value, str):
@@ -123,7 +148,7 @@ class CommandTarget(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class Page:
-    """Page navigation, document, and wait helpers.
+    """Operations bound to one browser page and its main document.
 
     Parameters
     ----------
@@ -132,6 +157,56 @@ class Page:
     """
 
     browser: Any
+    target_id: str | None = None
+    frame_id: str | None = None
+    frame_name: str = ""
+    frame_url: str = ""
+    parent_frame_id: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.browser, _ScopedBrowser):
+            object.__setattr__(
+                self,
+                "browser",
+                _ScopedBrowser(self.browser, self.target_id, self.frame_id),
+            )
+
+    def _command(self, action: str, **params: Any) -> Any:
+        return self.browser._command(action, **params)
+
+    @property
+    def find(self) -> Any:
+        """Return live queries bound to this document."""
+        from agentbrowser.query import Queries
+
+        return Queries(cast(Any, self))
+
+    @property
+    def capture(self) -> Capture:
+        """Return capture operations bound to this document."""
+        return Capture(cast(CommandTarget, self))
+
+    @property
+    def frames(self) -> Frames:
+        """Return child-frame discovery bound to this document."""
+        return Frames(self)
+
+    def observe(self, spec: Any = None) -> Any:
+        """Capture an accessibility snapshot bound to this document."""
+        from agentbrowser._evidence import Snapshot
+        from agentbrowser.models import SnapshotSpec, snapshot_from_data
+
+        capture_spec = spec or SnapshotSpec()
+        data = self._command(
+            "snapshot",
+            _decode=lambda value: snapshot_from_data(value, spec=capture_spec),
+            selector=optional(capture_spec.selector),
+            interactive=capture_spec.interactive,
+            compact=capture_spec.compact,
+            maxDepth=optional(capture_spec.max_depth),
+            urls=capture_spec.urls,
+        )
+        return Snapshot(self, data)
 
     def open(self, url: str, *, wait_until: LoadState = "load") -> None:
         """Navigate the current page to a URL.
@@ -319,6 +394,163 @@ class Page:
         self.browser._command("wait", _decode=_none, **wait_params(None, load_state=state))
 
 
+class Frame(Page):
+    """Operations bound to one child browsing context."""
+
+    def open(self, url: str, *, wait_until: LoadState = "load") -> None:
+        del url, wait_until
+        raise TypeError("Frame.open() cannot navigate a child browsing context")
+
+    def title(self) -> str:
+        """Return this frame document's title."""
+        return cast(str, self.evaluate("document.title"))
+
+    def url(self) -> str:
+        """Return this frame document's current URL."""
+        return cast(str, self.evaluate("location.href"))
+
+    def content(self) -> str:
+        """Return this frame document's HTML."""
+        return cast(str, self.evaluate("document.documentElement.outerHTML"))
+
+
+@dataclass(frozen=True, slots=True)
+class Frames:
+    """Discover child browsing contexts from one page or frame."""
+
+    page: Page
+
+    def tree(self) -> tuple[Frame, ...]:
+        """Return descendant frames with stable browser frame identities."""
+        data = self.page._command("frame", _decode=lambda value: value, list=True)
+        root = data.get("frameTree")
+        records: list[tuple[Mapping[str, Any], str | None]] = []
+        _collect_frame_records(root, None, records)
+        parent_scope = self.page.frame_id
+        oopif_frames = data.get("oopifFrames")
+        if isinstance(oopif_frames, list):
+            for raw in oopif_frames:
+                if isinstance(raw, Mapping) and isinstance(raw.get("id"), str):
+                    parent_id = raw.get("parentId")
+                    records.append(
+                        (
+                            raw,
+                            str(parent_id) if isinstance(parent_id, str) else parent_scope,
+                        )
+                    )
+        records = list({str(raw["id"]): (raw, parent_id) for raw, parent_id in records}.values())
+        return tuple(
+            Frame(
+                self.page.browser.controller,
+                target_id=self.page.target_id,
+                frame_id=str(raw["id"]),
+                frame_name=str(raw.get("name", "")),
+                frame_url=str(raw.get("url", "")),
+                parent_frame_id=parent_id,
+            )
+            for raw, parent_id in records
+            if parent_id is not None and (parent_scope is None or parent_id == parent_scope)
+        )
+
+    def get(
+        self,
+        *,
+        selector: str | None = None,
+        name: str | None = None,
+        url: str | None = None,
+    ) -> Frame:
+        """Return one exact child frame selected by element, name, or URL."""
+        selected = [value is not None for value in (selector, name, url)]
+        if sum(selected) != 1:
+            raise ValueError("pass exactly one of selector, name, or url")
+        candidates = self.tree()
+        if selector is not None:
+            if selector.startswith("@"):
+                data = self.page._command(
+                    "frame",
+                    selector=selector,
+                    _decode=lambda value: value,
+                )
+                frame_id = data.get("frameId")
+                matches = [frame for frame in candidates if frame.frame_id == frame_id]
+            else:
+                selector_json = json.dumps(selector)
+                owner = self.page.evaluate(
+                    f"""(() => {{
+                        const element = document.querySelector({selector_json});
+                        if (!element || !['IFRAME', 'FRAME'].includes(element.tagName)) return null;
+                        return {{name: element.name || element.id || '', url: element.src || ''}};
+                    }})()"""
+                )
+                matches = _frames_for_owner(candidates, owner)
+                if not matches and isinstance(owner, Mapping):
+                    data = self.page._command(
+                        "frame",
+                        selector=selector,
+                        _decode=lambda value: value,
+                    )
+                    frame_id = data.get("frameId")
+                    if isinstance(frame_id, str):
+                        matches = [
+                            Frame(
+                                self.page.browser.controller,
+                                target_id=self.page.target_id,
+                                frame_id=frame_id,
+                                frame_name=str(owner.get("name", "")),
+                                frame_url=str(owner.get("url", "")),
+                                parent_frame_id=self.page.frame_id,
+                            )
+                        ]
+        elif name is not None:
+            matches = [frame for frame in candidates if frame.frame_name == name]
+        else:
+            matches = [frame for frame in candidates if frame.frame_url == url]
+        criteria = selector if selector is not None else name if name is not None else url
+        if not matches:
+            available = ", ".join(
+                f"{frame.frame_id}:{frame.frame_name or frame.frame_url or '<blank>'}"
+                for frame in candidates[:8]
+            )
+            raise LookupError(
+                f"no child frame matched {criteria!r}; available frames: {available or '<none>'}"
+            )
+        if len(matches) > 1:
+            ids = ", ".join(frame.frame_id or "" for frame in matches)
+            raise LookupError(f"multiple child frames matched {criteria!r}: {ids}")
+        return matches[0]
+
+
+def _frames_for_owner(candidates: Sequence[PageT], owner: Any) -> list[PageT]:
+    if not isinstance(owner, Mapping):
+        return []
+    owner_name = owner.get("name")
+    owner_url = owner.get("url")
+    return [
+        frame
+        for frame in candidates
+        if (owner_name and frame.frame_name == owner_name)
+        or (owner_url and frame.frame_url == owner_url)
+    ]
+
+
+def _collect_frame_records(
+    tree: Any,
+    parent_id: str | None,
+    records: list[tuple[Mapping[str, Any], str | None]],
+) -> None:
+    if not isinstance(tree, Mapping):
+        return
+    raw = tree.get("frame")
+    if not isinstance(raw, Mapping) or not isinstance(raw.get("id"), str):
+        return
+    frame_id = str(raw["id"])
+    records.append((raw, parent_id))
+    children = tree.get("childFrames")
+    if isinstance(children, list):
+        for child in children:
+            _collect_frame_records(child, frame_id, records)
+
+
 @dataclass(frozen=True, slots=True)
 class Capture:
     """Screenshot and PDF capture helpers."""
@@ -479,6 +711,32 @@ class Tabs:
     def list(self) -> tuple[TabInfo, ...]:
         """Return open tabs."""
         return self.browser._command("tab_list", _decode=tabs_from_data)
+
+    def get(
+        self,
+        *,
+        id: str | None = None,
+        label: str | None = None,
+        index: int | None = None,
+    ) -> Page:
+        """Return a page handle bound to one exact browser target."""
+        selected = [value is not None for value in (id, label, index)]
+        if sum(selected) != 1:
+            raise ValueError("pass exactly one of id, label, or index")
+        tabs = self.list()
+        if index is not None:
+            matches = [tabs[index]] if 0 <= index < len(tabs) else []
+        elif label is not None:
+            matches = [tab for tab in tabs if tab.label == label]
+        else:
+            matches = [tab for tab in tabs if id in {tab.id, tab.target_id}]
+        if not matches:
+            raise LookupError("no browser page matched the requested tab")
+        if len(matches) > 1:
+            raise LookupError("multiple browser pages matched the requested tab")
+        tab = matches[0]
+        target_id = tab.target_id or tab.id
+        return Page(self.browser, target_id=target_id)
 
     def new(self, url: str | None = None, *, label: str | None = None) -> TabInfo:
         """Open a new tab and return its metadata."""
@@ -1085,33 +1343,6 @@ class CDP:
     ) -> Any:
         """Return a CDP target handle selected by label, URL, or target id."""
         return self.browser._cdp().target(label=label, url=url, target_id=target_id)
-
-
-@dataclass(frozen=True, slots=True)
-class ActiveFrame:
-    """Native active-frame selection helpers."""
-
-    browser: CommandTarget
-
-    def select(
-        self,
-        *,
-        selector: str | None = None,
-        name: str | None = None,
-        url: str | None = None,
-    ) -> None:
-        """Select the active native frame."""
-        self.browser._command(
-            "frame",
-            _decode=_none,
-            selector=optional(selector),
-            name=optional(name),
-            url=optional(url),
-        )
-
-    def main(self) -> None:
-        """Select the main native frame."""
-        self.browser._command("mainframe", _decode=_none)
 
 
 @dataclass(frozen=True, slots=True)

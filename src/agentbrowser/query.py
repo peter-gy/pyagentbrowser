@@ -2,10 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Self, TypeVar
-
-if TYPE_CHECKING:
-    from agentbrowser.browser import Browser
+from typing import Any, Self, TypeVar
 
 from agentbrowser.command_params import optional
 from agentbrowser.models import NativeParseError
@@ -17,7 +14,7 @@ T = TypeVar("T")
 class Queries:
     """Factory for live selector and semantic queries."""
 
-    browser: Browser
+    browser: Any
 
     def css(self, selector: str) -> Query:
         """Create a live CSS query."""
@@ -93,7 +90,7 @@ class Queries:
 class Query:
     """Live element query resolved by the native engine at action time."""
 
-    browser: Browser
+    browser: Any
     selector: str | None = None
     action: str | None = None
     params: Mapping[str, Any] | None = None

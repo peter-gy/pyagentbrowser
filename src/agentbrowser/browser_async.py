@@ -32,8 +32,6 @@ from agentbrowser.command_params import (
     viewport_params,
 )
 from agentbrowser.domains_async import (
-    AsyncActiveFrame,
-    AsyncCapture,
     AsyncCDP,
     AsyncClipboard,
     AsyncCommandTarget,
@@ -78,7 +76,6 @@ from agentbrowser.models import (
     path_value,
     snapshot_from_data,
 )
-from agentbrowser.query_async import AsyncQueries
 from agentbrowser.session import (
     _checked_response,
     _require_response_data_mapping,
@@ -446,8 +443,8 @@ class AsyncBrowser:
 
         command_target = cast(AsyncCommandTarget, weak_proxy(self))
         browser_proxy = cast(AsyncBrowser, weak_proxy(self))
-        self.active_frame = AsyncActiveFrame(command_target)
-        self.capture = AsyncCapture(command_target)
+        self.page = AsyncPage(self)
+        self.capture = self.page.capture
         self.cdp = AsyncCDP(browser_proxy)
         self.clipboard = AsyncClipboard(command_target)
         self.cookies = AsyncCookies(command_target)
@@ -457,12 +454,11 @@ class AsyncBrowser:
         self.diff = AsyncDiff(command_target)
         self.downloads = AsyncDownloads(command_target)
         self.emulation = AsyncEmulation(browser_proxy)
-        self.find = AsyncQueries(browser_proxy)
+        self.find = self.page.find
         self.keyboard = AsyncKeyboard(command_target)
         self.mouse = AsyncMouse(command_target)
         self.native = AsyncNative(browser_proxy)
         self.network = AsyncNetwork(command_target)
-        self.page = AsyncPage(browser_proxy)
         self.scripts = AsyncScripts(command_target)
         self.session = AsyncSession(command_target)
         self.state = AsyncState(command_target)
@@ -548,13 +544,7 @@ class AsyncBrowser:
         spec: SnapshotSpec | None = None,
     ) -> AsyncSnapshot:
         """Capture an accessibility snapshot bound to this browser."""
-        try:
-            data = await self._snapshot_data(spec or SnapshotSpec())
-        except ConfirmationRequired as error:
-            if error.pending is not None:
-                error.pending = error.pending.map(lambda result: AsyncSnapshot(self, result))
-            raise
-        return AsyncSnapshot(self, data)
+        return await self.page.observe(spec)
 
     async def open(self, url: str, *, wait_until: LoadState = "load") -> Self:
         """Navigate the active tab and return this browser."""

@@ -90,6 +90,8 @@ Direct frame and execution-context handles are bound to a controller generation.
 
 Resolve the frame or context again after one of those transitions. A `browser.cdp.target()` handle resolves its selected page target again when an operation runs. Reusing an invalidated frame or context raises `CDPStaleObjectError`.
 
-`browser.active_frame` selects the native frame used by later engine actions. Direct CDP frame handles select a protocol execution target. Keep those two frame systems distinct.
+Use `page.frames` for ordinary frame observation, queries, evaluation, waits,
+and capture. Direct CDP execution contexts remain available for protocol work
+that needs an isolated world or raw Chrome method.
 
 See [Browser controllers](/reference/browser) for attachment configuration and [Models and errors](/reference/models) for direct protocol failures.

@@ -95,18 +95,19 @@ browser.scripts.remove_init(identifier)
 
 `scripts.add()` injects JavaScript into the current document. `scripts.add_style()` injects CSS. Each accepts inline content or a URL according to its signature.
 
-## Select a native frame
+## Work in a child frame
 
 ```python
 browser.page.set_content("""
     <iframe name="checkout" srcdoc="<button>Pay</button>"></iframe>
 """)
-browser.active_frame.select(selector="iframe[name='checkout']")
-browser.find.role("button", name="Pay").click()
-browser.active_frame.main()
+checkout = browser.page.frames.get(selector="iframe[name='checkout']")
+checkout.find.role("button", name="Pay").click()
+print(checkout.evaluate("document.title"))
 ```
 
-`browser.active_frame` changes the frame used by later native engine actions. Direct CDP frame handles belong to the separate [CDP API](/guides/cdp).
+The `Frame` carries its browser frame identity through queries, evaluation,
+waits, snapshots, and ref actions. `frame.frames` resolves nested child frames.
 
 ## Emulate the browser environment
 

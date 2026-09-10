@@ -8,7 +8,8 @@ from agentbrowser._version import PACKAGE_NAME, PACKAGE_VERSION, UPSTREAM_COMMIT
 from agentbrowser.agent_async import AsyncRef, AsyncSnapshot, AsyncStaleRefError
 from agentbrowser.browser import Browser, PendingAction
 from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
-from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
+from agentbrowser.domains import Frame, Page
+from agentbrowser.domains_async import AsyncFrame, AsyncPage
 from agentbrowser.host import (
     AgentHost,
     AttachedTarget,
@@ -18,6 +19,7 @@ from agentbrowser.host import (
     ImageDelivery,
     OpenTarget,
 )
+from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
 from agentbrowser.launch import (
     CDPTarget,
     LaunchOptions,
@@ -82,13 +84,15 @@ __all__ = [
     "ActionTransitionError",
     "AgentBrowserError",
     "AgentHost",
-    "AttachedTarget",
     "AsyncBrowser",
+    "AsyncFrame",
+    "AsyncPage",
     "AsyncPendingAction",
     "AsyncQuery",
     "AsyncRef",
     "AsyncSnapshot",
     "AsyncStaleRefError",
+    "AttachedTarget",
     "Browser",
     "BrowserError",
     "BrowserInstallError",
@@ -101,6 +105,7 @@ __all__ = [
     "Cookie",
     "DashboardOptions",
     "ExecutionContext",
+    "Frame",
     "HarContentMode",
     "ImageContent",
     "ImageDelivery",
@@ -109,6 +114,7 @@ __all__ = [
     "NativeParseError",
     "NetworkRequest",
     "OpenTarget",
+    "Page",
     "PendingAction",
     "ProxyConfig",
     "Query",

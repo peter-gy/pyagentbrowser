@@ -103,6 +103,9 @@ def attach(
     browser = Browser.attach(target.connection, launch=launch, session=options)
     try:
         browser.tabs.switch(id=target.page_id)
+        browser.page = browser.tabs.get(id=target.page_id)
+        browser.find = browser.page.find
+        browser.capture = browser.page.capture
     except BaseException:
         browser.close()
         raise

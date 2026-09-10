@@ -67,8 +67,9 @@ the owning source.
 | Browser process           | A locally launched Chrome, Chromium, or Lightpanda engine process                               |
 | Attached browser endpoint | An externally owned Chrome DevTools Protocol connection target                                  |
 | Tab                       | A browser page target selected by native ID, label, index, or CDP target ID                     |
-| Native frame              | The frame selected for later engine actions through `browser.active_frame`                      |
-| Direct CDP handle         | A page-target selector or a generation-bound frame or execution context from `agentbrowser.cdp` |
+| Page handle               | Operations bound to one browser page target                                                     |
+| Frame handle              | Operations bound to one child browsing context                                                  |
+| Direct CDP handle         | A page-target selector or generation-bound execution context from `agentbrowser.cdp`             |
 | Explicit saved state      | A file managed through `browser.state`                                                          |
 | Keyed restore             | Automatic persistence configured through `RestoreOptions`                                       |
 | Dashboard                 | The external observability UI                                                                   |

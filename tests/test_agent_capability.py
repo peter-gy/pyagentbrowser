@@ -4,8 +4,10 @@ import pydoc
 import subprocess
 import sys
 import weakref
+from collections.abc import Iterator
 from gc import collect
 from pathlib import Path
+from types import SimpleNamespace
 
 import agent_plugins
 import pytest
@@ -30,7 +32,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
-def close_agent_controllers() -> None:
+def close_agent_controllers() -> Iterator[None]:
     browser_agent.close_all()
     yield
     browser_agent.close_all()
@@ -132,8 +134,14 @@ def test_attach_selects_the_exact_page(monkeypatch: pytest.MonkeyPatch) -> None:
     selected: list[str] = []
 
     class FakeTabs:
+        page = SimpleNamespace(find=object(), capture=object())
+
         def switch(self, *, id: str) -> None:
             selected.append(id)
+
+        def get(self, *, id: str) -> object:
+            selected.append(f"get:{id}")
+            return self.page
 
     class FakeBrowser:
         closed = False
@@ -155,7 +163,7 @@ def test_attach_selects_the_exact_page(monkeypatch: pytest.MonkeyPatch) -> None:
     browser = browser_agent.attach("application", target)
 
     assert attached == [target.connection]
-    assert selected == [target.page_id]
+    assert selected == [target.page_id, f"get:{target.page_id}"]
     assert browser_agent.get("application") is browser
 
 
