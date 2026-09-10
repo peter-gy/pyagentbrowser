@@ -1,0 +1,73 @@
+docs/reference/browser.md
+  s_52726700b68901::t_efa72488cbbc48 62-66
+tests/test_agent_capability.py
+  s_52726700b68901::t_91bdac649dd1d2 189-191
+src/agentbrowser/cdp/client.py
+  s_52726700b68901::t_5cbec54915f10d 263,265-267,275,277-279
+src/agentbrowser/browser.py
+  s_52726700b68901::t_6b939d8cec8ca4 513-517,519-523
+  s_52726700b68901::t_7610ea31945767 88,512,518
+src/agentbrowser/domains_async.py
+  s_52726700b68901::t_d09923de468290 52,157-160,606-610,623-624
+  s_52726700b68901::t_9b3fca571005af 65,178-182,521-558
+tests/test_browser_api.py
+  s_52726700b68901::t_2fee5937951144 262
+  s_52726700b68901::t_507cf8db6c3ffb 27-29,41,241-242,250-261,263-304
+  s_52726700b68901::t_30c1ea4b6a87ba 243-249
+crates/agent-browser-adapter/build.rs
+  s_52726700b68901::t_005f3e45d7b27c 383-394,399-404
+  s_52726700b68901::t_dc94d310af1852 376
+  s_52726700b68901::t_01372a087fa9ec 353,360-375,377-382,395-398,405-460
+  s_52726700b68901::t_5c504c7e5febb6 186
+src/agentbrowser/__init__.py
+  s_52726700b68901::t_20e4df13d2f258 29,45,57-58,102,113-116,120-121,141-142
+  s_52726700b68901::t_25303120dccc20 13
+docs/guides/agent-skills.md
+  s_52726700b68901::t_efa72488cbbc48 50-77
+docs/guides/read-and-capture.md
+  s_52726700b68901::t_efa72488cbbc48 50-51,60-63,65-73
+docs/troubleshooting.md
+  s_52726700b68901::t_efa72488cbbc48 102-106
+src/agentbrowser/domains.py
+  s_52726700b68901::t_d8d91765028e88 45,181-184,658-662,675-676
+  s_52726700b68901::t_b8d1e694271571 59-60,202-206,567-610
+src/agentbrowser/health.py
+  s_52726700b68901::t_c4c51a77f03ed1 1-94,97-108
+  s_52726700b68901::t_1331efbe6c8bcf 95-96
+src/agentbrowser/manifest.py
+  s_52726700b68901::t_1331efbe6c8bcf 5,8,86-87,89-90
+  s_52726700b68901::t_3bb42bd1cb9c5e 1-4,6-7,9-85,88,91
+src/agentbrowser/browser_async.py
+  s_52726700b68901::t_6b939d8cec8ca4 494-498,500-504
+  s_52726700b68901::t_7610ea31945767 88,493,499
+src/agentbrowser/models.py
+  s_52726700b68901::t_a3e1e30c86e519 875-905,1112,1160-1164,1217
+  s_52726700b68901::t_1332d72385ca4a 15-16,1159
+tests/test_browser_integration.py
+  s_52726700b68901::t_ae99e87b358b6b 318,415
+  s_52726700b68901::t_f92f65e1619e21 406-409,416-418
+  s_52726700b68901::t_a2ebb24a2ab52c 410
+src/agentbrowser/host.py
+  s_52726700b68901::t_bb9c84561b0ec1 75-80,82-85
+  s_52726700b68901::t_562134d9329bec 81
+docs/guides/interact.md
+  s_52726700b68901::t_efa72488cbbc48 112-122
+docs/reference/models.md
+  s_52726700b68901::t_efa72488cbbc48 92-94,102,111-115
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "6d77e567e1f502b8658b7bec6473e1344936fb66",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
