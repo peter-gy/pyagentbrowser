@@ -23,32 +23,29 @@ help(browser_agent)
 
 `help(browser_agent)` renders a short SDK workflow and the paths to the Agent Plugin resources installed with the same pyagentbrowser version.
 
-Use a named module-owned connection when browser work spans code-mode calls:
+Create a named module-owned controller when browser work spans code-mode calls:
 
 ```python
-browser = browser_agent.connect("research")
+browser = browser_agent.create("research")
 browser.open("https://example.com")
 page = browser.observe()
 print(page.origin)
 print(page.text)
 
 # In a later code-mode call
-browser = browser_agent.connect("research")
+browser = browser_agent.get("research")
 
 # After the final call
-browser_agent.disconnect("research")
+browser_agent.close("research")
 ```
 
-Use `browser_agent.connections()` to inspect every retained name and controller.
-Call `browser_agent.disconnect_all()` after a task that created several named
-connections.
+Use `browser_agent.names()` to inspect registered controller names. Call
+`browser_agent.close_all()` after a task that created several controllers.
 
-Pass `session=agentbrowser.SessionOptions(...)` on the first `connect()` call
-when the task needs domain restrictions, confirmation policy, or another
-session option. Supplying different options for the same live connection raises
-`ValueError` with the `disconnect()` recovery call. If user code closes the
-controller directly, the next optionless `connect()` preserves those session
-options. `disconnect()` is the explicit boundary for forgetting them.
+Pass `session=agentbrowser.SessionOptions(...)` to `create()`, `open()`, or
+`attach()` when the task needs domain restrictions, confirmation policy, or
+another session option. Duplicate names raise `ValueError`. `get()` retrieves
+one open controller and `close()` releases it.
 
 ```python
 plugin = browser_agent.agent_plugin()

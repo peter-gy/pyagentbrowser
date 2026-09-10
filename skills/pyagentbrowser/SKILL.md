@@ -51,15 +51,15 @@ module can own a controller across calls:
 import agentbrowser as ab
 import agentbrowser.agent as browser_agent
 
-browser = browser_agent.connect("research")
+browser = browser_agent.create("research")
 ```
 
-Use `browser_agent.connect("research")` again in later calls. End the task with
-`browser_agent.disconnect("research")`. Pass `session=ab.SessionOptions(...)` on
-the first `connect()` call when the task needs an allowlist, confirmation
-policy, timeout, pinned tab, restore policy, or dashboard stream. Use
-`browser_agent.connections()` to inspect retained names and
-`browser_agent.disconnect_all()` when a task created several connections.
+Use `browser_agent.get("research")` in later calls. End the task with
+`browser_agent.close("research")`. Pass `session=ab.SessionOptions(...)` to
+`create()`, `open()`, or `attach()` when the task needs an allowlist,
+confirmation policy, timeout, pinned tab, restore policy, or dashboard stream.
+Use `browser_agent.names()` to inspect retained names and
+`browser_agent.close_all()` when a task created several controllers.
 
 ## Choose an element interface
 

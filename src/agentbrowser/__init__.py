@@ -9,6 +9,15 @@ from agentbrowser.agent_async import AsyncRef, AsyncSnapshot, AsyncStaleRefError
 from agentbrowser.browser import Browser, PendingAction
 from agentbrowser.browser_async import AsyncBrowser, AsyncPendingAction
 from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
+from agentbrowser.host import (
+    AgentHost,
+    AttachedTarget,
+    BrowserTarget,
+    ExecutionContext,
+    ImageContent,
+    ImageDelivery,
+    OpenTarget,
+)
 from agentbrowser.launch import (
     CDPTarget,
     LaunchOptions,
@@ -72,6 +81,8 @@ __all__ = [
     "ActionResult",
     "ActionTransitionError",
     "AgentBrowserError",
+    "AgentHost",
+    "AttachedTarget",
     "AsyncBrowser",
     "AsyncPendingAction",
     "AsyncQuery",
@@ -82,17 +93,22 @@ __all__ = [
     "BrowserError",
     "BrowserInstallError",
     "BrowserResponse",
+    "BrowserTarget",
     "CDPTarget",
     "CloseResult",
     "ConfirmationRequired",
     "ConsoleMessage",
     "Cookie",
     "DashboardOptions",
+    "ExecutionContext",
     "HarContentMode",
+    "ImageContent",
+    "ImageDelivery",
     "InstallResult",
     "LaunchOptions",
     "NativeParseError",
     "NetworkRequest",
+    "OpenTarget",
     "PendingAction",
     "ProxyConfig",
     "Query",

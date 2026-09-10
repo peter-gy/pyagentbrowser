@@ -74,7 +74,7 @@ assert {path.relative_to(plugin.path).as_posix() for path in plugin.files} == {
     "skills/pyagentbrowser/references/api-map.md",
     "skills/pyagentbrowser/references/lifecycle-and-safety.md",
 }
-assert 'browser = browser_agent.connect("research")' in pydoc.render_doc(browser_agent)
+assert 'browser = browser_agent.create("research")' in pydoc.render_doc(browser_agent)
 
 browser = Browser()
 assert isinstance(browser.session.status(), SessionStatus)

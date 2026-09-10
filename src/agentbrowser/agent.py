@@ -1,4 +1,4 @@
-"""Use pyagentbrowser from notebook and code-mode agents."""
+"""Keep browser controllers alive across code-mode calls."""
 
 from __future__ import annotations
 
@@ -13,7 +13,8 @@ import agent_plugins
 
 from agentbrowser import _evidence
 from agentbrowser.browser import Browser
-from agentbrowser.launch import SessionOptions, normalize_session
+from agentbrowser.host import AttachedTarget, OpenTarget
+from agentbrowser.launch import LaunchOptions, SessionOptions, normalize_session
 from agentbrowser.models import CloseResult
 
 if TYPE_CHECKING:
@@ -31,10 +32,13 @@ __all__ = [
     "StaleRefError",
     "agent_plugin",
     "agent_skill",
-    "connect",
-    "connections",
-    "disconnect",
-    "disconnect_all",
+    "attach",
+    "close",
+    "close_all",
+    "create",
+    "get",
+    "names",
+    "open",
 ]
 
 
@@ -42,86 +46,118 @@ __all__ = [
 class _Connection:
     browser: Browser
     session: SessionOptions
+    ownership: str
 
 
 _CONNECTIONS: dict[str, _Connection] = {}
 _CONNECTIONS_LOCK = RLock()
 
 
-def connect(
+def create(
     name: str = _DEFAULT_CONNECTION,
     *,
     session: SessionOptions | None = None,
 ) -> Browser:
-    """Return a module-owned browser that persists across code-mode calls.
-
-    The first call creates a lazy `Browser`. Later calls with the same name and
-    session options return that controller. Call `disconnect(name)` when the task
-    ends.
-
-    Args:
-        name: Connection name within the current Python process.
-        session: Browser session options. The default uses `name` as the native
-            session identifier when `session.session_id` is unset.
-
-    Raises:
-        TypeError: `name` is not a string or `session` is not `SessionOptions`.
-        ValueError: `name` is not a valid session component or an existing
-            connection uses different session options.
-    """
+    """Create and register one module-owned browser controller."""
     connection_name = _connection_name(name)
-    requested = None if session is None else normalize_session(session)
-    if requested is not None and requested.session_id is None:
-        requested = replace(requested, session_id=connection_name)
+    options = _session_options(connection_name, session)
     with _CONNECTIONS_LOCK:
-        existing = _CONNECTIONS.get(connection_name)
-        if existing is not None and not existing.browser.closed:
-            if requested is not None and existing.session != requested:
-                raise ValueError(
-                    f"Connection {connection_name!r} already uses different session options. "
-                    f"Call disconnect({connection_name!r}) before reconnecting with new options"
-                )
-            return existing.browser
-
-        options = (
-            requested
-            or (existing.session if existing is not None else None)
-            or SessionOptions(session_id=connection_name)
-        )
+        _require_available(connection_name)
         browser = Browser(session=options)
-        _CONNECTIONS[connection_name] = _Connection(browser, options)
-        return browser
+        _CONNECTIONS[connection_name] = _Connection(browser, options, "owned")
+    return browser
 
 
-def connections() -> dict[str, Browser]:
-    """Return a name-sorted copy of the module-owned browser registry.
+def open(
+    name: str,
+    target: OpenTarget,
+    *,
+    session: SessionOptions | None = None,
+) -> Browser:
+    """Create a browser, open an application URL, and register it."""
+    if not isinstance(target, OpenTarget):
+        raise TypeError("target must be OpenTarget")
+    browser = create(name, session=session)
+    try:
+        browser.open(target.url)
+    except BaseException:
+        close(name)
+        raise
+    return browser
 
-    Closed controllers remain registered until `connect()` replaces them or
-    `disconnect()` forgets them. Inspect `browser.closed` and
-    `browser.is_launched` for each returned controller.
-    """
+
+def attach(
+    name: str,
+    target: AttachedTarget,
+    *,
+    launch: LaunchOptions | None = None,
+    session: SessionOptions | None = None,
+) -> Browser:
+    """Attach to an exact existing page and register its controller."""
+    connection_name = _connection_name(name)
+    if not isinstance(target, AttachedTarget):
+        raise TypeError("target must be AttachedTarget")
+    options = _session_options(connection_name, session)
     with _CONNECTIONS_LOCK:
-        return {name: connection.browser for name, connection in sorted(_CONNECTIONS.items())}
+        _require_available(connection_name)
+    browser = Browser.attach(target.connection, launch=launch, session=options)
+    try:
+        browser.tabs.switch(id=target.page_id)
+    except BaseException:
+        browser.close()
+        raise
+    with _CONNECTIONS_LOCK:
+        if connection_name in _CONNECTIONS:
+            browser.close()
+            raise ValueError(f"browser controller {connection_name!r} is already registered")
+        _CONNECTIONS[connection_name] = _Connection(browser, options, "attached")
+    return browser
 
 
-def disconnect(name: str = _DEFAULT_CONNECTION) -> CloseResult:
-    """Close and forget one module-owned code-mode browser.
+def get(name: str = _DEFAULT_CONNECTION) -> Browser:
+    """Return one registered open browser controller."""
+    connection_name = _connection_name(name)
+    with _CONNECTIONS_LOCK:
+        connection = _CONNECTIONS.get(connection_name)
+    if connection is None:
+        raise KeyError(f"browser controller {connection_name!r} is not registered")
+    if connection.browser.closed:
+        raise RuntimeError(f"browser controller {connection_name!r} is closed")
+    return connection.browser
 
-    The default closes the connection named `"default"`. Closing a missing
-    connection succeeds and returns an already-closed result.
-    """
+
+def names() -> tuple[str, ...]:
+    """Return registered controller names in lexical order."""
+    with _CONNECTIONS_LOCK:
+        return tuple(sorted(_CONNECTIONS))
+
+
+def close(name: str = _DEFAULT_CONNECTION) -> CloseResult:
+    """Close and forget one registered browser controller."""
     connection_name = _connection_name(name)
     with _CONNECTIONS_LOCK:
         connection = _CONNECTIONS.pop(connection_name, None)
-    return CloseResult(closed=True) if connection is None else connection.browser.close()
+    if connection is None:
+        raise KeyError(f"browser controller {connection_name!r} is not registered")
+    return connection.browser.close()
 
 
-def disconnect_all() -> dict[str, CloseResult]:
-    """Close and forget every module-owned code-mode browser."""
+def close_all() -> dict[str, CloseResult]:
+    """Close and forget every registered browser controller."""
     with _CONNECTIONS_LOCK:
         connections = sorted(_CONNECTIONS.items())
         _CONNECTIONS.clear()
     return {name: connection.browser.close() for name, connection in connections}
+
+
+def _session_options(name: str, session: SessionOptions | None) -> SessionOptions:
+    options = normalize_session(session)
+    return replace(options, session_id=name) if options.session_id is None else options
+
+
+def _require_available(name: str) -> None:
+    if name in _CONNECTIONS:
+        raise ValueError(f"browser controller {name!r} is already registered")
 
 
 def _connection_name(name: str) -> str:
@@ -149,40 +185,31 @@ def agent_skill() -> agent_plugins.Skill:
 def _sdk_help(summary: str) -> str:
     return f"""{summary}
 
-Start with a module-owned browser. Its connection survives between marimo
-code-mode scratchpad calls:
+Create one browser controller for a code-mode task:
 
-    import agentbrowser as ab
     import agentbrowser.agent as browser_agent
 
-    browser = browser_agent.connect("research")
-    browser.page.set_content(
-        '<button onclick="this.textContent=\'Saved\'; this.disabled=true">Save</button>'
-    )
-    before = browser.observe()
-    print(before.text)
+    browser = browser_agent.create("research")
+    browser.open("https://example.com")
 
-    result = before.one(role="button", name="Save").click(
-        wait=ab.Wait.text("Saved")
-    )
-    print(result.after.url)
-    print(result.after.text)
-    print(result.diff.text)
+Retrieve it in a later call with `browser_agent.get("research")`. Inspect
+registered names with `browser_agent.names()`. End the task with
+`browser_agent.close("research")`.
 
-In a later kernel call, `browser_agent.connect("research")` returns the same
-controller. Inspect retained names with `browser_agent.connections()`. End the
-task with `browser_agent.disconnect("research")`, or call
-`browser_agent.disconnect_all()` after a task that used several names. Use the
-public Browser directly when the complete lifecycle fits in one call.
+Use `browser_agent.open(name, OpenTarget(url))` when a host provides an
+application URL. Use `browser_agent.attach(name, AttachedTarget(...))` when a
+host provides an authorized browser connection and exact page identity.
 
-Discover focused APIs from the live controller:
+Task map:
 
-    help(browser.page)
-    help(browser.find)
-    help(browser.tabs)
-    help(browser.capture)
+    inspect page          browser.observe()
+    find an element       browser.find.role(...)
+    resize viewport       browser.emulation.viewport(...)
+    emulate media         browser.emulation.media(...)
+    capture screenshot    browser.capture.screenshot(...)
+    inspect frames        browser.page.frames.tree()
 
-Browse the published documentation map at:
+Published documentation:
 
     https://peter-gy.github.io/pyagentbrowser/llms.txt
 """
@@ -203,22 +230,13 @@ Reinstall pyagentbrowser to restore its version-matched skill resources.
 
     return f"""{sdk}
 
-The installed Agent Plugin carries the complete Python browser workflow and
-resources that match this package version:
+Installed Agent Plugin resources:
 
 {tree}
 
-Read the pyagentbrowser skill instructions at:
+Skill instructions:
 
     {skill.file("SKILL.md")}
-
-Traverse the same resources programmatically:
-
-    resources = browser_agent.agent_plugin()
-    skill = browser_agent.agent_skill()
-    print(resources)
-    print(skill.tree(max_depth=2))
-    instructions = skill.body
 """
 
 
@@ -251,10 +269,13 @@ class _AgentModule(ModuleType):
                 "__spec__",
                 "agent_plugin",
                 "agent_skill",
-                "connect",
-                "connections",
-                "disconnect",
-                "disconnect_all",
+                "attach",
+                "close",
+                "close_all",
+                "create",
+                "get",
+                "names",
+                "open",
             }
         )
 

@@ -2,14 +2,14 @@
 
 ## Persistent code-mode sessions
 
-Each marimo code-mode scratchpad call receives fresh Python locals. Connect
-through `agentbrowser.agent` so the module owns the controller between calls:
+Each marimo code-mode scratchpad call receives fresh Python locals. Create a
+controller through `agentbrowser.agent` so the module owns it between calls:
 
 ```python
 import agentbrowser as ab
 import agentbrowser.agent as browser_agent
 
-browser = browser_agent.connect(
+browser = browser_agent.create(
     "research",
     session=ab.SessionOptions(session_id="research-browser"),
 )
@@ -19,24 +19,21 @@ browser.open("https://example.com")
 Later kernel calls retrieve the same controller by connection name:
 
 ```python
-browser = browser_agent.connect("research")
+browser = browser_agent.get("research")
 print(browser.observe().text)
 ```
 
-Pass session options on the first call. A later call can omit them. Supplying a
-mismatched configuration raises `ValueError` before it can act on another
-controller and includes the `disconnect()` recovery call. Closing the controller
-directly preserves its session options for the next optionless `connect()`.
-Close and forget the connection once the task ends:
+Pass session options while creating the controller. Duplicate names raise
+`ValueError` before another controller is created. Close and forget the
+controller once the task ends:
 
 ```python
-browser_agent.disconnect("research")
+browser_agent.close("research")
 ```
 
-`disconnect()` is idempotent. Inspect retained controllers with
-`browser_agent.connections()`. Call `browser_agent.disconnect_all()` when the
-task used several names. Use `Browser` as a context manager when the complete
-task fits in one kernel call.
+Inspect registered names with `browser_agent.names()`. Call
+`browser_agent.close_all()` when the task used several names. Use `Browser` as a
+context manager when the complete task fits in one kernel call.
 
 ## Snapshot identity
 
