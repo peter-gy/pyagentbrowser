@@ -90,18 +90,15 @@ def _probe_websockets() -> HealthCheckEntry:
         installed = "not installed"
     try:
         import websockets
-        import websockets.frames as frames
         from websockets.asyncio.client import connect as async_connect
         from websockets.sync.client import connect
 
         del connect, async_connect
-        if not hasattr(frames, "OP_BINARY"):
-            raise ImportError("loaded websockets.frames has no OP_BINARY")
         loaded = getattr(websockets, "__version__", installed)
         if installed != "not installed" and loaded != installed:
             raise ImportError(f"loaded websockets {loaded} differs from installed {installed}")
     except ImportError as error:
-        module = locals().get("frames") or locals().get("websockets")
+        module = locals().get("websockets")
         return HealthCheckEntry(
             "direct_cdp",
             "unavailable",
