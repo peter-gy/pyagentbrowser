@@ -52,6 +52,9 @@ frame scope.
 | `frames.tree()` | Return descendant frame handles with browser frame IDs, names, URLs, and parent IDs. |
 | `frames.get(*, id=None, selector=None, name=None, url=None)` | Resolve exactly one frame. ID, name, and URL search descendants. A selector resolves an owning element in this document. |
 
+`frames.get()` supplies the frame identity from the browser. Direct `Frame`
+and `AsyncFrame` construction requires a non-empty `frame_id` keyword argument.
+
 Frame load waits accept `none`, `domcontentloaded`, and `load`. Network-idle
 tracking belongs to the page target.
 `Page` adds navigation, document replacement, history, and `read()` to the

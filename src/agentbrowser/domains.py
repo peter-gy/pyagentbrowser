@@ -97,7 +97,9 @@ T = TypeVar("T")
 
 
 class _FrameLike(Protocol):
-    frame_id: str | None
+    @property
+    def frame_id(self) -> str | None: ...
+
     frame_name: str
     frame_url: str
 
@@ -576,8 +578,16 @@ class Page(_Document):
         self._reload()
 
 
+@dataclass(frozen=True)
 class Frame(_Document):
     """Operations bound to one child browsing context."""
+
+    frame_id: str = field(kw_only=True)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.frame_id, str) or not self.frame_id.strip():
+            raise ValueError("frame_id must be a non-empty string")
+        super().__post_init__()
 
     @property
     def capture(self) -> FrameCapture:

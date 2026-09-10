@@ -140,6 +140,16 @@ def _accessibility_audit_data() -> dict[str, Any]:
     }
 
 
+@pytest.mark.parametrize("browser_type,frame_type", [(Browser, Frame), (AsyncBrowser, AsyncFrame)])
+def test_frame_handles_require_explicit_identity(browser_type: Any, frame_type: Any) -> None:
+    browser = browser_type()
+    with pytest.raises(TypeError, match="frame_id"):
+        frame_type(browser)
+    for frame_id in (None, "", " ", 0):
+        with pytest.raises(ValueError, match="non-empty string"):
+            frame_type(browser, frame_id=frame_id)
+
+
 def _frame_tree() -> dict[str, Any]:
     return {
         "frame": {"id": "main", "name": "", "url": "https://example.com"},
