@@ -6,7 +6,7 @@ from typing import Any, cast
 
 import pytest
 
-from agentbrowser import AsyncBrowser, Command
+from agentbrowser import AsyncBrowser
 from agentbrowser.cdp import (
     AsyncCDPController,
     CDPClosedError,
@@ -14,6 +14,7 @@ from agentbrowser.cdp import (
     CDPStaleObjectError,
     CDPTargetAmbiguityError,
 )
+from agentbrowser.execution.commands import Command
 from agentbrowser.transport.async_ import AsyncNativeSession
 from tests.support.cdp_targets import MultiTargetCommands, _multi_target_controller
 from tests.support.cdp_transport import (
@@ -106,7 +107,7 @@ def test_async_cdp_controller_close_blocks_reopen_and_stales_frame() -> None:
     async def run() -> None:
         browser = AsyncBrowser(_native_session=AsyncNativeSession(native=PublicPathNative()))
         controller = AsyncCDPController(
-            browser.extension(lambda executor: executor),
+            browser._executor,
             client_factory=cast(Any, PublicPathAsyncCDPClient),
         )
         frame = await controller.frame()

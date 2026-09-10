@@ -29,6 +29,11 @@ with Browser.launch() as browser:
 
 Both paths retain local-browser preparation, domain checks, policy and confirmation context, lifecycle updates, and direct CDP invalidation.
 
+Pass `_timeoutMs` as a positive integer to bound one native dispatch. The async
+worker includes queue time in this budget. Expiry before dispatch raises
+`TimeoutError`. An interrupted native command reports `code="execution_timeout"`.
+Inspect page state before retrying an interrupted mutation.
+
 ## Find the action vocabulary
 
 The engine's native dispatcher defines JSON action names and fields. Print the installed commit and inspect that exact source revision:
@@ -56,5 +61,4 @@ with Browser.launch() as browser:
 
 Native action names and response shapes follow the embedded engine version. Promote repeated application code to a typed wrapper only when the application can own its validation and result shape.
 
-[Compose extensions](/guides/extensions) shows how to give that wrapper a
-checked executor while retaining browser lifecycle and document scope.
+Compose application workflows with the public `Page` and `Frame` methods.

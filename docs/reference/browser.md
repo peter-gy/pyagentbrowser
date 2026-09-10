@@ -42,17 +42,6 @@ Both controllers support context managers. Commands after close raise `RuntimeEr
 
 Closing releases controller-owned browser, dashboard stream, direct CDP, confirmation, and native helper-process resources. A persistence failure completes cleanup, then raises `RestoreSaveError` with the terminal `CloseResult` on `error.result`.
 
-## Extensions
-
-`browser.extension(factory)` calls `factory(executor)` and returns its result.
-The executor implements `Executor` for `Browser` and `AsyncExecutor` for
-`AsyncBrowser`. Factory construction is synchronous on both surfaces.
-
-`page.extension(factory)` and `frame.extension(factory)` supply a document-bound
-executor. It retains page and frame identity across commands. All executors
-share their resource owner's policy, confirmation, and terminal close.
-See [Compose extensions](/guides/extensions) for command and decoder contracts.
-
 ## `browser.page`
 
 | Method | Returns | Behavior |
@@ -70,11 +59,6 @@ See [Compose extensions](/guides/extensions) for command and decoder contracts.
 
 `browser.page` also provides document replacement, history, readiness, selector,
 function, frame, capture, scrolling, and geometry operations.
-
-`capabilities(host=None)` reports configured screenshot, image, direct CDP, and
-host-delivery features. `healthcheck()` imports optional image and WebSocket
-dependencies and reports their loaded module paths. Both methods avoid browser
-startup.
 
 `read()` requires a positive `timeout_ms` when supplied. `headers` adds HTTP request headers. A caller-supplied `Accept` header disables Markdown negotiation fallbacks. `allowed_domains` adds a read-specific allowlist, and every redirect or fallback URL must satisfy it plus the session allowlist.
 

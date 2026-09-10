@@ -18,7 +18,6 @@ from agentbrowser import (
     Browser,
     ConfirmationRequired,
     ElementGeometry,
-    EvidenceManifest,
     Frame,
     Page,
     Screenshot,
@@ -584,11 +583,11 @@ class _ConfirmingFrameSnapshotNative:
         return json.dumps(response)
 
 
-def test_frame_snapshot_diff_and_manifest_keep_captured_scope_generation() -> None:
+def test_frame_snapshot_diff_retains_source_generation() -> None:
     native = _ConfirmingFrameSnapshotNative()
     browser = Browser(_native_session=NativeSession(native=native))
     frame = Frame(
-        browser.extension(lambda executor: executor),
+        browser._executor,
         target_id=TARGET_ID,
         frame_id="preview",
         frame_url=f"{ORIGIN}/frame",
@@ -599,25 +598,22 @@ def test_frame_snapshot_diff_and_manifest_keep_captured_scope_generation() -> No
             before.diff()
         diff = required.value.pending.confirm()
 
-        record = EvidenceManifest().record("before", before).to_dict()
         assert isinstance(diff, SnapshotDiff) and diff.changed
-        assert record["value"]["scope"] == {
-            "target_id": TARGET_ID,
-            "frame_id": "preview",
-            "url": f"{ORIGIN}/frame",
-            "generation": 1,
-        }
-        assert browser._controller._ref_generation == 2
+        assert before.generation == 1
+        assert before.document.target_id == TARGET_ID
+        assert before.document.frame_id == "preview"
+        assert before.document.scope.url == f"{ORIGIN}/frame"
+        assert frame.scope.generation == 2
     finally:
         browser.close()
 
 
-def test_async_frame_snapshot_diff_and_manifest_keep_captured_scope_generation() -> None:
+def test_async_frame_snapshot_diff_retains_source_generation() -> None:
     async def run() -> None:
         native = _ConfirmingFrameSnapshotNative()
         browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
         frame = AsyncFrame(
-            browser.extension(lambda executor: executor),
+            browser._executor,
             target_id=TARGET_ID,
             frame_id="preview",
             frame_url=f"{ORIGIN}/frame",
@@ -628,15 +624,12 @@ def test_async_frame_snapshot_diff_and_manifest_keep_captured_scope_generation()
                 await before.diff()
             diff = await required.value.pending.confirm()
 
-            record = EvidenceManifest().record("before", before).to_dict()
             assert isinstance(diff, SnapshotDiff) and diff.changed
-            assert record["value"]["scope"] == {
-                "target_id": TARGET_ID,
-                "frame_id": "preview",
-                "url": f"{ORIGIN}/frame",
-                "generation": 1,
-            }
-            assert browser._controller._ref_generation == 2
+            assert before.generation == 1
+            assert before.document.target_id == TARGET_ID
+            assert before.document.frame_id == "preview"
+            assert before.document.scope.url == f"{ORIGIN}/frame"
+            assert frame.scope.generation == 2
         finally:
             await browser.close()
 

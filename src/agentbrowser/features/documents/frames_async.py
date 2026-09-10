@@ -26,7 +26,7 @@ class AsyncFrames:
 
     async def tree(self) -> tuple[AsyncFrame, ...]:
         """Return descendant frames with stable identities and parent links."""
-        return await self.page.execute(Command("frame", {"list": True}, decode=self._tree_result))
+        return await self.page._execute(Command("frame", {"list": True}, decode=self._tree_result))
 
     def _tree_result(self, data: Mapping[str, Any]) -> tuple[AsyncFrame, ...]:
         root = data.get("frameTree")
@@ -170,4 +170,4 @@ class AsyncFrames:
                 parent_frame_id=parent.frame_id,
             )
 
-        return await parent.execute(Command("frame", {"selector": selector}, decode=decode))
+        return await parent._execute(Command("frame", {"selector": selector}, decode=decode))

@@ -44,25 +44,25 @@ class Page(_Document):
             Load state the native engine should wait for.
 
         """
-        self.execute(
+        self._execute(
             Command("navigate", {"url": normalize_url(url), "waitUntil": wait_until}, decode=none)
         )
 
     def title(self) -> str:
         """Return the current page title."""
-        return self.execute(
+        return self._execute(
             Command("title", {}, decode=lambda data: required_string(data, "title", action="title"))
         )
 
     def url(self) -> str:
         """Return the current page URL."""
-        return self.execute(
+        return self._execute(
             Command("url", {}, decode=lambda data: required_string(data, "url", action="url"))
         )
 
     def content(self) -> str:
         """Return the current page HTML."""
-        return self.execute(
+        return self._execute(
             Command(
                 "content", {}, decode=lambda data: required_string(data, "html", action="content")
             )
@@ -70,7 +70,7 @@ class Page(_Document):
 
     def set_content(self, html: str) -> None:
         """Replace the current page document with HTML."""
-        self.execute(Command("setcontent", {"html": html}, decode=none))
+        self._execute(Command("setcontent", {"html": html}, decode=none))
 
     def read(
         self,
@@ -94,7 +94,7 @@ class Page(_Document):
             ```
         """
         normalized_url = normalize_url(url) if url is not None else None
-        return self.execute(
+        return self._execute(
             Command(
                 "read",
                 {
@@ -113,15 +113,15 @@ class Page(_Document):
 
     def back(self) -> None:
         """Navigate back in history."""
-        self.execute(Command("back", {}, decode=none))
+        self._execute(Command("back", {}, decode=none))
 
     def forward(self) -> None:
         """Navigate forward in history."""
-        self.execute(Command("forward", {}, decode=none))
+        self._execute(Command("forward", {}, decode=none))
 
     def reload(self) -> None:
         """Reload the current page."""
-        self.execute(Command("reload", {}, decode=none))
+        self._execute(Command("reload", {}, decode=none))
 
 
 class Frame(_Document):

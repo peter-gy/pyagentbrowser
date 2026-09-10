@@ -5,23 +5,8 @@ and decoding under `src/agentbrowser/features/<capability>/`. It executes
 `Command[T]` through an `Executor` or `AsyncExecutor` supplied by a browser or
 document handle.
 
-```python
-from agentbrowser import Command, Executor
-
-class HeadingCount:
-    def __init__(self, executor: Executor) -> None:
-        self.executor = executor
-
-    def read(self) -> int:
-        return self.executor.execute(Command(
-            "evaluate",
-            {"script": "document.querySelectorAll('h1').length"},
-            decode=lambda data: int(data["result"]),
-        ))
-```
-
-The complete [extension example](../docs/guides/extensions.md) includes strict
-decoding, sync and async use, and resource cleanup.
+The command executor is an internal implementation boundary. Applications
+compose the public browser, page, and frame methods.
 
 ## Add a vertical capability
 
@@ -39,12 +24,9 @@ decoding, sync and async use, and resource cleanup.
 
 Use `contracts/` for values shared across features. Use `execution/` for
 session-wide policy, lifecycle, confirmation, and command effects. Use
-`transport/` for wire serialization and ordered native work. Host execution and
-tool content belong in `integrations/`.
-
-An extension factory receives the same executor used by built-in capabilities.
-It can be an ordinary class or function. Keep application-specific workflows
-in the consuming application until the package owns a stable reusable contract.
+`transport/` for wire serialization and ordered native work. The calling
+application owns code execution, task scheduling, and tool content. Keep its
+workflows in that application until the SDK owns a stable browser contract.
 
 ## Checked commands and result decoding
 

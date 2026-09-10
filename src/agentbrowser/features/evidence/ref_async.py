@@ -215,7 +215,7 @@ class AsyncRef:
     async def text(self) -> str:
         """Return text content for the ref."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "gettext",
                 {"selector": self.selector},
@@ -226,7 +226,7 @@ class AsyncRef:
     async def inner_text(self) -> str:
         """Return rendered text for the ref."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "innertext",
                 {"selector": self.selector},
@@ -237,7 +237,7 @@ class AsyncRef:
     async def input_value(self) -> str:
         """Return the current form value."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "inputvalue",
                 {"selector": self.selector},
@@ -248,7 +248,7 @@ class AsyncRef:
     async def attribute(self, name: str) -> str | None:
         """Return one attribute value."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "getattribute",
                 {"selector": self.selector, "attribute": name},
@@ -259,7 +259,7 @@ class AsyncRef:
     async def is_visible(self) -> bool:
         """Return whether the ref is visible."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "isvisible",
                 {"selector": self.selector},
@@ -270,7 +270,7 @@ class AsyncRef:
     async def is_enabled(self) -> bool:
         """Return whether the ref is enabled."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "isenabled",
                 {"selector": self.selector},
@@ -281,7 +281,7 @@ class AsyncRef:
     async def is_checked(self) -> bool:
         """Return whether the ref is checked."""
         self._ensure_current()
-        return await self.execute(
+        return await self._execute(
             Command(
                 "ischecked",
                 {"selector": self.selector},
@@ -299,11 +299,11 @@ class AsyncRef:
         self._ensure_current()
 
         async def run() -> None:
-            await self.execute(Command(action, {**params}))
+            await self._execute(Command(action, {**params}))
 
         return await transition(self, action, run, wait=wait)
 
-    async def execute(self, command: Command[T]) -> T:
+    async def _execute(self, command: Command[T]) -> T:
         self._ensure_current()
         executor = self.document._executor.bind(
             self.document.scope, ref_generation=self.snapshot.generation

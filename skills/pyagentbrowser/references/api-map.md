@@ -20,10 +20,6 @@ session boundary.
 | Measure layout | `page.geometry(selector=None)` | Bounds, client size, scroll size, and overflow flags |
 | Capture an image | `page.capture.screenshot()` | `Screenshot` with artifact and document scope |
 | Prepare host image content | `screenshot.content()` | Image bytes, MIME type, and source path |
-| Execute code for an agent | `CodeSession.execute_code()` | Ordered text and image tool-result content |
-| Keep async work across calls | `current_host().start_task(...)` | Observable `Task` with retained result and settled cancellation |
-| Inspect configured features | `browser.capabilities(host=...)` | `BrowserCapabilities` without browser startup |
-| Probe optional dependencies | `browser.healthcheck()` | Loaded module paths and recovery guidance |
 | Work with tabs | `browser.tabs` | Typed tab records and switch results |
 | Inspect traffic | `browser.network` | Routes, requests, details, or an HTTP archive |
 | Inspect failures | `browser.diagnostics` | Console, page error, vital, and audit records |
@@ -31,7 +27,6 @@ session boundary.
 | Call page tools | `browser.webmcp` | Typed WebMCP tools and invocations |
 | Use a CDP session | `browser.cdp` | Direct protocol targets and execution contexts |
 | Call any native action | `browser.native.execute()` | Complete native response envelope |
-| Compose a typed capability | `page.extension(factory)` | A capability with checked execution and retained document scope |
 | Read native action data | `browser.native.data()` | Native response data mapping |
 
 Use `SnapshotSpec` to scope and compact accessible state. Use `Wait` on ref
@@ -41,12 +36,9 @@ snapshot. The default snapshot emphasizes interactive elements, so inspect
 must include surrounding page content. Use `SessionOptions` for session identity, restore policy, domain
 allowlists, confirmation policy, timeouts, pinned tabs, and dashboard streaming.
 
-`current_host()` returns the `AgentHost` bound to the current tool execution.
-An `AgentHost` returns `OpenTarget` when the workflow should open an application
-URL. It returns `AttachedTarget` when it can supply an authorized browser
-connection and exact page identity. `ExecutionContext.limit()` converts the
-host's remaining tool budget into an operation timeout while reserving cleanup
-time.
+Use the application URL or browser connection supplied by the user or calling
+host. Read screenshot bytes with `shot.content()` and pass them to that host's
+image channel.
 
 The installed package records the exact native engine identity:
 

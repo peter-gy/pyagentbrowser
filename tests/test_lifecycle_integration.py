@@ -11,17 +11,11 @@ from agentbrowser import (
     AsyncBrowser,
     Browser,
     BrowserError,
-    CallbackHost,
     CDPTarget,
-    ExecutionContext,
-    ImageDelivery,
     LaunchOptions,
-    OpenTarget,
     RestoreOptions,
     SessionOptions,
     SessionStatus,
-    bind_host,
-    reset_host,
 )
 from tests.support.browser import (
     _browser,
@@ -49,27 +43,17 @@ def _wait_for_restore_save(browser: Browser, timeout: float = 6.0) -> SessionSta
     pytest.fail(f"restore state was not autosaved: {latest}")
 
 
-def test_host_deadline_bounds_native_evaluation_and_allows_recovery(
+def test_command_deadline_bounds_native_evaluation_and_allows_recovery(
     chrome_path: Path, local_site: LocalSite
 ) -> None:
     (local_site.root / "index.html").write_text("<title>Ready</title>")
     with _browser(chrome_path) as browser:
         browser.page.open(f"{local_site.base_url}/index.html")
-        token = bind_host(
-            CallbackHost(
-                OpenTarget(local_site.base_url),
-                lambda _: ImageDelivery("queued"),
-                ExecutionContext(timeout_ms=2_000),
-            )
-        )
         started = time.monotonic()
-        try:
-            with pytest.raises(BrowserError, match="host deadline") as caught:
-                browser.page.evaluate("new Promise(() => {})")
-            assert caught.value.code == "execution_timeout"
-            assert time.monotonic() - started < 4
-        finally:
-            reset_host(token)
+        with pytest.raises(BrowserError, match="Command deadline") as caught:
+            browser.native.data("evaluate", script="new Promise(() => {})", _timeoutMs=1_000)
+        assert caught.value.code == "execution_timeout"
+        assert time.monotonic() - started < 4
         assert browser.page.title() == "Ready"
 
 

@@ -69,13 +69,9 @@ frames and overflow containers. Use the owning page for selector, full-page,
 annotated, or PDF capture. Rotated, skewed, reflected, and three-dimensional
 frame transforms raise `BrowserError`.
 
-`Screenshot.content()` returns `ImageContent` with bytes, MIME type, and source
-path for `AgentHost.emit_image()`. The resulting `ImageDelivery` records host
-acceptance, queuing, or submission. Record the agent's visual assessment
-separately after the model receives the image.
-
-Install `pyagentbrowser[images]` for `Screenshot.pil()` and `Screenshot.image`.
-Notebook frontends can display PNG and JPEG screenshot bytes directly.
+`Screenshot.content()` returns image bytes, MIME type, and the source path.
+Pass those values to the calling application's image channel. See
+[Code-mode integration](/guides/code-mode) for a tool-result example.
 
 ## Record the active page
 

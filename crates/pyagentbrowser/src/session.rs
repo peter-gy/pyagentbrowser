@@ -80,7 +80,7 @@ impl Session {
                     "error": if code == "execution_cancelled" {
                         "Browser dispatch cancelled. Page effects already sent may have completed. Inspect current state before retrying."
                     } else {
-                        "Agent host deadline reached. Browser dispatch stopped, but page effects already sent may have completed. Inspect current state before retrying."
+                        "Command deadline reached. Browser dispatch stopped, but page effects already sent may have completed. Inspect current state before retrying."
                     }
                 });
                 let mut state = tokio::select! {

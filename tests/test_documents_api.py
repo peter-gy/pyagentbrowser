@@ -51,10 +51,10 @@ def _frame_tree() -> dict[str, Any]:
 def test_frame_handles_require_explicit_identity(browser_type: Any, frame_type: Any) -> None:
     browser = browser_type()
     with pytest.raises(TypeError, match="frame_id"):
-        frame_type(browser.extension(lambda executor: executor))
+        frame_type(browser._executor)
     for frame_id in (None, "", " ", 0):
         with pytest.raises(ValueError, match="non-empty string"):
-            frame_type(browser.extension(lambda executor: executor), frame_id=frame_id)
+            frame_type(browser._executor, frame_id=frame_id)
 
 
 def test_page_and_frame_handles_apply_explicit_native_scope() -> None:
@@ -149,7 +149,7 @@ def test_frame_command_maps_detached_context_failure() -> None:
         }
     )
     browser = _browser(native)
-    frame = Frame(browser.extension(lambda executor: executor), frame_id="detached")
+    frame = Frame(browser._executor, frame_id="detached")
 
     with pytest.raises(FrameLookupError) as detached:
         frame.evaluate("document.title")

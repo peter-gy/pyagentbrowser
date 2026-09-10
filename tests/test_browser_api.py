@@ -17,18 +17,6 @@ from agentbrowser.transport.async_ import AsyncNativeSession
 pytestmark = pytest.mark.sdk_dx
 
 
-def test_capabilities_and_healthcheck_do_not_launch_browser() -> None:
-    browser = _browser(ScriptedNative(default={}))
-
-    capabilities = browser.capabilities()
-    health = browser.healthcheck()
-
-    assert capabilities.screenshots and capabilities.image_bytes
-    assert not capabilities.host_image_delivery
-    assert {check.name for check in health.checks} == {"pillow", "direct_cdp"}
-    assert not browser.is_launched
-
-
 def test_browser_core_is_agent_first_and_returns_typed_values() -> None:
     native = ScriptedNative(
         {

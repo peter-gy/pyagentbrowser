@@ -76,8 +76,8 @@ Use [`page.find`](docs/guides/interact.md) for live element queries and
   screenshots and PDFs through typed namespaces.
 - **Keep document scope.** Bind an exact page or frame so observation,
   evaluation, waits, scrolling, capture, and ref actions share one target.
-- **Deliver evidence.** Convert screenshots to host image content and record
-  capture, delivery, visual assessment, and behavioral assertions separately.
+- **Deliver evidence.** Read screenshot bytes and MIME metadata, and inspect
+  structured snapshots and action results.
 - **Manage sessions.** Launch a browser or attach to an existing one. Work with
   tabs, cookies, saved state, and explicit cleanup.
 - **Control actions.** Configure domain restrictions and confirmation policy
@@ -91,7 +91,6 @@ Use [`page.find`](docs/guides/interact.md) for live element queries and
 [Concepts](docs/concepts/runtime-model.md) ·
 [Action evidence](docs/concepts/evidence.md) ·
 [Code-mode integration](docs/guides/code-mode.md) ·
-[Compose extensions](docs/guides/extensions.md) ·
 [Safety](docs/concepts/safety.md) ·
 [API reference](docs/reference/browser.md) ·
 [Troubleshooting](docs/troubleshooting.md)

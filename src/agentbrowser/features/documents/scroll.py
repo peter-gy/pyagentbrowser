@@ -16,7 +16,7 @@ class Scroll:
 
     def by(self, *, x: float = 0, y: float = 0, selector: str | None = None) -> ScrollResult:
         """Scroll a document or container and return its offsets before and after."""
-        return self.page.execute(scroll(self.page._executor, x=x, y=y, selector=selector))
+        return self.page._execute(scroll(self.page._executor, x=x, y=y, selector=selector))
 
 
 @dataclass(frozen=True, slots=True)
@@ -27,4 +27,4 @@ class AsyncScroll:
 
     async def by(self, *, x: float = 0, y: float = 0, selector: str | None = None) -> ScrollResult:
         """Scroll a document or container and return its offsets before and after."""
-        return await self.page.execute(scroll(self.page._executor, x=x, y=y, selector=selector))
+        return await self.page._execute(scroll(self.page._executor, x=x, y=y, selector=selector))

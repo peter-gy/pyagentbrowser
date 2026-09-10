@@ -150,3 +150,14 @@ def test_har_content_mode_controls_response_body_capture(
     assert ("text" in content) is embeds_text
     if embeds_text:
         assert json.loads(content["text"]) == payload
+
+
+def test_screenshot_content_preserves_png_bytes(chrome_path: Path, tmp_path: Path) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content("<h1>Image content</h1>")
+        shot = browser.page.capture.screenshot(tmp_path / "image.png")
+        content = shot.content()
+        assert content.data == shot.path.read_bytes()
+        assert content.data.startswith(b"\x89PNG\r\n\x1a\n")
+        assert content.media_type == "image/png"
+        assert shot._repr_png_() == content.data

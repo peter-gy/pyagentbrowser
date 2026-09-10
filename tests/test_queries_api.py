@@ -46,9 +46,9 @@ def test_query_factories_validate_empty_and_negative_inputs() -> None:
     with pytest.raises(ValueError, match="expression"):
         browser.page.find.xpath("xpath=")
     with pytest.raises(ValueError, match="exactly one"):
-        Query(browser.extension(lambda executor: executor))
+        Query(browser._executor)
     with pytest.raises(ValueError, match="exactly one"):
-        Query(browser.extension(lambda executor: executor), selector="#save", action="click")
+        Query(browser._executor, selector="#save", action="click")
 
 
 def test_confirmed_query_action_returns_the_same_query() -> None:

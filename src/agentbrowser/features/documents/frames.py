@@ -26,7 +26,7 @@ class Frames:
 
     def tree(self) -> tuple[Frame, ...]:
         """Return descendant frames with stable identities and parent links."""
-        return self.page.execute(Command("frame", {"list": True}, decode=self._tree_result))
+        return self.page._execute(Command("frame", {"list": True}, decode=self._tree_result))
 
     def _tree_result(self, data: Mapping[str, Any]) -> tuple[Frame, ...]:
         root = data.get("frameTree")
@@ -161,4 +161,4 @@ class Frames:
                 parent_frame_id=parent.frame_id,
             )
 
-        return parent.execute(Command("frame", {"selector": selector}, decode=decode))
+        return parent._execute(Command("frame", {"selector": selector}, decode=decode))

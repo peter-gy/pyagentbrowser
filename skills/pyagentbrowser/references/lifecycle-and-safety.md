@@ -35,14 +35,14 @@ Inspect registered names with `browser_agent.names()`. Call
 `browser_agent.close_all()` when the task used several names. Use `Browser` as a
 context manager when the complete task fits in one kernel call.
 
-`browser_agent.status(name)` exposes the registry process, ownership, native
-session, browser lifecycle, active target, and current URL. `close_all()`
+`browser_agent.status(name)` returns the native `SessionStatus`, including
+session identity and browser lifecycle. `close_all()`
 attempts every registered close before reporting collected failures.
 
 The registry belongs to the current Python process. `get()` never starts or
-reattaches a browser. Use `AttachedTarget` when a host supplies a live browser
-connection and exact page identity. Use `OpenTarget` to open an application URL
-in a new automation browser.
+reattaches a browser. Use `Browser.attach(CDPTarget(...))` for an existing browser connection and
+`browser.tabs.switch(id=...)` for an exact page. Use `browser.page.open(url)`
+to navigate to an application URL supplied by the user or calling host.
 
 An attached page handle remains bound to its target. Closing the controller
 releases pyagentbrowser resources. Browser-process ownership follows the

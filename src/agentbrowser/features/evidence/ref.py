@@ -207,7 +207,7 @@ class Ref:
     def text(self) -> str:
         """Return text content for the ref."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "gettext",
                 {"selector": self.selector},
@@ -218,7 +218,7 @@ class Ref:
     def inner_text(self) -> str:
         """Return rendered text for the ref."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "innertext",
                 {"selector": self.selector},
@@ -229,7 +229,7 @@ class Ref:
     def input_value(self) -> str:
         """Return the current form value."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "inputvalue",
                 {"selector": self.selector},
@@ -240,7 +240,7 @@ class Ref:
     def attribute(self, name: str) -> str | None:
         """Return one attribute value."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "getattribute",
                 {"selector": self.selector, "attribute": name},
@@ -251,7 +251,7 @@ class Ref:
     def is_visible(self) -> bool:
         """Return whether the ref is visible."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "isvisible",
                 {"selector": self.selector},
@@ -262,7 +262,7 @@ class Ref:
     def is_enabled(self) -> bool:
         """Return whether the ref is enabled."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "isenabled",
                 {"selector": self.selector},
@@ -273,7 +273,7 @@ class Ref:
     def is_checked(self) -> bool:
         """Return whether the ref is checked."""
         self._ensure_current()
-        return self.execute(
+        return self._execute(
             Command(
                 "ischecked",
                 {"selector": self.selector},
@@ -292,11 +292,11 @@ class Ref:
         return transition(
             self,
             action,
-            lambda: self.execute(Command(action, {**params})),
+            lambda: self._execute(Command(action, {**params})),
             wait=wait,
         )
 
-    def execute(self, command: Command[T]) -> T:
+    def _execute(self, command: Command[T]) -> T:
         self._ensure_current()
         executor = self.document._executor.bind(
             self.document.scope, ref_generation=self.snapshot.generation

@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Callable
 from contextlib import suppress
-from typing import TYPE_CHECKING, Self, TypeVar
+from typing import Self, TypeVar
 
 from agentbrowser.contracts.errors import ConfirmationRequired
 from agentbrowser.execution.commands import AsyncBoundExecutor, AsyncExecutor, Command
@@ -31,9 +30,6 @@ from agentbrowser.launch import (
     normalize_session,
 )
 from agentbrowser.transport.async_ import AsyncNativeSession
-
-if TYPE_CHECKING:
-    from agentbrowser.health import BrowserCapabilities, HealthCheck
 
 T = TypeVar("T")
 
@@ -93,18 +89,6 @@ class AsyncBrowser:
     def __repr__(self) -> str:
         return f"AsyncBrowser(launched={self.is_launched!r}, closed={self.closed!r})"
 
-    def capabilities(self, *, host: object | None = None) -> BrowserCapabilities:
-        """Return configured browser and host-integration features."""
-        from agentbrowser.health import capabilities
-
-        return capabilities(host=host)
-
-    def healthcheck(self) -> HealthCheck:
-        """Probe optional browser dependencies without launching Chrome."""
-        from agentbrowser.health import healthcheck
-
-        return healthcheck()
-
     @classmethod
     async def launch(
         cls,
@@ -158,10 +142,6 @@ class AsyncBrowser:
     @property
     def _executor(self) -> AsyncExecutor:
         return AsyncBoundExecutor(self._controller)
-
-    def extension(self, factory: Callable[[AsyncExecutor], T]) -> T:
-        """Construct a capability using this browser's checked command executor."""
-        return factory(self._executor)
 
     @property
     def page(self) -> AsyncPage:

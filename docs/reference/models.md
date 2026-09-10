@@ -95,7 +95,7 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | `ElementGeometry` | Document scope, selector, bounds, client size, scroll size, and overflow flags. |
 | `FrameLookupError` | `not_found`, `ambiguous`, `detached`, or `scope_mismatch` reason plus criteria and bounded frame candidates. |
 | `ScrollResult` | Document scope, container, before and after offsets, and derived movement state. |
-| `Screenshot` | File path, format, scope, annotations, raw capture data, bytes, host content, copying, image loading, and notebook display. |
+| `Screenshot` | File path, format, scope, annotations, raw capture data, bytes, image content, copying, image loading, and notebook display. |
 | `ConsoleMessage` | Console type, text, level, URL, line, column, and raw data. |
 
 ### `Screenshot`
@@ -103,7 +103,7 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | Member | Contract |
 | --- | --- |
 | `bytes()` | Read the captured file bytes. |
-| `content()` | Return `ImageContent` for an agent host. |
+| `content()` | Return image bytes, MIME type, and source path. |
 | `save(path)` | Copy the file and return a new `Screenshot` for the target path. |
 | `pil(*, mode=None)` | Load a Pillow image and optionally convert its mode. |
 | `image` | Lazily load and cache the Pillow image. |
@@ -112,72 +112,9 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 `pil()` and `image` require the `images` extra. PNG and JPEG captures expose
 notebook display data from their file bytes.
 
-`EvidenceManifest.record()` associates a snapshot, action result, screenshot,
-scroll result, or element geometry with optional `ImageDelivery`, agent assessment, and named
-`EvidenceAssertion` values. `to_dict()` returns a JSON-compatible report. A
-delivery receipt records the host boundary. An assessment records what the
-agent concluded after receiving the evidence.
-
-## Code-mode models
-
-| Model | Contract |
-| --- | --- |
-| `OpenTarget(url)` | Application URL to open in an owned browser. |
-| `AttachedTarget(connection, target_id)` | `CDPTarget` connection and exact existing page identity. |
-| `ImageContent(data, media_type, source=None)` | Non-empty image bytes, image MIME type, and optional source path. |
-| `ImageDelivery(status, id=None)` | Host acknowledgement with status `accepted`, `queued`, or `submitted`. |
-| `ExecutionContext(timeout_ms=None, cancellation=False, managed_tasks=False)` | Execution budget and host capabilities. `limit(requested_ms=None, cleanup_ms=1000)` returns the remaining operation budget. |
-| `AgentConnectionStatus` | Registry name, process ID, ownership, session ID, lifecycle, target ID, and URL. |
-| `ManagedTaskStatus` | Task ID, lifecycle state, optional progress, and detail. |
-
-`AgentHost.current_target()`, `emit_image(content)`, and `execution_context()`
-provide these values to executed code. `AgentHost.image_delivery` reports
-whether the current execution accepts image content. `CallbackHost(target, image_emitter=None,
-execution=...)` accepts application callbacks. Bind a host with `bind_host()`
-and restore the previous binding with `reset_host(token)`. `current_host()`
-raises `RuntimeError` when called outside a binding.
-
-### `CodeSession`
-
-`CodeSession(target, *, namespace=None)` creates persistent Python globals and
-a task registry. `target` accepts a `BrowserTarget` value or a callback.
-
-| Method | Contract |
-| --- | --- |
-| `execute_code(code, *, timeout_ms=None)` | Execute trusted Python and return ordered text/image `content` plus `isError`. |
-| `await aexecute_code(code, *, timeout_ms=None)` | Execute Python with top-level `await`. |
-| `await close()` | Settle task cancellation and mark the session closed. |
-
-Calls on one session must run sequentially. Exceptions preserve emitted output
-and existing globals and set `isError=True`. Concurrent calls and calls after
-close raise `RuntimeError`. Synchronous execution with no tasks allocates no
-event-loop resources and reports `managed_tasks=False`. Asynchronous execution
-reports `managed_tasks=True` and provides `current_host().start_task()`.
-The application owns injected objects and interruption
-of arbitrary Python work. See [Code-mode integration](/guides/code-mode) for
-the model-facing transport boundary.
-
-### `Tasks` and `Task`
-
-`Tasks(target)` owns tasks on the event loop that starts its first operation.
-`CodeSession.tasks` provides the registry used by `current_host().start_task()`.
-
-| Method | Contract |
-| --- | --- |
-| `tasks.start(name, operation, *, timeout_ms=None)` | Start an async callable and return a retained `Task`. |
-| `tasks.get(task_id)` | Return one retained task or raise `KeyError`. |
-| `tasks.list()` | Return retained handles in creation order. |
-| `await tasks.close()` | Cancel running tasks, await cleanup, and close the registry. |
-| `task.status()` | Return `ManagedTaskStatus`. |
-| `task.report(progress=None, detail=None)` | Update a running task's progress from 0 through 1 and detail. Omitted values retain their current values. |
-| `await task.result(*, timeout_ms=None)` | Retrieve the value or exception. A retrieval timeout leaves the task running. |
-| `await task.cancel()` | Request cancellation, await cleanup, and return terminal status. |
-
-Task handles expose `id` and `name`. Await operations and close on the owning
-event loop. Cancellation is cooperative and an operation that catches it can
-complete or fail. Background tasks return screenshots for emission during an
-active code call. Each task captures its application target when it starts and
-receives an independent execution budget.
+`ImageContent(data, media_type, source=None)` carries non-empty image bytes,
+an image MIME type, and an optional source path. `Screenshot.content()`
+constructs it from the captured file.
 
 ## Session, tab, and storage models
 

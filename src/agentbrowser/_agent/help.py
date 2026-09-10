@@ -6,7 +6,7 @@ from textwrap import indent
 
 import agent_plugins
 
-from agentbrowser.integrations.resources import agent_plugin, agent_skill
+from agentbrowser._agent.resources import agent_plugin, agent_skill
 
 
 def _sdk_help(summary: str) -> str:
@@ -20,13 +20,13 @@ Create one browser controller for a code-mode task:
     browser.page.open("https://example.com")
 
 Retrieve it in a later call with `browser_agent.get("research")`. Inspect
-process, ownership, session, and target identity with
+native session identity and lifecycle with
 `browser_agent.status("research")`. End the task with
 `browser_agent.close("research")`.
 
-Use `browser_agent.open(name, OpenTarget(url))` when a host provides an
-application URL. Use `browser_agent.attach(name, AttachedTarget(...))` when a
-host provides an authorized browser connection and exact page identity.
+Open a supplied application URL with `browser.page.open(url)`. For an existing
+browser connection, use `Browser.attach(CDPTarget(...))` and select its page
+with `browser.tabs.switch(id=...)`.
 
 Task map:
 
@@ -39,8 +39,7 @@ Task map:
     measure layout        page.geometry(...)
     measure scrolling     page.scroll.by(...)
     capture screenshot    page.capture.screenshot(...)
-    deliver image         host.emit_image(shot.content())
-    diagnose environment  browser.healthcheck()
+    image bytes           shot.content()
 
 Published documentation:
 

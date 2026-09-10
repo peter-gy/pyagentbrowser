@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar
 
@@ -63,7 +63,7 @@ class _AsyncDocument:
         if self.frame_id is not None and capture_spec.selector is not None:
             raise TypeError("Async frame snapshots capture the selected frame document")
         try:
-            data = await self.execute(
+            data = await self._execute(
                 Command(
                     "snapshot",
                     {
@@ -103,7 +103,7 @@ class _AsyncDocument:
 
     async def geometry(self, selector: str | None = None) -> ElementGeometry:
         """Measure bounds and overflow for the document or one element."""
-        return await self.execute(geometry(self._executor, selector))
+        return await self._execute(geometry(self._executor, selector))
 
     async def title(self) -> str:
         """Return the current document title."""
@@ -127,7 +127,9 @@ class _AsyncDocument:
             raise
 
     async def _evaluate_data(self, script: str) -> Mapping[str, Any]:
-        return await self.execute(Command("evaluate", {"script": script}, decode=lambda data: data))
+        return await self._execute(
+            Command("evaluate", {"script": script}, decode=lambda data: data)
+        )
 
     async def ready(
         self,
@@ -145,7 +147,7 @@ class _AsyncDocument:
 
     async def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
         """Wait until text appears."""
-        await self.execute(
+        await self._execute(
             Command("wait", {**wait_params(None, text=text, timeout_ms=timeout_ms)}, decode=none)
         )
 
@@ -157,7 +159,7 @@ class _AsyncDocument:
         timeout_ms: int | None = None,
     ) -> None:
         """Wait for a selector to reach a state."""
-        await self.execute(
+        await self._execute(
             Command(
                 "wait",
                 {**wait_params(None, selector=selector, state=state, timeout_ms=timeout_ms)},
@@ -167,13 +169,13 @@ class _AsyncDocument:
 
     async def wait_for_url(self, pattern: str, *, timeout_ms: int | None = None) -> None:
         """Wait for the page URL to match a pattern."""
-        await self.execute(
+        await self._execute(
             Command("wait", {**wait_params(None, url=pattern, timeout_ms=timeout_ms)}, decode=none)
         )
 
     async def wait_for_function(self, predicate: str, *, timeout_ms: int | None = None) -> None:
         """Wait for a JavaScript predicate to become truthy."""
-        await self.execute(
+        await self._execute(
             Command(
                 "wait",
                 {**wait_params(None, predicate=predicate, timeout_ms=timeout_ms)},
@@ -183,7 +185,7 @@ class _AsyncDocument:
 
     async def wait_for_load_state(self, state: LoadState = "load") -> None:
         """Wait for a page load state."""
-        await self.execute(Command("wait", {**wait_params(None, load_state=state)}, decode=none))
+        await self._execute(Command("wait", {**wait_params(None, load_state=state)}, decode=none))
 
     @property
     def scope(self) -> DocumentScope:
@@ -191,10 +193,6 @@ class _AsyncDocument:
         return DocumentScope(
             scope.target_id, scope.frame_id, self.frame_url or scope.url, self._executor.generation
         )
-
-    def extension(self, factory: Callable[[AsyncExecutor], T]) -> T:
-        """Construct a capability bound to this document's execution scope."""
-        return factory(self._executor)
 
     def __init__(
         self,
@@ -227,7 +225,7 @@ class _AsyncDocument:
         """Return the child frame identity, or None for a page."""
         return self._executor.scope.frame_id
 
-    async def execute(self, command: Command[T]) -> T:
+    async def _execute(self, command: Command[T]) -> T:
         return await self._executor.execute(command)
 
     def __repr__(self) -> str:

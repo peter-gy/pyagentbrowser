@@ -19,7 +19,7 @@ def _apply_wait(browser: _Document, wait: Wait | None) -> None:
     if wait.kind == "all":
         _apply_waits(browser, wait.conditions, timeout_ms=wait.timeout_ms)
         return
-    browser.execute(
+    browser._execute(
         Command(
             "wait",
             {
@@ -79,7 +79,7 @@ async def _apply_async_wait(browser: _AsyncDocument, wait: Wait | None) -> None:
     if wait.kind == "all":
         await _apply_async_waits(browser, wait.conditions, timeout_ms=wait.timeout_ms)
         return
-    await browser.execute(
+    await browser._execute(
         Command(
             "wait",
             {

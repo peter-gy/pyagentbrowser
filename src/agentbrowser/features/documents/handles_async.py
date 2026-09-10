@@ -49,25 +49,25 @@ class AsyncPage(_AsyncDocument):
             Load state the native engine should wait for.
 
         """
-        await self.execute(
+        await self._execute(
             Command("navigate", {"url": normalize_url(url), "waitUntil": wait_until}, decode=none)
         )
 
     async def title(self) -> str:
         """Return the current page title."""
-        return await self.execute(
+        return await self._execute(
             Command("title", {}, decode=lambda data: required_string(data, "title", action="title"))
         )
 
     async def url(self) -> str:
         """Return the current page URL."""
-        return await self.execute(
+        return await self._execute(
             Command("url", {}, decode=lambda data: required_string(data, "url", action="url"))
         )
 
     async def content(self) -> str:
         """Return the current page HTML."""
-        return await self.execute(
+        return await self._execute(
             Command(
                 "content", {}, decode=lambda data: required_string(data, "html", action="content")
             )
@@ -75,7 +75,7 @@ class AsyncPage(_AsyncDocument):
 
     async def set_content(self, html: str) -> None:
         """Replace the current page document with HTML."""
-        await self.execute(Command("setcontent", {"html": html}, decode=none))
+        await self._execute(Command("setcontent", {"html": html}, decode=none))
 
     async def read(
         self,
@@ -99,7 +99,7 @@ class AsyncPage(_AsyncDocument):
             ```
         """
         normalized_url = normalize_url(url) if url is not None else None
-        return await self.execute(
+        return await self._execute(
             Command(
                 "read",
                 {
@@ -118,15 +118,15 @@ class AsyncPage(_AsyncDocument):
 
     async def back(self) -> None:
         """Navigate back in history."""
-        await self.execute(Command("back", {}, decode=none))
+        await self._execute(Command("back", {}, decode=none))
 
     async def forward(self) -> None:
         """Navigate forward in history."""
-        await self.execute(Command("forward", {}, decode=none))
+        await self._execute(Command("forward", {}, decode=none))
 
     async def reload(self) -> None:
         """Reload the current page."""
-        await self.execute(Command("reload", {}, decode=none))
+        await self._execute(Command("reload", {}, decode=none))
 
 
 class AsyncFrame(_AsyncDocument):

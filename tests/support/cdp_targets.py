@@ -3,10 +3,10 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any, cast
 
-from agentbrowser import Command
 from agentbrowser.cdp import (
     CDPController,
 )
+from agentbrowser.execution.commands import Command
 from tests.support.cdp_transport import _context_event_for_session
 
 

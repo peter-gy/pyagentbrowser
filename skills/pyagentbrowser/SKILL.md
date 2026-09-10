@@ -64,7 +64,7 @@ browser = browser_agent.create("research")
 
 Use `browser_agent.get("research")` in later calls. End the task with
 `browser_agent.close("research")`. Pass `session=ab.SessionOptions(...)` to
-`create()`, `open()`, or `attach()` when the task needs an allowlist,
+`create()` when the task needs an allowlist,
 confirmation policy, timeout, pinned tab, restore policy, or dashboard stream.
 Use `browser_agent.names()` to inspect retained names and
 `browser_agent.close_all()` when a task created several controllers.
@@ -130,48 +130,39 @@ the capture namespace:
 
 ```python
 screenshot = browser.page.capture.screenshot("artifacts/page.png", full_page=True)
-host = ab.current_host()
-delivery = host.emit_image(screenshot.content())
-print(screenshot.path, delivery.status)
+content = screenshot.content()
+print(screenshot.path, content.media_type)
 ```
 
-`Screenshot.content()` returns image bytes and MIME type for an `AgentHost`.
-Check `host.image_delivery` before emission. For a background task, return the
-screenshot and emit it during an active code call.
-Host acceptance or submission is distinct from the agent's visual assessment.
-Record both states separately in an `EvidenceManifest`.
+`Screenshot.content()` returns image bytes and MIME type. Use the calling
+host's image-output API to deliver those bytes to the agent. A file path or
+HTML image tag alone may render in a notebook without supplying image content
+to the model. Inspect the delivered image before making visual claims.
 
 ## Inspect a live iframe application
+
+Use an application URL supplied by the user or calling host as `app_url`.
+Inspect the page and frame tree before choosing selectors. This example assumes
+a preview frame with Overview and Details content:
 
 ```python
 import agentbrowser as ab
 import agentbrowser.agent as browser_agent
 
-host = ab.current_host()
-target = host.current_target()
-if isinstance(target, ab.OpenTarget):
-    browser = browser_agent.open("visual-review", target)
-else:
-    browser = browser_agent.attach("visual-review", target)
-
-timeout_ms = host.execution_context().limit(10_000)
-browser.page.wait_for_text("Ready", timeout_ms=timeout_ms)
+browser = browser_agent.create("visual-review")
+browser.page.open(app_url)
+browser.page.wait_for_text("Ready", timeout_ms=10_000)
 print(browser.page.frames.tree())
 
 preview = browser.page.frames.get(selector="iframe[title='Preview']")
-preview.wait_for_text("Overview", timeout_ms=timeout_ms)
+preview.wait_for_text("Overview", timeout_ms=10_000)
 before = preview.observe()
-transition = before.one(role="link", name="Details").click(
-    wait=ab.Wait.text("Details"),
-)
-
+transition = before.one(role="link", name="Details").click(wait=ab.Wait.text("Details"))
 desktop = preview.capture.screenshot("artifacts/details-desktop.png")
-desktop_delivery = host.emit_image(desktop.content())
 
 browser.emulation.viewport(390, 844, device_scale_factor=2, mobile=True)
 browser.emulation.media(reduced_motion="reduce")
 mobile = preview.capture.screenshot("artifacts/details-mobile.png")
-mobile_delivery = host.emit_image(mobile.content())
 
 movement = preview.scroll.by(y=600)
 geometry = preview.geometry()
@@ -179,16 +170,15 @@ console = browser.diagnostics.console()
 errors = browser.diagnostics.errors()
 ```
 
-`FrameLookupError.reason` identifies a missing, ambiguous, detached, or
-scope-mismatched frame. Its bounded `candidates` list shows the frame IDs,
-names, or URLs available under the selected parent.
+Deliver `desktop.content()` and `mobile.content()` through the calling host's
+image channel. Inspect each image. Compare `movement.before`, `movement.after`,
+and the expected page state to verify a scroll-driven transition. Use element
+measurements and the images to assess clipping and sticky positioning. Finish
+with `browser_agent.close("visual-review")`.
 
-Inspect each delivered image before recording an assessment. A successful
-capture proves a file exists. An `ImageDelivery` proves the host accepted,
-queued, or submitted image content. The assessment states what the agent saw.
-Use `movement.before`, `movement.after`, and the expected page state to prove a
-scroll-driven transition. Use `geometry.overflows_x`, element measurements, and
-the delivered image to check narrow-layout clipping and sticky positioning.
+`FrameLookupError.reason` identifies a missing, ambiguous, detached, or
+scope-mismatched frame. Its bounded `candidates` list shows the available frame
+IDs, names, and URLs.
 
 ## Use focused namespaces
 
@@ -247,8 +237,8 @@ an `AsyncBrowser`.
 
 ## Diagnose optional features
 
-Call `browser.capabilities(host=host)` before optional image-processing or
-direct CDP work. Call `browser.healthcheck()` when an optional dependency fails.
+`Screenshot.pil()` requires the `images` extra. Direct CDP requires the `cdp`
+extra. Transport import errors include installed versions and loaded paths.
 Restart a long-running Python process after changing `websockets`. Do not reload
 individual networking modules.
 

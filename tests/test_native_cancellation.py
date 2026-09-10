@@ -13,9 +13,7 @@ from agentbrowser import (
     AsyncBrowser,
     BrowserError,
     LaunchOptions,
-    OpenTarget,
     SessionOptions,
-    Tasks,
 )
 from agentbrowser._native import NativeBrowser, NativeCancellation
 
@@ -98,15 +96,11 @@ async def _wait_for_evaluation(browser: AsyncBrowser) -> None:
 
 
 @pytest.mark.integration
-@pytest.mark.parametrize("managed", [False, True])
-def test_cancelling_active_evaluation_releases_native_worker(
-    chrome_path: Path, managed: bool
-) -> None:
+def test_cancelling_active_evaluation_releases_native_worker(chrome_path: Path) -> None:
     async def run() -> None:
         browser = await AsyncBrowser.launch(
             LaunchOptions(executable_path=chrome_path), session=SessionOptions(timeout=None)
         )
-        tasks = Tasks(OpenTarget("about:blank"))
         try:
             await browser.page.open("data:text/html,<title>Cancellation</title>")
             await browser.cdp.evaluate("window.evaluationStarted = false")
@@ -116,21 +110,14 @@ def test_cancelling_active_evaluation_releases_native_worker(
                     "window.evaluationStarted = true; new Promise(() => {})"
                 )
 
-            if managed:
-                task = tasks.start("evaluation", evaluate)
-            else:
-                pending = asyncio.create_task(evaluate())
+            pending = asyncio.create_task(evaluate())
             await _wait_for_evaluation(browser)
             async with asyncio.timeout(3):
-                if managed:
-                    assert (await task.cancel()).state == "cancelled"
-                else:
-                    pending.cancel()
-                    with pytest.raises(asyncio.CancelledError):
-                        await pending
+                pending.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await pending
                 assert await browser.page.title() == "Cancellation"
         finally:
-            await asyncio.wait_for(tasks.close(), 3)
             await asyncio.wait_for(browser.close(timeout=3), 4)
         assert browser.closed
 

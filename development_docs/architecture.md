@@ -6,10 +6,10 @@ engine behind an owned Rust interface. [The downstream wrapper model](repository
 defines the source pin and release identities.
 
 ```text
-Browser / AsyncBrowser               CodeSession / AgentHost
-  | compose capabilities               | tool execution and delivery
-  v                                    v
-features/ <------------------------ integrations/
+Browser / AsyncBrowser
+  | compose browser capabilities
+  v
+features/
   | Command[T], Executor, AsyncExecutor
   v
 execution/   policy, confirmation, lifecycle, document identity
@@ -41,12 +41,11 @@ and keeps source transformations separate from runtime ownership.
 | `transport/` | Native protocol serialization, synchronous sessions, and ordered asynchronous work |
 | `features/<capability>/` | Capability API, local models, parameter validation, decoding, and composition |
 | `agent.py` | Process-local controller registry and code-mode capability entry point |
-| `integrations/` | Host binding, code execution, managed tasks, tool-result content, and packaged guidance |
+| `_agent/` | Installed Agent Plugin resources and guidance |
 | `cdp/` | Optional direct Chrome DevTools Protocol connection and context lifetimes |
 | `launch.py`, `install.py` | Public startup configuration and browser preparation |
-| `features/evidence/manifest.py` | Serialization of captures, deliveries, visual assessments, and assertions |
 
-Feature code consumes `Executor` or `AsyncExecutor`. It describes a native
+Feature code consumes the internal `Executor` or `AsyncExecutor`. It describes a native
 action with `Command[T]` and owns the result decoder. The executor preserves
 policy, confirmation, lifecycle, and document identity across that call.
 Feature modules keep their own result models and payload builders. Shared
@@ -59,8 +58,8 @@ every capability sharing that controller.
 
 Public types have canonical imports from `agentbrowser`. The package layout
 expresses implementation ownership. Read [Python SDK design](python-sdk.md)
-for feature placement and [Compose extensions](../docs/guides/extensions.md)
-for the public executor contract.
+for feature placement. Application code composes the public browser, page, and
+frame methods.
 
 ## One operation through the stack
 
@@ -111,7 +110,6 @@ See [Generated adapter](generated-adapter.md) and [Maintenance](maintenance.md).
 | Typed workflow over existing actions | `features/<capability>/` | Public result, validation, confirmation, sync/async parity |
 | Shared dispatch or lifecycle rule | `execution/` | Every affected entry path, cancellation, terminal close |
 | Wire envelope or native queue | `transport/` | Protocol errors, ordering, interrupted and queued work |
-| Agent tool content or host lifecycle | `integrations/` | Serialized tool results, host binding, task settlement |
 | Rust-owned process or helper lifetime | `crates/pyagentbrowser` | Native boundary and platform cleanup |
 | Embedded engine behavior | `crates/agent-browser-adapter` | Adapter contract and real-browser seam |
 | Upstream source adaptation | `crates/agent-browser-build` | Anchor/dependency audit, compilation, affected runtime seam |

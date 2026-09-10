@@ -1,13 +1,12 @@
 ---
 title: Load agent skills and code-mode guidance
-description: Bind application targets, image delivery, execution limits, and version-matched browser instructions to a code-mode agent.
+description: Discover installed browser instructions and keep named controllers across code-mode calls.
 ---
 
 # Load agent skills and code-mode guidance
 
 The `agentbrowser.agent` module keeps named browser controllers across calls in
-one Python process. An `AgentHost` supplies the current application target,
-image delivery, and execution limits. The wheel carries an Agent Plugin with
+one Python process. The wheel carries an Agent Plugin with
 Python-specific browser instructions and the pinned engine's native skills.
 
 ## Keep a controller across calls
@@ -39,13 +38,12 @@ browser_agent.close("research")
 Use `browser_agent.names()` to inspect registered controller names. Call
 `browser_agent.close_all()` after a task that created several controllers.
 
-Pass `session=agentbrowser.SessionOptions(...)` to `create()`, `open()`, or
-`attach()` when the task needs domain restrictions, confirmation policy, or
+Pass `session=agentbrowser.SessionOptions(...)` to `create()` when the task needs domain restrictions, confirmation policy, or
 another session option. Duplicate names raise `ValueError`. `get()` retrieves
 one open controller and `close()` releases it.
 
-Read [Code-mode integration](/guides/code-mode) to supply an application target,
-return model-facing screenshot content, and manage work across tool calls.
+Read [Code-mode integration](/guides/code-mode) to use browser objects and
+screenshot content in an existing execution host.
 
 ## Load the Python instructions
 
@@ -73,8 +71,8 @@ print(cm.capabilities()["pyagentbrowser"])
 ```
 
 Capability discovery exposes the Python module and its instructions. The
-code-execution host must also bind an `AgentHost` and forward image content to
-the model for `current_host()` and visual assessment to work.
+code-execution host supplies the application URL and forwards screenshot
+content through its image channel.
 
 ## Read the embedded native instruction files
 

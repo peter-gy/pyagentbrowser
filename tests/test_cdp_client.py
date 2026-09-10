@@ -158,3 +158,20 @@ def _block_websockets_import(monkeypatch: pytest.MonkeyPatch) -> None:
         return original_import(name, *args, **kwargs)
 
     monkeypatch.setattr(builtins, "__import__", import_without_websockets)
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_loaded_transport_mismatch_reports_paths_and_recovery(monkeypatch, asynchronous):
+    websockets = pytest.importorskip("websockets")
+    monkeypatch.setattr(websockets, "__version__", "stale")
+    from agentbrowser.cdp import AsyncCDPClient, CDPClient
+
+    with pytest.raises(
+        ImportError, match="loaded websockets stale differs from installed"
+    ) as caught:
+        if asynchronous:
+            asyncio.run(AsyncCDPClient("ws://127.0.0.1:9").send("Browser.getVersion"))
+        else:
+            CDPClient("ws://127.0.0.1:9").send("Browser.getVersion")
+    assert str(websockets.__file__) in str(caught.value)
+    assert "restart the Python process" in str(caught.value)

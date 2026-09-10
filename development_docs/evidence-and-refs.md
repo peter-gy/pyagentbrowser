@@ -16,7 +16,6 @@ reporting.
 | `ActionResult`          | Ref, before snapshot, after snapshot, and their diff     |
 | `ActionTransitionError` | A completed mutation whose wait or evidence stage failed |
 | `DocumentScope`         | Page-target and frame identity for one document handle   |
-| `EvidenceManifest`      | Captures, deliveries, assessments, and assertions        |
 
 A ref belongs to the snapshot that produced it. It stores the source snapshot,
 native ref ID, selector, role, name, and raw node metadata. A later page state

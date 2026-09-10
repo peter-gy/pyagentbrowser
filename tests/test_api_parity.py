@@ -137,12 +137,8 @@ def test_sync_and_async_public_surfaces_keep_method_and_signature_parity() -> No
             }
             assert async_parameters == sync_parameters, f"{name}.{method}"
 
-    sync_frame_capture = Frame(
-        sync_browser.extension(lambda executor: executor), frame_id="frame"
-    ).capture
-    async_frame_capture = AsyncFrame(
-        async_browser.extension(lambda executor: executor), frame_id="frame"
-    ).capture
+    sync_frame_capture = Frame(sync_browser._executor, frame_id="frame").capture
+    async_frame_capture = AsyncFrame(async_browser._executor, frame_id="frame").capture
     assert _public_methods(type(sync_frame_capture)) == {"screenshot"}
     assert _public_methods(type(async_frame_capture)) == {"screenshot"}
     assert (

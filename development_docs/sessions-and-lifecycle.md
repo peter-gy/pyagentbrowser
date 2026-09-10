@@ -55,18 +55,16 @@ cancellation. The first close call fixes the timeout used by every caller.
 
 A native shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`.
 
-## Host execution limits
+## Native command deadlines
 
-A bound `AgentHost` supplies one `ExecutionContext` for a code call. The session
-records its monotonic deadline before enqueueing asynchronous work and computes
-the remaining budget at native dispatch. The PyO3 boundary bounds the native
-operation by that budget. Deadline expiry reports an error and leaves any
-page effects observable for the next call. It does not roll back a mutation.
+An explicit `_timeoutMs` bounds a native command. The async session records a
+monotonic deadline before starting its worker and preserves it across queueing.
+The owner thread computes the remaining timeout before native dispatch. The
+PyO3 boundary interrupts an active command when that timeout expires and
+invalidates refs whose page effects may have completed.
 
-`CodeSession` owns persistent globals and typed text/image results. Its `Tasks`
-registry gives each asynchronous operation a separate target and execution
-budget. Task cancellation waits for cooperative cleanup. The application owns
-interruption of blocking Python code and closes injected browser controllers.
+The calling application owns Python execution and task scheduling. Async
+browser cancellation waits for native settlement before returning.
 
 ## Restore and abrupt exit
 

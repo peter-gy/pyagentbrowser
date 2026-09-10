@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar, cast
 
@@ -63,7 +63,7 @@ class _Document:
         if self.frame_id is not None and capture_spec.selector is not None:
             raise TypeError("Frame snapshots capture the selected frame document")
         try:
-            data = self.execute(
+            data = self._execute(
                 Command(
                     "snapshot",
                     {
@@ -100,7 +100,7 @@ class _Document:
 
     def geometry(self, selector: str | None = None) -> ElementGeometry:
         """Measure bounds and overflow for the document or one element."""
-        return self.execute(geometry(self._executor, selector))
+        return self._execute(geometry(self._executor, selector))
 
     def title(self) -> str:
         """Return the current document title."""
@@ -124,7 +124,7 @@ class _Document:
             raise
 
     def _evaluate_data(self, script: str) -> Mapping[str, Any]:
-        return self.execute(Command("evaluate", {"script": script}, decode=lambda data: data))
+        return self._execute(Command("evaluate", {"script": script}, decode=lambda data: data))
 
     def ready(self, *, timeout_ms: int | None = None, min_text_length: int = 1) -> None:
         """Wait until the page has a body with readable text.
@@ -141,7 +141,7 @@ class _Document:
 
     def wait_for_text(self, text: str, *, timeout_ms: int | None = None) -> None:
         """Wait until text appears."""
-        self.execute(
+        self._execute(
             Command("wait", {**wait_params(None, text=text, timeout_ms=timeout_ms)}, decode=none)
         )
 
@@ -153,7 +153,7 @@ class _Document:
         timeout_ms: int | None = None,
     ) -> None:
         """Wait for a selector to reach a state."""
-        self.execute(
+        self._execute(
             Command(
                 "wait",
                 {**wait_params(None, selector=selector, state=state, timeout_ms=timeout_ms)},
@@ -163,13 +163,13 @@ class _Document:
 
     def wait_for_url(self, pattern: str, *, timeout_ms: int | None = None) -> None:
         """Wait for the page URL to match a pattern."""
-        self.execute(
+        self._execute(
             Command("wait", {**wait_params(None, url=pattern, timeout_ms=timeout_ms)}, decode=none)
         )
 
     def wait_for_function(self, predicate: str, *, timeout_ms: int | None = None) -> None:
         """Wait for a JavaScript predicate to become truthy."""
-        self.execute(
+        self._execute(
             Command(
                 "wait",
                 {**wait_params(None, predicate=predicate, timeout_ms=timeout_ms)},
@@ -179,7 +179,7 @@ class _Document:
 
     def wait_for_load_state(self, state: LoadState = "load") -> None:
         """Wait for a page load state."""
-        self.execute(Command("wait", {**wait_params(None, load_state=state)}, decode=none))
+        self._execute(Command("wait", {**wait_params(None, load_state=state)}, decode=none))
 
     @property
     def scope(self) -> DocumentScope:
@@ -187,10 +187,6 @@ class _Document:
         return DocumentScope(
             scope.target_id, scope.frame_id, self.frame_url or scope.url, self._executor.generation
         )
-
-    def extension(self, factory: Callable[[Executor], T]) -> T:
-        """Construct a capability bound to this document's execution scope."""
-        return factory(self._executor)
 
     def __init__(
         self,
@@ -223,7 +219,7 @@ class _Document:
         """Return the child frame identity, or None for a page."""
         return self._executor.scope.frame_id
 
-    def execute(self, command: Command[T]) -> T:
+    def _execute(self, command: Command[T]) -> T:
         return self._executor.execute(command)
 
     def __repr__(self) -> str:

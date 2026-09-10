@@ -8,14 +8,12 @@ This package owns the public Python contract around the embedded engine.
   lifecycle operations through owned resource controllers.
 - `features/<capability>/` owns its API, local models, parameter validation,
   decoders, and composed workflows. Use `Executor` and `AsyncExecutor` for
-  checked commands and document identity.
+  checked commands and document identity. These executors are internal.
 - `execution/` owns resource controllers, confirmation, command effects,
   policy, and lifecycle. `transport/` owns JSON serialization and ordered native
   sessions. `contracts/` holds errors and values shared across features.
-- `integrations/` owns host binding, Python code
-  execution, image tool content, managed tasks, and packaged guidance.
-  `agent.py` owns the process-local controller registry and exposes the
-  code-mode capability entry point.
+- `_agent/` owns installed plugin resources and packaged guidance. `agent.py`
+  owns the process-local browser registry and capability entry point.
 - `cdp/` owns the optional direct Chrome DevTools Protocol path.
 
 Keep high-level workflow semantics in Python. Put native process integration or

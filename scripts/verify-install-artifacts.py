@@ -28,7 +28,6 @@ from agentbrowser import (
     AccessibilityAudit,
     Browser,
     CloseResult,
-    Command,
     RestoreSaveError,
     SessionStatus,
     TabSwitchResult,
@@ -80,8 +79,6 @@ browser = Browser()
 assert isinstance(browser.session.status(), SessionStatus)
 assert browser.native.execute("session_info").success
 assert browser.native.data("session_info")["session"]
-executor = browser.extension(lambda executor: executor)
-assert executor.execute(Command("session_info"))["session"]
 assert isinstance(browser.close(), CloseResult)
 
 assert "core" in skills.available()

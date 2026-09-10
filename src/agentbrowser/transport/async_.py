@@ -12,10 +12,10 @@ from typing import Any
 
 from agentbrowser._native import NativeCancellation
 from agentbrowser.contracts.actions import INTERNAL_SHUTDOWN_ACTION, action_closes_browser
-from agentbrowser.contracts.execution import command_parameters
 from agentbrowser.contracts.protocol import BrowserResponse, response_data_mapping
 from agentbrowser.contracts.types import JSONValue
 from agentbrowser.features.session.models import DashboardOptions, RestoreOptions
+from agentbrowser.transport.deadlines import command_parameters
 from agentbrowser.transport.responses import _checked_response, _try_unwrap_confirmed_response
 from agentbrowser.transport.sync import (
     DEFAULT_TIMEOUT_MS,
@@ -117,12 +117,12 @@ class AsyncNativeSession:
 
     async def execute(self, action: str, **params: Any) -> BrowserResponse:
         """Run a native command and return the full response envelope."""
+        if action not in {"close", INTERNAL_SHUTDOWN_ACTION}:
+            params = command_parameters(params)
         await self._ensure_started()
         loop = asyncio.get_running_loop()
         future: asyncio.Future[BrowserResponse] = loop.create_future()
         cancelled = Event()
-        if action not in {"close", INTERNAL_SHUTDOWN_ACTION}:
-            params = command_parameters(params)
         command = _AsyncCommand(
             action,
             params,

@@ -15,7 +15,7 @@ from agentbrowser import (
 pytestmark = pytest.mark.sdk_dx
 
 
-def test_screenshot_creates_artifact_directory_and_exposes_host_content(tmp_path: Path) -> None:
+def test_screenshot_creates_artifact_directory_and_exposes_image_content(tmp_path: Path) -> None:
     path = tmp_path / "nested" / "capture.png"
 
     def capture(_command: dict[str, Any]) -> dict[str, Any]:

@@ -11,10 +11,10 @@ import agentbrowser._native as _native
 from agentbrowser._native import NativeBrowser, NativeCancellation
 from agentbrowser.contracts.actions import INTERNAL_SHUTDOWN_ACTION
 from agentbrowser.contracts.errors import BrowserError
-from agentbrowser.contracts.execution import command_parameters
 from agentbrowser.contracts.protocol import OMIT, BrowserResponse, response_data_mapping
 from agentbrowser.contracts.types import JSONMapping, JSONObject, JSONValue
 from agentbrowser.features.session.models import DashboardOptions, RestoreOptions
+from agentbrowser.transport.deadlines import command_parameters
 from agentbrowser.transport.policy import DomainAllowlist
 from agentbrowser.transport.responses import (
     PendingConfirmation,
