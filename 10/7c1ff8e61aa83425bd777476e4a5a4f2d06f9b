@@ -1,0 +1,25 @@
+src/agentbrowser/domains.py
+  s_52726700b68901::t_3f93fb4a8bc3bc 100-102,581,585-590
+docs/reference/namespaces.md
+  s_52726700b68901::t_7e0d044fc529f6 55-57
+src/agentbrowser/domains_async.py
+  s_52726700b68901::t_3f93fb4a8bc3bc 585,589-594
+tests/test_browser_api.py
+  s_52726700b68901::t_70e954c7c5dd38 143-152
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "107c1ff8e61aa83425bd777476e4a5a4f2d06f9b",
+  "prompts": {},
+  "sessions": {
+    "s_52726700b68901": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a08abf-4a38-7161-94cc-7a090c5c0097",
+        "model": "gpt-6-astra"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
