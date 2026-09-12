@@ -13,6 +13,36 @@ and distribution inputs as one reviewed unit.
 
 ## Update the embedded engine
 
+Audit a candidate before changing the pin:
+
+```bash
+make check-upstream UPSTREAM_REF=HEAD
+```
+
+`UPSTREAM_REF` selects a commit already available in the upstream submodule.
+Add compilation and a saved report through `UPSTREAM_CHECK_FLAGS`:
+
+```bash
+make check-upstream UPSTREAM_REF=HEAD UPSTREAM_CHECK_FLAGS='--compile --output /tmp/pyagentbrowser-upstream-audit'
+```
+
+The output path must name a new directory. To audit a separate checkout, run
+`uv run --no-sync python -m scripts.check_upstream --source <checkout>`.
+`--compile` uses cached Cargo dependencies. `--output <new-directory>` preserves
+`report.json` alongside the JSON emitted on stdout. The probe creates an
+isolated workspace and leaves the source pin,
+manifests, and lockfiles unchanged. It uses `target/upstream-check` for its build
+cache.
+
+The report includes source and dependency changes, Cargo feature declarations,
+package compilation settings, protocol-generation inputs, applied patches, and
+optional compilation results. Feature and compilation-setting changes require
+review because the adapter owns the manifest used to compile embedded source.
+Changes requiring source
+review appear in `review_required` and produce a nonzero exit status. A passing
+probe establishes the requested generation and compilation checks. Run affected
+browser seams and the release gate before accepting the candidate.
+
 Pin the latest commit from the official upstream branch with:
 
 ```bash
@@ -59,7 +89,7 @@ Then:
    `git -C third_party/agent-browser diff "$(git rev-parse HEAD:third_party/agent-browser)..HEAD"`.
 2. Run `make test-native`. A failed adapter rewrite identifies an upstream
    anchor that moved or changed cardinality.
-3. Repair the narrow rewrite in `crates/agent-browser-adapter/build.rs`. Keep the
+3. Repair the owning feature rewrite in `crates/agent-browser-build/src/features/`. Keep the
    upstream submodule clean.
 4. Reconcile upstream dependencies and features with
    `crates/agent-browser-adapter/Cargo.toml`. The updater aligns its version and

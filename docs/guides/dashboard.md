@@ -38,7 +38,7 @@ session = SessionOptions(
 )
 
 with Browser.launch(session=session) as browser:
-    browser.open("https://example.com")
+    browser.page.open("https://example.com")
     print(browser.dashboard.status()["port"])
 ```
 

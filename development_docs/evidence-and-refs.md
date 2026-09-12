@@ -1,7 +1,7 @@
 # Evidence and refs
 
-`_evidence.py`, `agent_async.py`, and `models.py` turn native accessibility
-snapshots into action-scoped evidence. They own snapshot capture, ref lookup,
+`features/evidence/` turns native accessibility snapshots into action-scoped
+evidence. It owns snapshot capture, ref lookup,
 wait composition, transition diffs, stale-ref recovery, and partial-failure
 reporting.
 
@@ -15,10 +15,23 @@ reporting.
 | `Wait`                  | Post-action condition applied before the next snapshot   |
 | `ActionResult`          | Ref, before snapshot, after snapshot, and their diff     |
 | `ActionTransitionError` | A completed mutation whose wait or evidence stage failed |
+| `DocumentScope`         | Page-target and frame identity for one document handle   |
 
 A ref belongs to the snapshot that produced it. It stores the source snapshot,
 native ref ID, selector, role, name, and raw node metadata. A later page state
 can invalidate the native ID even while the Python object still exists.
+
+The native response supplies the ref-map generation stored by each snapshot.
+Ref commands carry that generation into dispatch so a later observation cannot
+reuse an ID for a different element. Snapshot refresh and transition capture
+retain the producing page and frame handle.
+
+`Snapshot.document` and `Ref.document` expose that handle. Evidence commands use
+its executor, which applies document scope and the captured ref generation.
+
+Typed ref commands resolve the captured node identity and reject detached
+nodes. Use `ref.refresh()` to select from a new snapshot after replacement.
+The native escape hatch retains the pinned engine's role-and-name fallback.
 
 ## Action transition
 

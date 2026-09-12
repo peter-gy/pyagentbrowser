@@ -45,9 +45,26 @@ constructed
   -> shared terminal result
 ```
 
-Cancellation skips queued work that has not started. Active native work completes on the owner. `AsyncBrowser.close()` is single-flight and shields shared shutdown from caller cancellation. The first close call fixes the timeout used by every caller.
+Cancellation skips queued work that has not started. For active work, the
+per-command native cancellation token interrupts dispatch and invalidates refs.
+The cancelled await waits for owner-thread settlement before propagating
+`CancelledError`. Effects already sent to the browser can still occur.
+
+`AsyncBrowser.close()` is single-flight and shields shared shutdown from caller
+cancellation. The first close call fixes the timeout used by every caller.
 
 A native shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`.
+
+## Native command deadlines
+
+An explicit `_timeoutMs` bounds a native command. The async session records a
+monotonic deadline before starting its worker and preserves it across queueing.
+The owner thread computes the remaining timeout before native dispatch. The
+PyO3 boundary interrupts an active command when that timeout expires and
+invalidates refs whose page effects may have completed.
+
+The calling application owns Python execution and task scheduling. Async
+browser cancellation waits for native settlement before returning.
 
 ## Restore and abrupt exit
 

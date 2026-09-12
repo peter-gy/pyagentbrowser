@@ -5,19 +5,19 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 
 # Capability namespace reference
 
-`Browser` and `AsyncBrowser` expose the same 23 capability namespaces. Asynchronous methods await the same operation and return the same model unless this page states a difference.
+`Browser` and `AsyncBrowser` expose the same capability namespaces. Asynchronous methods await the same operation and return the same model unless this page states a difference.
 
 | Namespace | Job |
 | --- | --- |
-| `page` | Active document, navigation, content, reading, and waits |
-| `find` | Live element queries |
-| `capture`, `diff`, `downloads` | Files and page evidence |
+| `page` | Page identity, navigation, frames, content, reading, queries, capture, and waits |
+| `page.find` | Live element queries for one page or frame |
+| `page.capture`, `diff`, `downloads` | Files and page evidence |
 | `tabs`, `session` | Browser targets and session status |
 | `cookies`, `storage`, `state` | Live and serialized browser data |
 | `network` | Routing, requests, credentials, and HAR capture |
 | `keyboard`, `mouse`, `clipboard` | User input |
 | `emulation` | Device and environment settings |
-| `scripts`, `active_frame` | Page code and native frame selection |
+| `scripts` | Page code and initialization scripts |
 | `diagnostics`, `dialogs` | Runtime inspection and JavaScript dialogs |
 | `webmcp`, `dashboard` | Agent tools and session observability |
 | `cdp` | Direct Chrome DevTools Protocol access |
@@ -25,15 +25,21 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 
 ## `browser.page`
 
+`browser.page` returns a handle for the configured or currently active target.
+Retain that handle when subsequent commands must use the same page.
+`browser.tabs.get()` selects an exact browser target. `page.frames.get()` returns a `Frame` whose
+observation, queries, evaluation, waits, capture, and ref actions share one
+frame scope.
+
 | Method | Contract |
 | --- | --- |
 | `open(url, *, wait_until="load")` | Normalize a host-like URL and navigate. Returns `None`. |
-| `title()` | Return the active title. |
-| `url()` | Return the active URL. |
-| `content()` | Return active document HTML. |
-| `set_content(html)` | Replace the active document. |
-| `evaluate(script)` | Evaluate JavaScript through the engine. |
-| `read(url=None, *, mode=None, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | Return `ReadResult` for an explicit URL or active tab. |
+| `title()` | Return this document's title. |
+| `url()` | Return this document's URL. |
+| `content()` | Return this document's HTML. |
+| `set_content(html)` | Replace this page's document. |
+| `evaluate(script)` | Evaluate JavaScript in this document's default execution context and await promises. |
+| `read(url=None, *, mode=None, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | Return `ReadResult` for an explicit URL or this page's rendered document. |
 | `ready(*, timeout_ms=None, min_text_length=1)` | Wait for minimum body text. |
 | `back()`, `forward()`, `reload()` | Navigate history and invalidate direct CDP frame and execution-context handles. |
 | `wait_for_text(text, *, timeout_ms=None)` | Wait for text. |
@@ -41,8 +47,21 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 | `wait_for_url(pattern, *, timeout_ms=None)` | Wait for a URL pattern. |
 | `wait_for_function(predicate, *, timeout_ms=None)` | Wait for a JavaScript predicate. |
 | `wait_for_load_state(state="load")` | Wait for a load state. |
+| `observe(spec=None)` | Capture a `Snapshot` bound to this page or frame. |
+| `geometry(selector=None)` | Measure bounds, client size, scroll size, and overflow for a document or element. |
+| `frames.tree()` | Return descendant frame handles with browser frame IDs, names, URLs, and parent IDs. |
+| `frames.get(*, id=None, selector=None, name=None, url=None)` | Resolve exactly one frame. ID, name, and URL search descendants. A selector resolves an owning element in this document. |
 
-## `browser.find`
+`frames.get()` supplies the frame identity from the browser. Direct `Frame`
+and `AsyncFrame` construction requires a non-empty `frame_id` keyword argument.
+
+Frame load waits accept `none`, `domcontentloaded`, and `load`. Network-idle
+tracking belongs to the page target.
+`Page` adds navigation, document replacement, history, and `read()` to the
+document operations shared with `Frame`. Use the owning `Page` for those
+operations.
+
+## `page.find`
 
 | Factory | Match |
 | --- | --- |
@@ -58,23 +77,29 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 
 `Query.click()`, `fill(value)`, `check()`, and `hover()` return the query. `Query.text()` returns a string.
 
-## `browser.capture`, `browser.diff`, and `browser.downloads`
+## `page.capture`, `browser.diff`, and `browser.downloads`
 
 | Method | Contract |
 | --- | --- |
 | `capture.screenshot(path=None, *, selector=None, full_page=False, annotate=False, output_dir=None, format="png", quality=None, wait_ms=100)` | Write a PNG or JPEG screenshot and return `Screenshot`. JPEG quality ranges from 0 through 100. |
 | `capture.pdf(path=None, *, print_background=True, landscape=False, prefer_css_page_size=False)` | Write a PDF and return its `Path`. |
+| `frame.capture.screenshot(path=None, *, output_dir=None, format="png", quality=None, wait_ms=100)` | Capture the visible frame rectangle, clipped by enclosing frames and overflow containers. |
 | `diff.snapshot(baseline=None, *, selector=None, compact=False, max_depth=None)` | Compare the active snapshot with text, a path, or a prior baseline. |
 | `downloads.download(selector, path)` | Click a selector and return the completed download path. |
 | `downloads.wait(path=None, *, timeout_ms=None)` | Wait for the next download. |
 
 `wait_ms` must be non-negative. Pillow-backed screenshot members require the `images` extra.
 
+Screenshot paths expand `~` and create parent directories. A frame screenshot
+captures the rendered frame rectangle. Selector, full-page, annotated, and
+PDF capture belong to the owning page.
+
 ## `browser.tabs`
 
 | Method | Contract |
 | --- | --- |
 | `list()` | Return open tabs as `tuple[TabInfo, ...]`. |
+| `get(*, id=None, label=None, index=None)` | Return a `Page` bound to one exact browser target. |
 | `new(url=None, *, label=None)` | Create a tab. The optional URL is forwarded as given. |
 | `open(url, *, label=None, reuse=True, wait_until="load")` | Normalize and open a URL. Reuse a matching label by default. `wait_until` applies to reused-tab navigation, while new-tab creation requires an explicit readiness wait. |
 | `switch(*, id=None, label=None, index=None)` | Switch by exactly one selector and return `TabSwitchResult`. `index=1` maps to stable ID `t1` and is not positional. |
@@ -179,10 +204,6 @@ If `response=` is present, it takes precedence over response shorthand fields.
 | `add_style(content=None, *, url=None)` | Inject CSS into the current document. |
 
 Supply one inline value or URL according to the method signature.
-
-## `browser.active_frame`
-
-`select(*, selector=None, name=None, url=None)` selects the native frame used by later engine actions. `main()` returns selection to the main frame.
 
 ## `browser.dialogs` and `browser.dashboard`
 

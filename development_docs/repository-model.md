@@ -31,7 +31,7 @@ modules and wrapper trees to Cargo `OUT_DIR`, and compiles them as a downstream
 library. The PyO3 crate links that library into `agentbrowser._native`. The
 Python package then owns the public contract above the JSON command protocol.
 
-The root Cargo workspace contains the adapter and PyO3 crates. It explicitly
+The root Cargo workspace contains the build, adapter, and PyO3 crates. It explicitly
 excludes the upstream Cargo workspace, so Cargo resolves one downstream lock
 and never treats the submodule as another workspace member.
 
@@ -41,7 +41,8 @@ and never treats the submodule as another workspace member.
 | ---------------------------------------------------- | ------------------------------- | ------------------------------------------------------ |
 | Generic engine actions and browser behavior          | Upstream `agent-browser`        | `third_party/agent-browser/`                           |
 | Upstream revision selection and intake               | pyagentbrowser                  | `scripts/update_upstream.py` and the submodule gitlink |
-| In-process compatibility transformations             | pyagentbrowser adapter          | `crates/agent-browser-adapter/build.rs`                |
+| Source transformations and protocol generation      | pyagentbrowser build crate      | `crates/agent-browser-build/`                          |
+| Embedded engine runtime contract                    | pyagentbrowser adapter          | `crates/agent-browser-adapter/src/`                    |
 | Rust runtime and Python binding                      | pyagentbrowser native extension | `crates/pyagentbrowser/`                               |
 | Typed workflows, evidence, safety, and lifecycle     | pyagentbrowser SDK              | `src/agentbrowser/`                                    |
 | Wheels, source distribution, provenance, and release | pyagentbrowser                  | `pyproject.toml`, `scripts/`, and `.github/workflows/` |

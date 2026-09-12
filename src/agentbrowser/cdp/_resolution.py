@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any, cast
 
 from agentbrowser.cdp.errors import (
@@ -13,6 +13,25 @@ from agentbrowser.cdp.errors import (
     CDPTargetNotFoundError,
 )
 from agentbrowser.cdp.models import AsyncExecutionContext, AsyncFrame, ExecutionContext, Frame
+
+
+def _frame_records(data: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+    tree = data.get("frameTree")
+    if not isinstance(tree, Mapping):
+        raise CDPProtocolError("Page.getFrameTree", "response did not include frameTree")
+
+    def visit(node: Mapping[str, Any]) -> Iterator[Mapping[str, Any]]:
+        frame = node.get("frame")
+        if not isinstance(frame, Mapping):
+            return
+        yield frame
+        children = node.get("childFrames")
+        if isinstance(children, list):
+            for child in children:
+                if isinstance(child, Mapping):
+                    yield from visit(child)
+
+    yield from visit(tree)
 
 
 def _resolve_active_target(

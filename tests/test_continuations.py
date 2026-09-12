@@ -7,8 +7,8 @@ import pytest
 from fakes import ScriptedNative
 
 from agentbrowser import ActionResult, AsyncBrowser, Browser, ConfirmationRequired, Wait
-from agentbrowser.session import NativeSession
-from agentbrowser.session_async import AsyncNativeSession
+from agentbrowser.transport.async_ import AsyncNativeSession
+from agentbrowser.transport.sync import NativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
@@ -35,6 +35,7 @@ def _confirmation(action: str, confirmation_id: str) -> dict[str, Any]:
 def _confirmed(action: str, data: Any) -> dict[str, Any]:
     return {
         "success": True,
+        "targetId": "fixture-target",
         "data": {
             "confirmed": True,
             "action": action,
@@ -156,11 +157,11 @@ def test_sync_repeated_launch_and_navigation_confirmation_returns_browser() -> N
     browser = _browser(native)
 
     with pytest.raises(ConfirmationRequired) as launch_required:
-        browser.open("example.com")
+        browser.page.open("example.com")
     with pytest.raises(ConfirmationRequired) as navigate_required:
         launch_required.value.pending.confirm()
 
-    assert navigate_required.value.pending.confirm() is browser
+    assert navigate_required.value.pending.confirm() is None
     assert [command["action"] for command in native.commands[:4]] == [
         "launch",
         "confirm",
@@ -176,11 +177,11 @@ def test_async_repeated_launch_and_navigation_confirmation_returns_browser() -> 
         browser = _async_browser(native)
 
         with pytest.raises(ConfirmationRequired) as launch_required:
-            await browser.open("example.com")
+            await browser.page.open("example.com")
         with pytest.raises(ConfirmationRequired) as navigate_required:
             await launch_required.value.pending.confirm()
 
-        assert await navigate_required.value.pending.confirm() is browser
+        assert await navigate_required.value.pending.confirm() is None
         assert [command["action"] for command in native.commands[:4]] == [
             "launch",
             "confirm",
@@ -247,7 +248,7 @@ def test_async_chained_confirmation_preserves_decoder_and_completion() -> None:
 def test_sync_wait_all_resumes_remaining_waits_before_snapshot() -> None:
     native = _confirmed_wait_native()
     browser = _browser(native)
-    ref = browser.observe().one(name="Submit")
+    ref = browser.page.observe().one(name="Submit")
 
     with pytest.raises(ConfirmationRequired) as required:
         ref.click(wait=Wait.all(Wait.text("Saved"), Wait.url("*/complete")))
@@ -269,7 +270,7 @@ def test_async_wait_all_resumes_remaining_waits_before_snapshot() -> None:
     async def run() -> None:
         native = _confirmed_wait_native()
         browser = _async_browser(native)
-        ref = (await browser.observe()).one(name="Submit")
+        ref = (await browser.page.observe()).one(name="Submit")
 
         with pytest.raises(ConfirmationRequired) as required:
             await ref.click(wait=Wait.all(Wait.text("Saved"), Wait.url("*/complete")))
@@ -399,9 +400,9 @@ def test_sync_implicit_launch_updates_lifecycle_before_navigation() -> None:
     )
     browser = _browser(native)
 
-    assert browser.title() == "Implicit"
+    assert browser.page.title() == "Implicit"
     assert browser.is_launched is True
-    assert browser.open("example.com") is browser
+    assert browser.page.open("example.com") is None
     assert [command["action"] for command in native.commands] == ["title", "navigate"]
     browser.close()
 
@@ -420,9 +421,9 @@ def test_async_implicit_launch_updates_lifecycle_before_navigation() -> None:
         )
         browser = _async_browser(native)
 
-        assert await browser.title() == "Implicit"
+        assert await browser.page.title() == "Implicit"
         assert browser.is_launched is True
-        assert await browser.open("example.com") is browser
+        assert await browser.page.open("example.com") is None
         assert [command["action"] for command in native.commands] == ["title", "navigate"]
         await browser.close()
 

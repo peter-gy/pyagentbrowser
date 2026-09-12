@@ -48,6 +48,7 @@ name = "agent-browser"
 version = "0.37.1"
 dependencies = [
  "aes-gcm",
+ "agent-browser-build",
  "async-trait",
  "base64",
  "chrono",
@@ -75,6 +76,15 @@ dependencies = [
  "uuid",
  "windows-sys 0.52.0",
  "zip",
+]
+
+[[package]]
+name = "agent-browser-build"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "tempfile",
 ]
 
 [[package]]

@@ -1,17 +1,17 @@
 # Generated adapter
 
-`crates/agent-browser-adapter/build.rs` registers selected modules from the
+`crates/agent-browser-build` registers selected modules from the
 pinned upstream submodule, writes adapted modules and wrapper trees to Cargo
 [`OUT_DIR`](https://doc.rust-lang.org/cargo/reference/build-scripts.html#outputs-of-the-build-script),
-and generates protocol types. Cargo compiles the resulting downstream library.
+and generates protocol types. The adapter's build script calls this crate.
+Cargo compiles the resulting modules inside `agent-browser-adapter`.
 
 The upstream checkout is immutable input. Every downstream rewrite has a narrow inspected anchor, an expected match count, and a failure path when upstream moves.
 
-The adapter is the compatibility membrane between the upstream executable
-architecture and this repository's in-process library architecture. It can
-remove executable ownership, thread downstream identity through upstream state,
-or expose a library seam. It must not become a second implementation of generic
-browser behavior.
+The adapter connects the upstream executable code to an embedded library. It
+assigns process ownership, threads downstream identity through upstream state,
+and exposes the operations consumed by PyO3. Generic browser behavior remains
+owned by upstream.
 
 ## Inputs and outputs
 
@@ -20,9 +20,16 @@ browser behavior.
 | Pinned source modules        | `third_party/agent-browser/cli/src/`          |
 | Pinned protocol schemas      | `third_party/agent-browser/cli/cdp-protocol/` |
 | Downstream dependency mirror | `crates/agent-browser-adapter/Cargo.toml`     |
-| Transformation program       | `crates/agent-browser-adapter/build.rs`       |
+| Module registry and protocol generation | `crates/agent-browser-build/src/registry.rs` and `src/protocol/` |
+| Capability transformations | `crates/agent-browser-build/src/features/` |
+| Runtime document behavior | `crates/agent-browser-adapter/src/documents/` |
 | Generated Rust modules       | Cargo `OUT_DIR`                               |
 | Stable library exports       | `crates/agent-browser-adapter/src/lib.rs`     |
+
+The adapter exports `Engine` and owned configuration and resource operations.
+Generated upstream manager types stay inside that crate. PyO3 consumes the
+owned interface, so changes to upstream state types are resolved at the adapter
+boundary.
 
 Generated Rust stays outside version control. The source distribution carries
 the pinned inputs and transformation program so a local build does not require
@@ -55,9 +62,16 @@ An anchor failure is a request to re-audit the pinned source. Broadening a text 
 
 ## Fail-closed transformations
 
-Each replacement names the upstream assumption it protects. The helper checks
-the expected match count before writing output. Missing anchors catch upstream
-moves. Duplicate anchors catch a transformation that became ambiguous.
+Each replacement records its feature, source module, patch name, expected match
+count, and dependencies on earlier patches. Missing or duplicate anchors stop
+generation. A replacement that overlaps generated text must name the earlier
+patches it depends on. Unused dependency declarations also fail.
+
+`agent_browser_build::generate(source_root, output_dir)` returns the input and
+patch report. Failures preserve the partial report with the failed source
+contract. The adapter build script uses the inputs to register Cargo rebuild
+dependencies. This checks source assumptions. Compilation and runtime tests
+check the resulting behavior.
 
 Inspect the generated module when debugging, then change the transformation or
 its source registry. Never repair build output directly. A changed match count
@@ -74,7 +88,7 @@ smoke tests together.
 
 The adapter is a standalone downstream crate, so its Cargo manifest declares
 the dependencies and features required by registered upstream source. The root
-workspace excludes the upstream workspace and resolves both downstream crates
+workspace excludes the upstream workspace and resolves the downstream crates
 through one `Cargo.lock`.
 
 After an upstream Cargo change, compare its dependencies and features with the

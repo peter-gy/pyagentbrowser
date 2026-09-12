@@ -1,6 +1,6 @@
 ---
 title: Browser controller reference
-description: Exact construction, lifecycle, configuration, installation, and active-page contracts for Browser and AsyncBrowser.
+description: Exact construction, lifecycle, configuration, installation, and page-handle contracts for Browser and AsyncBrowser.
 ---
 
 # Browser controller reference
@@ -42,22 +42,23 @@ Both controllers support context managers. Commands after close raise `RuntimeEr
 
 Closing releases controller-owned browser, dashboard stream, direct CDP, confirmation, and native helper-process resources. A persistence failure completes cleanup, then raises `RestoreSaveError` with the terminal `CloseResult` on `error.result`.
 
-## Active-page methods
+## `browser.page`
 
 | Method | Returns | Behavior |
 | --- | --- | --- |
-| `open(url, *, wait_until="load")` | `Browser` | Normalize a host-like URL, launch when needed, and navigate. |
-| `observe(spec=None)` | `Snapshot` | Capture an accessibility snapshot and bind its refs to the controller. |
-| `read(url=None, *, mode=None, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | `ReadResult` | Read an explicit URL or rendered active tab. `filter` narrows headings or `llms.txt` sections. |
-| `title()` | `str` | Return the active document title. |
-| `url()` | `str` | Return the active document URL. |
-| `content()` | `str` | Return active document HTML. |
+| `open(url, *, wait_until="load")` | `None` | Normalize a host-like URL, launch when needed, and navigate. |
+| `observe(spec=None)` | `Snapshot` | Capture an accessibility snapshot and bind its refs to this document. |
+| `read(url=None, *, mode=None, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | `ReadResult` | Read an explicit URL or this page's rendered document. `filter` narrows headings or `llms.txt` sections. |
+| `title()` | `str` | Return this document's title. |
+| `url()` | `str` | Return this document's URL. |
+| `content()` | `str` | Return this document's HTML. |
 | `evaluate(script)` | JSON-compatible value | Evaluate JavaScript through the native engine. |
 | `wait_for_text(text, *, timeout_ms=None)` | `None` | Wait for page text. |
 | `wait_for_url(url, *, timeout_ms=None)` | `None` | Wait for a native URL pattern. |
 | `wait_for_load(state="load")` | `None` | Wait for a load state. |
 
-Root page methods provide the common path. `browser.page` adds document replacement, history, readiness, selector, function, and explicit load-state operations.
+`browser.page` also provides document replacement, history, readiness, selector,
+function, frame, capture, scrolling, and geometry operations.
 
 `read()` requires a positive `timeout_ms` when supplied. `headers` adds HTTP request headers. A caller-supplied `Accept` header disables Markdown negotiation fallbacks. `allowed_domains` adds a read-specific allowlist, and every redirect or fallback URL must satisfy it plus the session allowlist.
 

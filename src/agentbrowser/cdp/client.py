@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sys
 from collections import deque
 from collections.abc import Callable, Mapping
 from contextlib import AbstractContextManager
+from importlib.metadata import PackageNotFoundError, version
 from itertools import count
 from threading import RLock
 from typing import Any, cast
@@ -260,20 +262,45 @@ class AsyncCDPClient:
 def _load_sync_websocket_connect() -> Callable[[str], AbstractContextManager[SyncWebSocket]]:
     try:
         from websockets.sync.client import connect
-    except ModuleNotFoundError as exc:
-        raise ImportError(
-            "CDP frame/context evaluation requires the optional cdp extra. "
-            'install pyagentbrowser with "pyagentbrowser[cdp]" or install websockets.'
-        ) from exc
+
+        _check_websockets_version()
+    except ImportError as exc:
+        raise _transport_import_error(exc) from exc
     return cast(Callable[[str], AbstractContextManager[SyncWebSocket]], connect)
 
 
 def _load_async_websocket_connect() -> AsyncConnect:
     try:
         from websockets.asyncio.client import connect
-    except ModuleNotFoundError as exc:
-        raise ImportError(
-            "Async CDP frame/context evaluation requires the optional cdp extra. "
-            'install pyagentbrowser with "pyagentbrowser[cdp]" or install websockets.'
-        ) from exc
+
+        _check_websockets_version()
+    except ImportError as exc:
+        raise _transport_import_error(exc) from exc
     return cast(AsyncConnect, connect)
+
+
+def _check_websockets_version() -> None:
+    import websockets
+
+    installed = version("websockets")
+    loaded = getattr(websockets, "__version__", installed)
+    if loaded != installed:
+        raise ImportError(f"loaded websockets {loaded} differs from installed {installed}")
+
+
+def _transport_import_error(error: ImportError) -> ImportError:
+    try:
+        installed = version("websockets")
+    except PackageNotFoundError:
+        installed = "not installed"
+    paths = ", ".join(
+        f"{name}={getattr(sys.modules[name], '__file__', None)}"
+        for name in ("websockets", "websockets.frames")
+        if name in sys.modules
+    )
+    return ImportError(
+        f"Direct CDP could not load its websockets transport: {error}. "
+        f"Installed websockets: {installed}. Loaded modules: {paths}. "
+        'Install "pyagentbrowser[cdp]" and restart the Python process. '
+        "Reloading individual networking modules can leave incompatible class identities."
+    )

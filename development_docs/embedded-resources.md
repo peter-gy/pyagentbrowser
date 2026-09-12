@@ -37,7 +37,7 @@ review, native embedding proof, Python API proof, and package proof.
 ## Agent Plugin pipeline
 
 The root `plugin.json` and `skills/pyagentbrowser/` tree provide Python-specific
-instructions for marimo code-mode agents. `_agent_plugins_maturin.py` wraps the
+instructions for Python code-mode agents. `_agent_plugins_maturin.py` wraps the
 Maturin Python build backend so editable installs, wheels, and source
 distributions carry the Agent Plugin marker and exact resource inventory.
 

@@ -6,20 +6,26 @@ session boundary.
 
 | Task | Python surface | Result |
 | --- | --- | --- |
-| Open a page | `browser.open(url)` | The same controller |
-| Read the current location | `browser.url()` and `browser.title()` | URL and page title strings |
-| Inspect accessible state | `browser.observe(spec)` | Snapshot-scoped refs and text |
+| Open a page | `browser.page.open(url)` | `None` after navigation completes |
+| Read the current location | `page.url()` and `page.title()` | URL and page title strings |
+| Bind one exact tab | `browser.tabs.get(id=...)` | `Page` with stable target identity |
+| Inspect accessible state | `page.observe(spec)` | Document-scoped refs and text |
+| Inspect descendant frames | `page.frames.tree()` | `Frame` handles with identities and parent links |
+| Bind one child frame | `page.frames.get(selector=...)` | `Frame` with scoped operations |
 | Act with evidence | `snapshot.one(...).click()` | `ActionResult` with before, after, and diff |
-| Act through a live locator | `browser.find.role(...).click()` | The same live query |
-| Read a page | `browser.read(url)` | `ReadResult` with content and source metadata |
+| Act through a live locator | `page.find.role(...).click()` | The same scoped live query |
+| Read a page | `page.read(url)` | `ReadResult` with content and source metadata |
 | Wait for state | `browser.page.wait_for_*()` | `None` after the condition passes |
-| Capture an image | `browser.capture.screenshot()` | `Screenshot` metadata and path |
+| Measure scrolling | `page.scroll.by(...)` | `ScrollResult` with before and after offsets |
+| Measure layout | `page.geometry(selector=None)` | Bounds, client size, scroll size, and overflow flags |
+| Capture an image | `page.capture.screenshot()` | `Screenshot` with artifact and document scope |
+| Prepare host image content | `screenshot.content()` | Image bytes, MIME type, and source path |
 | Work with tabs | `browser.tabs` | Typed tab records and switch results |
 | Inspect traffic | `browser.network` | Routes, requests, details, or an HTTP archive |
 | Inspect failures | `browser.diagnostics` | Console, page error, vital, and audit records |
 | Inspect the native session | `browser.session.status()` | Typed identity and lifecycle state |
 | Call page tools | `browser.webmcp` | Typed WebMCP tools and invocations |
-| Use a CDP session | `browser.cdp` | Direct target, frame, and execution-context handles |
+| Use a CDP session | `browser.cdp` | Direct protocol targets and execution contexts |
 | Call any native action | `browser.native.execute()` | Complete native response envelope |
 | Read native action data | `browser.native.data()` | Native response data mapping |
 
@@ -29,6 +35,10 @@ snapshot. The default snapshot emphasizes interactive elements, so inspect
 `result.after.origin` and use `SnapshotSpec(interactive=False)` when the result
 must include surrounding page content. Use `SessionOptions` for session identity, restore policy, domain
 allowlists, confirmation policy, timeouts, pinned tabs, and dashboard streaming.
+
+Use the application URL or browser connection supplied by the user or calling
+host. Read screenshot bytes with `shot.content()` and pass them to that host's
+image channel.
 
 The installed package records the exact native engine identity:
 

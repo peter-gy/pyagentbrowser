@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Literal, TypeAlias
 
 from agentbrowser._native import browser_cache_dir, find_chrome_executable
-from agentbrowser.models import AgentBrowserError
+from agentbrowser.contracts.errors import AgentBrowserError
 
 InstallSource: TypeAlias = Literal["environment", "cache", "system", "download"]
 

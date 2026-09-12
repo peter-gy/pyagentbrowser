@@ -37,7 +37,7 @@ from pathlib import Path
 from agentbrowser import Browser, LaunchOptions
 
 with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser:
-    browser.open('data:text/html,<title>Owned tree</title><h1>Renderer</h1>')
+    browser.page.open('data:text/html,<title>Owned tree</title><h1>Renderer</h1>')
     processes = browser.cdp.send('SystemInfo.getProcessInfo')['processInfo']
     ready = Path(sys.argv[2])
     staging = ready.with_suffix('.tmp')
@@ -47,7 +47,7 @@ with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser
 """
         handles: list[int] = []
         with Browser.launch(LaunchOptions(executable_path=chrome_path)) as unrelated:
-            unrelated.open("data:text/html,<title>Independent browser</title>")
+            unrelated.page.open("data:text/html,<title>Independent browser</title>")
             with (tmp_path / "owner.log").open("w+", encoding="utf-8") as log:
                 owner = subprocess.Popen(
                     [sys.executable, "-c", script, str(chrome_path), str(ready)],
@@ -63,20 +63,33 @@ with Browser.launch(LaunchOptions(executable_path=Path(sys.argv[1]))) as browser
                     log.seek(0)
                     assert ready.exists(), log.read()
                     processes = json.loads(ready.read_text(encoding="utf-8"))
-                    assert any(process["type"] == "browser" for process in processes)
-                    assert any(process["type"] == "renderer" for process in processes)
+                    live_types: set[str] = set()
                     for process in processes:
-                        handle = kernel.OpenProcess(0x00100001, False, int(process["id"]))
-                        assert handle, ctypes.WinError(ctypes.get_last_error())
+                        pid = int(process["id"])
+                        if pid <= 0:
+                            continue
+                        handle = kernel.OpenProcess(0x00100001, False, pid)
+                        if not handle:
+                            # Chrome can report a child that exits before its handle is opened.
+                            error = ctypes.get_last_error()
+                            assert error == 87, (process, ctypes.WinError(error))
+                            continue
                         handles.append(handle)
-                        assert kernel.WaitForSingleObject(handle, 0) == 258
+                        state = kernel.WaitForSingleObject(handle, 0)
+                        assert state in {0, 258}, (
+                            process,
+                            ctypes.WinError(ctypes.get_last_error()),
+                        )
+                        if state == 258:
+                            live_types.add(process["type"])
+                    assert {"browser", "renderer"} <= live_types, processes
 
                     owner.kill()
                     owner.wait(timeout=10)
 
                     for handle in handles:
                         assert kernel.WaitForSingleObject(handle, 10000) == 0
-                    assert unrelated.title() == "Independent browser"
+                    assert unrelated.page.title() == "Independent browser"
                 finally:
                     if owner.poll() is None:
                         owner.kill()

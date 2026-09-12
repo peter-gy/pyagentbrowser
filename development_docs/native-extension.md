@@ -26,7 +26,7 @@ ownership, or platform integration.
 Each `NativeBrowser` owns:
 
 - One multithreaded Tokio runtime.
-- One mutex-protected upstream `DaemonState`.
+- One mutex-protected adapter `Engine`.
 - One periodic maintenance task.
 - Optional dashboard stream and sidecar resources.
 
@@ -38,8 +38,8 @@ queue, so an event loop never directly enters the synchronous native object.
 
 ## Maintenance loop
 
-The maintenance task calls the upstream browser-state maintainer on a short
-tick. That maintainer observes browser exit, drains process events, and applies
+The maintenance task calls `Engine::maintain()` on a short
+tick. The adapter observes browser exit, drains process events, and applies
 automatic saved-state behavior at the configured interval.
 
 The task belongs to the native object because it must continue while Python is

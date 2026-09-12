@@ -5,6 +5,7 @@ export const routes = {
   introduction: "/introduction",
   why: "/why",
   gettingStarted: "/getting-started",
+  migration: "/migration",
   runtimeModel: "/concepts/runtime-model",
   evidence: "/concepts/evidence",
   safety: "/concepts/safety",
@@ -17,6 +18,7 @@ export const routes = {
   webmcp: "/guides/webmcp",
   dashboard: "/guides/dashboard",
   agentSkills: "/guides/agent-skills",
+  codeMode: "/guides/code-mode",
   nativeProtocol: "/guides/native-protocol",
   browserReference: "/reference/browser",
   namespacesReference: "/reference/namespaces",
@@ -29,6 +31,7 @@ export const introductionItems = [
   { text: "What is pyagentbrowser?", link: routes.introduction },
   { text: "Why pyagentbrowser?", link: routes.why },
   { text: "Get started", link: routes.gettingStarted },
+  { text: "Migrate scoped agents", link: routes.migration },
 ] satisfies DefaultTheme.SidebarItem[];
 
 export const conceptItems = [
@@ -47,6 +50,7 @@ export const guideItems = [
   { text: "WebMCP tools", link: routes.webmcp },
   { text: "Dashboard observation", link: routes.dashboard },
   { text: "Agent skills and code mode", link: routes.agentSkills },
+  { text: "Code-mode integration", link: routes.codeMode },
   { text: "Raw native protocol", link: routes.nativeProtocol },
 ] satisfies DefaultTheme.SidebarItem[];
 

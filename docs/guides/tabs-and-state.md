@@ -27,6 +27,19 @@ with Browser.launch() as browser:
 
 A switch can reactivate a discarded renderer. `revived=True` means the page may have reloaded, so refresh page-derived state. `dialog_blocked=True` means a JavaScript dialog paused the renderer and the result contains last-known tab metadata.
 
+Retain a `Page` when work must stay on one target across tab changes:
+
+```python
+report_page = browser.tabs.get(label="report")
+browser.tabs.switch(label="settings")
+print(report_page.title())
+```
+
+Each operation on `report_page` selects its bound target before acting. That
+selection follows the session's `tab_switch` policy and can require
+confirmation. Reading `browser.page` acquires a new handle for the configured
+target or the current active target.
+
 `tabs.new()` always creates a tab and forwards its optional URL as given. `tabs.open()` normalizes host-like URLs and can reuse a label. `wait_until` applies when a labeled tab is reused and navigated. Newly created tabs return after the native creation action, so wait on the required page state explicitly.
 
 ## Pin a tab in an attached browser
@@ -56,12 +69,12 @@ The named session restores its page target binding across native restarts. A tar
 
 ```python
 with Browser.launch() as browser:
-    browser.open("https://example.com")
+    browser.page.open("https://example.com")
     state_path = browser.state.save("account.json")
 
 with Browser.launch() as browser:
     browser.state.load(state_path)
-    browser.open("https://example.com")
+    browser.page.open("https://example.com")
 ```
 
 An active domain allowlist filters exports and rejects state loading. Use the explicit unsafe flags only when the wider scope is part of the application contract.
@@ -81,7 +94,7 @@ session = SessionOptions(
 )
 
 browser = Browser.launch(session=session)
-browser.open("https://example.com")
+browser.page.open("https://example.com")
 print(browser.session.status().restore_status)
 
 closed = browser.close()

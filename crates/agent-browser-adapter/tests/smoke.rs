@@ -2,28 +2,22 @@ use std::{
     env,
     ffi::OsString,
     path::Path,
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Mutex, MutexGuard},
     time::Duration,
 };
 
-use agent_browser::native::{
-    actions::{execute_command, DaemonState},
-    network::DomainFilter,
-    policy::{ActionPolicy, ConfirmActions},
-};
+use agent_browser::{Engine, EngineOptions};
 use futures_util::StreamExt;
 use serde_json::{json, Value};
 use tempfile::{NamedTempFile, TempDir};
-use tokio::{sync::RwLock, time::timeout};
+use tokio::time::timeout;
 
-fn confirm_actions(actions: &[&str]) -> ConfirmActions {
-    ConfirmActions {
-        categories: actions.iter().map(|action| (*action).to_string()).collect(),
-    }
+fn engine(options: EngineOptions) -> Engine {
+    Engine::new(&options).expect("engine options should be valid")
 }
 
-async fn run(state: &mut DaemonState, command: Value) -> Value {
-    execute_command(&command, state).await
+async fn run(state: &mut Engine, command: Value) -> Value {
+    state.execute(&command).await
 }
 
 fn assert_success(response: &Value) -> &Value {
@@ -40,41 +34,6 @@ fn assert_error_contains(response: &Value, expected: &str) {
         error.contains(expected),
         "expected error to contain {expected:?}, got {error:?}"
     );
-}
-
-#[test]
-fn accessibility_audit_engine_is_embedded() {
-    let source = agent_browser::native::a11y::AXE_JS;
-
-    assert!(source.len() > 100_000);
-    assert!(source.contains("axe.version="));
-}
-
-#[test]
-fn tab_bindings_follow_the_python_namespace() {
-    let socket_dir = TempDir::new().expect("socket dir should be created");
-    let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());
-    let binding = agent_browser::native::tab_binding::TabBinding {
-        target_id: "target-a".to_string(),
-        url: "https://example.com/path?secret=value".to_string(),
-        pinned: true,
-    };
-
-    agent_browser::native::tab_binding::save_for_namespace("research", &binding, Some("worker-a"))
-        .expect("namespaced binding should save");
-
-    let path = agent_browser::native::tab_binding::binding_path_for_namespace(
-        "research",
-        Some("worker-a"),
-    );
-    assert!(path.starts_with(socket_dir.path().join("namespaces/worker-a/run")));
-    let loaded =
-        agent_browser::native::tab_binding::load_for_namespace("research", Some("worker-a"))
-            .expect("namespaced binding should load")
-            .expect("namespaced binding should exist");
-    assert_eq!(loaded.target_id, "target-a");
-    assert_eq!(loaded.url, "https://example.com/path");
-    assert!(loaded.pinned);
 }
 
 static ENV_MUTEX: Mutex<()> = Mutex::new(());
@@ -112,8 +71,10 @@ impl Drop for EnvVarGuard {
 
 #[tokio::test]
 async fn confirm_requires_matching_confirmation_id_without_consuming_pending_action() {
-    let mut state = DaemonState::new();
-    state.confirm_actions = Some(confirm_actions(&["stream_status"]));
+    let mut state = engine(EngineOptions {
+        confirm_actions: Some(vec!["stream_status".to_string()]),
+        ..EngineOptions::default()
+    });
 
     let pending = run(
         &mut state,
@@ -143,8 +104,10 @@ async fn confirm_requires_matching_confirmation_id_without_consuming_pending_act
 
 #[tokio::test]
 async fn deny_requires_present_matching_confirmation_id() {
-    let mut state = DaemonState::new();
-    state.confirm_actions = Some(confirm_actions(&["stream_status"]));
+    let mut state = engine(EngineOptions {
+        confirm_actions: Some(vec!["stream_status".to_string()]),
+        ..EngineOptions::default()
+    });
 
     assert_success(
         &run(
@@ -176,8 +139,10 @@ async fn deny_requires_present_matching_confirmation_id() {
 async fn confirmation_replay_reloads_policy_and_denies_newly_blocked_action() {
     let policy = NamedTempFile::new().expect("policy file should be created");
     std::fs::write(policy.path(), r#"{"confirm":["stream_status"]}"#).unwrap();
-    let mut state = DaemonState::new();
-    state.policy = Some(ActionPolicy::load(policy.path().to_str().unwrap()).unwrap());
+    let mut state = engine(EngineOptions {
+        action_policy: Some(policy.path().to_str().unwrap().to_string()),
+        ..EngineOptions::default()
+    });
 
     assert_success(
         &run(
@@ -200,8 +165,10 @@ async fn confirmation_replay_reloads_policy_and_denies_newly_blocked_action() {
 async fn confirmation_replay_fails_closed_when_policy_file_is_invalid_or_deleted() {
     let policy = NamedTempFile::new().expect("policy file should be created");
     std::fs::write(policy.path(), r#"{"confirm":["stream_status"]}"#).unwrap();
-    let mut state = DaemonState::new();
-    state.policy = Some(ActionPolicy::load(policy.path().to_str().unwrap()).unwrap());
+    let mut state = engine(EngineOptions {
+        action_policy: Some(policy.path().to_str().unwrap().to_string()),
+        ..EngineOptions::default()
+    });
 
     assert_success(
         &run(
@@ -237,9 +204,11 @@ async fn confirmation_replay_fails_closed_when_policy_file_is_invalid_or_deleted
 
 #[tokio::test]
 async fn confirmation_replay_rechecks_top_level_url_and_cookie_allowlists() {
-    let mut state = DaemonState::new();
-    state.confirm_actions = Some(confirm_actions(&["tab_new", "cookies_set"]));
-    state.domain_filter = Arc::new(RwLock::new(Some(DomainFilter::new("example.com"))));
+    let mut state = engine(EngineOptions {
+        confirm_actions: Some(vec!["tab_new".to_string(), "cookies_set".to_string()]),
+        allowed_domains: Some("example.com".to_string()),
+        ..EngineOptions::default()
+    });
 
     assert_success(
         &run(
@@ -280,9 +249,11 @@ async fn confirmation_replay_rechecks_top_level_url_and_cookie_allowlists() {
 async fn confirmation_replay_fails_closed_for_unvalidated_allowlist_targets() {
     let state_file = NamedTempFile::new().expect("state file should be created");
     std::fs::write(state_file.path(), r#"{"cookies":[],"origins":[]}"#).unwrap();
-    let mut state = DaemonState::new();
-    state.confirm_actions = Some(confirm_actions(&["state_load"]));
-    state.domain_filter = Arc::new(RwLock::new(Some(DomainFilter::new("example.com"))));
+    let mut state = engine(EngineOptions {
+        confirm_actions: Some(vec!["state_load".to_string()]),
+        allowed_domains: Some("example.com".to_string()),
+        ..EngineOptions::default()
+    });
 
     assert_success(
         &run(
@@ -310,8 +281,10 @@ async fn confirmation_replay_fails_closed_for_unvalidated_allowlist_targets() {
 async fn stream_result_messages_report_success() {
     let socket_dir = TempDir::new().expect("stream socket dir should be created");
     let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());
-    let mut state = DaemonState::new();
-    state.session_id = "adapter-stream-result".to_string();
+    let mut state = engine(EngineOptions {
+        session: Some("adapter-stream-result".to_string()),
+        ..EngineOptions::default()
+    });
 
     let enabled = run(
         &mut state,

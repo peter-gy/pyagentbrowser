@@ -14,7 +14,8 @@ from agentbrowser.cdp.models import (
 
 if TYPE_CHECKING:
     from agentbrowser.cdp.controller import AsyncCDPController, CDPController
-    from agentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
+    from agentbrowser.cdp.page_async import AsyncCDPPageSession
+    from agentbrowser.cdp.page_sync import CDPPageSession
 
 
 @dataclass(frozen=True, slots=True)

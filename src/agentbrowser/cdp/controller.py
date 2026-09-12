@@ -14,8 +14,12 @@ from agentbrowser.cdp.models import (
     ExecutionContext,
     Frame,
 )
-from agentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
+from agentbrowser.cdp.page_async import AsyncCDPPageSession
+from agentbrowser.cdp.page_sync import CDPPageSession
 from agentbrowser.cdp.target import AsyncCDPTarget, CDPTarget
+from agentbrowser.contracts.decode import required_string
+from agentbrowser.execution.commands import AsyncExecutor, Command, Executor
+from agentbrowser.features.tabs.codec import tabs_from_data
 
 
 class CDPController:
@@ -27,8 +31,10 @@ class CDPController:
     targets.
     """
 
-    def __init__(self, browser: Any, *, client_factory: Callable[[str], CDPClient] | None = None):
-        self._browser = browser
+    def __init__(
+        self, executor: Executor, *, client_factory: Callable[[str], CDPClient] | None = None
+    ):
+        self._executor = executor
         self._client_factory = client_factory or CDPClient
         self._client: CDPClient | None = None
         self._page: CDPPageSession | None = None
@@ -143,7 +149,9 @@ class CDPController:
             target_id = self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             client.send("Target.getTargets"),
-            self._browser.url(),
+            self._executor.execute(
+                Command("url", decode=lambda data: required_string(data, "url", action="url"))
+            ),
             label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
@@ -164,16 +172,14 @@ class CDPController:
         self._check_open()
         if self._client is not None:
             return self._client
-        if not self._browser.is_launched:
-            self._browser._launch_process()
-        cdp_url = self._browser._command("cdp_url").get("cdpUrl")
+        cdp_url = self._executor.execute(Command("cdp_url")).get("cdpUrl")
         if not isinstance(cdp_url, str) or not cdp_url:
             raise CDPError('browser.native.data("cdp_url") did not return a cdpUrl string')
         self._client = self._client_factory(cdp_url)
         return self._client
 
     def _target_id_for_tab_label(self, label: str) -> str | None:
-        for tab in self._browser.tabs.list():
+        for tab in self._executor.execute(Command("tab_list", decode=tabs_from_data)):
             if getattr(tab, "label", None) != label:
                 continue
             raw = getattr(tab, "raw", {})
@@ -200,11 +206,11 @@ class AsyncCDPController:
 
     def __init__(
         self,
-        browser: Any,
+        executor: AsyncExecutor,
         *,
         client_factory: Callable[[str], AsyncCDPClient] | None = None,
     ):
-        self._browser = browser
+        self._executor = executor
         self._client_factory = client_factory or AsyncCDPClient
         self._client: AsyncCDPClient | None = None
         self._page: AsyncCDPPageSession | None = None
@@ -319,7 +325,9 @@ class AsyncCDPController:
             target_id = await self._target_id_for_tab_label(label)
         target = _resolve_active_target(
             await client.send("Target.getTargets"),
-            await self._browser.url(),
+            await self._executor.execute(
+                Command("url", decode=lambda data: required_string(data, "url", action="url"))
+            ),
             label=None if target_id is not None else label,
             url=url,
             target_id=target_id,
@@ -340,16 +348,14 @@ class AsyncCDPController:
         self._check_open()
         if self._client is not None:
             return self._client
-        if not self._browser.is_launched:
-            await self._browser._launch_process()
-        cdp_url = (await self._browser._command("cdp_url")).get("cdpUrl")
+        cdp_url = (await self._executor.execute(Command("cdp_url"))).get("cdpUrl")
         if not isinstance(cdp_url, str) or not cdp_url:
             raise CDPError('browser.native.data("cdp_url") did not return a cdpUrl string')
         self._client = self._client_factory(cdp_url)
         return self._client
 
     async def _target_id_for_tab_label(self, label: str) -> str | None:
-        for tab in await self._browser.tabs.list():
+        for tab in await self._executor.execute(Command("tab_list", decode=tabs_from_data)):
             if getattr(tab, "label", None) != label:
                 continue
             raw = getattr(tab, "raw", {})

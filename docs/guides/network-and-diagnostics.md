@@ -23,8 +23,8 @@ with Browser.launch() as browser:
             content_type="application/json",
         ),
     )
-    browser.open("https://example.com")
-    body = browser.evaluate("fetch('/api/profile').then(response => response.text())")
+    browser.page.open("https://example.com")
+    body = browser.page.evaluate("fetch('/api/profile').then(response => response.text())")
     print(body)
     browser.network.unroute("**/api/profile")
 ```
@@ -51,7 +51,7 @@ An [HTTP Archive](https://w3c.github.io/web-performance/specs/HAR/Overview.html)
 ```python
 with Browser.launch() as browser:
     browser.network.har_start(content="text")
-    browser.open("https://example.com")
+    browser.page.open("https://example.com")
     har_path = browser.network.har_stop("trace.har")
 
 print(har_path)
@@ -84,7 +84,7 @@ from agentbrowser import Browser
 os.environ["AGENT_BROWSER_ENABLE"] = "react-devtools"
 
 with Browser.launch() as browser:
-    browser.open("https://react.dev/")
+    browser.page.open("https://react.dev/")
     tree = browser.diagnostics.react_tree()
     print(tree)
 ```

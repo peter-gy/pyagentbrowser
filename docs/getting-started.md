@@ -32,7 +32,7 @@ with Browser.launch() as browser:
     browser.page.set_content(
         "<button onclick=\"this.textContent='Done'\">Run</button>"
     )
-    snapshot = browser.observe()
+    snapshot = browser.page.observe()
     result = snapshot.one(role="button", name="Run").click()
 
     print(result.after.one(role="button").name)
@@ -44,9 +44,10 @@ Done
 True
 ```
 
-The example uses four public objects:
+The example uses five public objects:
 
-- `Browser` owns the native session and active tab.
+- `Browser` owns the native session and browser lifecycle.
+- `Page` owns one main-document scope.
 - `Snapshot` records an accessibility tree and its element refs.
 - `Ref` identifies one element inside its source snapshot.
 - `ActionResult` records the ref, the snapshots before and after the action, and their diff.
@@ -55,7 +56,7 @@ The example uses four public objects:
 
 ## Choose the next path
 
-- Use [Interact with pages](/guides/interact) for live queries, ref actions, waits, input, scripts, native frames, and emulation.
+- Use [Interact with pages](/guides/interact) for live queries, ref actions, waits, input, scripts, frame handles, scrolling, geometry, and emulation.
 - Use [Async applications](/guides/async) for awaitable browser operations and ordered shutdown.
 - Use [Browser controllers](/reference/browser#construction) to attach to an existing Chrome DevTools Protocol endpoint or select a browser executable.
 - Use [Environment and platforms](/reference/environment) for browser discovery, environment variables, wheel targets, and timeout units.
@@ -68,7 +69,7 @@ Install `images` for Pillow image loading and conversion on `Screenshot`:
 uv add "pyagentbrowser[images]"
 ```
 
-Install `cdp` for direct protocol clients, page targets, frames, execution contexts, and raw methods:
+Install `cdp` for direct protocol clients, page targets, execution contexts, and raw methods:
 
 ```bash
 uv add "pyagentbrowser[cdp]"

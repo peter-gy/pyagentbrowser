@@ -24,7 +24,8 @@ from agentbrowser.cdp.models import (
     ExecutionContext,
     Frame,
 )
-from agentbrowser.cdp.page import AsyncCDPPageSession, CDPPageSession
+from agentbrowser.cdp.page_async import AsyncCDPPageSession
+from agentbrowser.cdp.page_sync import CDPPageSession
 from agentbrowser.cdp.target import AsyncCDPTarget, CDPTarget
 from agentbrowser.cdp.transport import (
     AsyncCDPTransport,

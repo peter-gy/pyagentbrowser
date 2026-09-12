@@ -5,7 +5,7 @@ description: Learn how accessibility snapshots, scoped refs, waits, diffs, and l
 
 # Snapshots and action evidence
 
-`Browser.observe()` returns an immutable `Snapshot` of the active page's [accessibility tree](https://developer.mozilla.org/en-US/docs/Glossary/Accessibility_tree). The tree represents semantic roles, accessible names, states, and relationships used by assistive technology. Interactive nodes carry ref IDs such as `e1`. Each `Ref` is scoped to the snapshot that produced it.
+`Page.observe()` and `Frame.observe()` return an immutable `Snapshot` of their document's [accessibility tree](https://developer.mozilla.org/en-US/docs/Glossary/Accessibility_tree). The tree represents semantic roles, accessible names, states, and relationships used by assistive technology. Interactive nodes carry ref IDs such as `e1`. Each `Ref` is scoped to the snapshot that produced it.
 
 ```python
 from agentbrowser import Browser, SnapshotSpec
@@ -13,14 +13,14 @@ from agentbrowser import Browser, SnapshotSpec
 spec = SnapshotSpec(compact=True, urls=True)
 
 with Browser.launch() as browser:
-    browser.open("https://example.com")
-    snapshot = browser.observe(spec)
+    browser.page.open("https://example.com")
+    snapshot = browser.page.observe(spec)
 
     print(snapshot.text)
     print(snapshot.refs)
 ```
 
-`SnapshotSpec` controls an optional selector, interactive-node filtering, compact output, maximum depth, and URL inclusion. Refreshes and ref actions reuse the same specification.
+`SnapshotSpec` controls an optional selector, interactive-node filtering, compact output, maximum depth, and URL inclusion. Refreshes and ref actions reuse the same specification. Frame snapshots cover the selected frame document and require `selector=None`.
 
 Focused snippets that start from `snapshot` or `link` are partial. Run them inside an active `Browser` context such as the preceding example.
 
@@ -80,8 +80,8 @@ with Browser.launch() as browser:
         <label>Email <input id="email"></label>
         <button type="button">Continue</button>
     """)
-    browser.find.label("Email").fill("ada@example.com")
-    browser.find.role("button", name="Continue").click()
+    browser.page.find.label("Email").fill("ada@example.com")
+    browser.page.find.role("button", name="Continue").click()
 ```
 
 A `Query` resolves against the live document when each operation runs. Query mutations return the query for chaining. Query reads return a direct value.
