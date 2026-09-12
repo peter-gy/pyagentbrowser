@@ -217,3 +217,41 @@ def test_async_close_replays_the_terminal_decode_error() -> None:
         ] == ["__agent_browser_internal_shutdown"]
 
     asyncio.run(run())
+
+
+def test_async_close_timeout_preserves_shared_cleanup_and_result() -> None:
+    async def run() -> None:
+        started, release = Event(), Event()
+
+        def close_reply(_command: dict[str, Any]) -> dict[str, Any]:
+            started.set()
+            assert release.wait(3)
+            return {
+                "closed": True,
+                "restoreStatus": "not_configured",
+                "saveStatus": "not_configured",
+            }
+
+        native = ScriptedNative({"probe": {}, "__agent_browser_internal_shutdown": close_reply})
+        browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        await browser.native.data("probe")
+        short_wait = asyncio.create_task(browser.close(timeout=0.02))
+        assert await asyncio.to_thread(started.wait, 1)
+        patient_wait = asyncio.create_task(browser.close())
+        try:
+            with pytest.raises(TimeoutError):
+                await short_wait
+            assert browser.closed
+            assert not patient_wait.done()
+            release.set()
+            closed = await asyncio.wait_for(patient_wait, 1)
+            assert closed.closed
+            assert await browser.close() is closed
+            assert [command["action"] for command in native.commands].count(
+                "__agent_browser_internal_shutdown"
+            ) == 1
+        finally:
+            release.set()
+            await asyncio.gather(short_wait, patient_wait, return_exceptions=True)
+
+    asyncio.run(run())

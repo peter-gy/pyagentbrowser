@@ -35,7 +35,7 @@ The intentional differences are:
 
 - Engine operations return awaitables.
 - Query factories and snapshot lookups stay synchronous because they create handles or inspect immutable data.
-- `AsyncBrowser.close(*, timeout=5.0)` adds a shutdown timeout in seconds.
+- `AsyncBrowser.close(*, timeout=None)` optionally limits a caller's wait in seconds.
 - Native work is serialized through one owner thread so the event loop stays available.
 
 ## Cancellation and close
@@ -50,7 +50,10 @@ before retrying a mutation, and capture a new snapshot before using refs.
 
 `close()` is single-flight. Concurrent callers share the same terminal result or terminal error. Closing rejects queued operations with `RuntimeError`, requests native shutdown, and joins the owner thread.
 
-A native shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`. The first close call fixes the timeout shared by later callers.
+The default waits for native cleanup, including Chrome's graceful-exit period.
+An explicit timeout raises `TimeoutError` for that caller while shared cleanup
+continues. Await `close()` again to retrieve its result. A worker that remains
+alive after the internal join timeout raises `RuntimeError`.
 
 ## Confirmation
 

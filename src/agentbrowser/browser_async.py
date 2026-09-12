@@ -238,8 +238,13 @@ class AsyncBrowser:
     def webmcp(self) -> AsyncWebMCP:
         return AsyncWebMCP(self._executor)
 
-    async def close(self, *, timeout: float = 5.0) -> CloseResult:
-        """Close the browser and return terminal restore-save state."""
+    async def close(self, *, timeout: float | None = None) -> CloseResult:
+        """Close the browser and return terminal restore-save state.
+
+        ``timeout`` limits this caller's wait. Cleanup continues after a caller
+        timeout, and a later ``close()`` retrieves its result. The default waits
+        for cleanup to finish.
+        """
         return await self._controller.close(timeout=timeout)
 
     async def activate(self) -> Self:
