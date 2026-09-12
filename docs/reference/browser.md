@@ -35,7 +35,7 @@ from agentbrowser import Browser, LaunchOptions, SessionOptions
 | `closed` | Report terminal controller state. |
 | `is_launched` | Report whether this controller has observed an active browser. |
 | `close() -> CloseResult` | Release owned resources. Repeated calls return the cached terminal result or re-raise the cached close error. |
-| `AsyncBrowser.close(*, timeout=5.0)` | Share one close operation across callers and wait up to `timeout` seconds. |
+| `AsyncBrowser.close(*, timeout=None)` | Share one close operation. An optional timeout limits this caller's wait in seconds while cleanup continues. |
 | `activate()` | Bring the local browser window forward and return the controller. |
 
 Both controllers support context managers. Commands after close raise `RuntimeError`.

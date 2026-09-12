@@ -291,17 +291,17 @@ class AsyncController:
         await self._record_successful_action(checked)
         return close_result_from_data(_require_response_data_mapping(checked, action="close"))
 
-    async def _close_once(self, *, timeout: float) -> CloseResult:
+    async def _close_once(self) -> CloseResult:
         result = CloseResult(closed=True)
         try:
-            result = await asyncio.wait_for(self._close_browser(), timeout=timeout)
+            result = await self._close_browser()
         finally:
-            await self._session.aclose(timeout=timeout)
+            await self._session.aclose()
         if result.save_error is not None:
             raise RestoreSaveError(result)
         return result
 
-    async def close(self, *, timeout: float = 5.0) -> CloseResult:
+    async def close(self, *, timeout: float | None = None) -> CloseResult:
         if self._close_task is None:
-            self._close_task = asyncio.create_task(self._close_once(timeout=timeout))
-        return await asyncio.shield(self._close_task)
+            self._close_task = asyncio.create_task(self._close_once())
+        return await asyncio.wait_for(asyncio.shield(self._close_task), timeout=timeout)

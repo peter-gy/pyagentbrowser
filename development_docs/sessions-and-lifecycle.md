@@ -50,10 +50,13 @@ per-command native cancellation token interrupts dispatch and invalidates refs.
 The cancelled await waits for owner-thread settlement before propagating
 `CancelledError`. Effects already sent to the browser can still occur.
 
-`AsyncBrowser.close()` is single-flight and shields shared shutdown from caller
-cancellation. The first close call fixes the timeout used by every caller.
+`AsyncBrowser.close()` is single-flight. Caller cancellation and explicit wait
+timeouts leave the shared shutdown task running. The default waits for native
+cleanup. Each caller can choose a timeout and later await the same result.
 
-A native shutdown timeout raises `TimeoutError`. A worker that remains alive after the join raises `RuntimeError`.
+A caller wait timeout raises `TimeoutError`. Native cleanup retains its result
+for later callers. A worker that remains alive after the internal join timeout
+raises `RuntimeError`.
 
 ## Native command deadlines
 
