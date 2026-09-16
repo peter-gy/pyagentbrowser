@@ -1,0 +1,93 @@
+src/agentbrowser/features/capture/api.py
+  s_d0bde5c6244d42::t_437f1046470fc0 11-15,17-20,101-150,155-161,214-232,317-366,371-377,429-445
+src/agentbrowser/_upstream.json
+  s_d0bde5c6244d42::t_a599e9ed5fdbe3 2-3
+tests/test_capture_api.py
+  s_d0bde5c6244d42::t_6307171fc7771e 12,15,17,80-153,155-156
+  s_d0bde5c6244d42::t_a9d47fed5cc57a 3,154
+docs/reference/namespaces.md
+  s_d0bde5c6244d42::t_a2ef56bee39c12 85,88,93
+crates/agent-browser-adapter/Cargo.toml
+  s_d0bde5c6244d42::t_a599e9ed5fdbe3 3
+docs/reference/models.md
+  s_d0bde5c6244d42::t_a2ef56bee39c12 99,120-122
+src/agentbrowser/features/capture/codec.py
+  s_d0bde5c6244d42::t_c206b3faa51d3c 47
+  s_d0bde5c6244d42::t_9ded1c98bd48d3 12,30-46,48-60
+src/agentbrowser/__init__.py
+  s_d0bde5c6244d42::t_054987bb34de0e 21,122
+tests/test_capture_integration.py
+  s_d0bde5c6244d42::t_2e5307f783d79f 184
+  s_d0bde5c6244d42::t_ab4648a49b1f45 164-183,185-190
+tests/test_documents_integration.py
+  s_d0bde5c6244d42::t_ab4648a49b1f45 70-73,75-91,99,103-115
+  s_d0bde5c6244d42::t_2e5307f783d79f 6,92-98,100-102
+  s_d0bde5c6244d42::t_c206b3faa51d3c 74
+.github/workflows/check-release.yml
+  s_d0bde5c6244d42::t_d11eb8f74acabd 109,121
+src/agentbrowser/features/capture/validation.py
+  s_d0bde5c6244d42::t_9ded1c98bd48d3 4-10
+src/agentbrowser/_version.py
+  s_d0bde5c6244d42::t_3baec1a0e71f94 7
+docs/guides/read-and-capture.md
+  s_d0bde5c6244d42::t_a2ef56bee39c12 76-93,123-125
+tests/test_agent_refs.py
+  s_d0bde5c6244d42::t_6307171fc7771e 337,344,346-352,354-355,360,368,371,379,383-388
+docs/concepts/evidence.md
+  s_d0bde5c6244d42::t_a2ef56bee39c12 25-28
+development_docs/maintenance.md
+  s_d0bde5c6244d42::t_c22787d4fcd94c 199-202
+.github/workflows/build-wheel.yml
+  s_d0bde5c6244d42::t_d11eb8f74acabd 57,95,118
+src/agentbrowser/features/capture/models.py
+  s_d0bde5c6244d42::t_9ded1c98bd48d3 143-164
+src/agentbrowser/features/capture/params.py
+  s_d0bde5c6244d42::t_054987bb34de0e 29
+  s_d0bde5c6244d42::t_9ded1c98bd48d3 18-19,30
+crates/agent-browser-build/src/features/documents/waits.rs
+  s_d0bde5c6244d42::t_1cbe84d9051092 124-134
+crates/agent-browser-build/src/features/capture.rs
+  s_d0bde5c6244d42::t_054987bb34de0e 11-27,91-96
+  s_d0bde5c6244d42::t_374133adb10c53 34,49,61-88
+  s_d0bde5c6244d42::t_f85d3cb19f5cb2 107-112
+Makefile
+  s_d0bde5c6244d42::t_6f5048b039ea8a 152
+  s_d0bde5c6244d42::t_2e5307f783d79f 87
+  s_d0bde5c6244d42::t_42a33475284a1a 82
+  s_d0bde5c6244d42::t_d11eb8f74acabd 5
+crates/agent-browser-build/src/features/documents/scope.rs
+  s_d0bde5c6244d42::t_119727b5f32c0d 234-246
+  s_d0bde5c6244d42::t_cf8453dd60213a 1-4
+  s_d0bde5c6244d42::t_f85d3cb19f5cb2 225-227,253
+  s_d0bde5c6244d42::t_50627114b91ad5 228-233,247-252
+crates/agent-browser-adapter/src/engine.rs
+  s_d0bde5c6244d42::t_f85d3cb19f5cb2 50
+crates/pyagentbrowser/Cargo.toml
+  s_d0bde5c6244d42::t_3baec1a0e71f94 3
+crates/agent-browser-build/src/features/documents/elements.rs
+  s_d0bde5c6244d42::t_50627114b91ad5 21-26
+  s_d0bde5c6244d42::t_ed1cac3e518bdd 16-17
+  s_d0bde5c6244d42::t_f85d3cb19f5cb2 13-14,18-20
+tests/test_api_parity.py
+  s_d0bde5c6244d42::t_6307171fc7771e 59,143-144,149-151
+pyproject.toml
+  s_d0bde5c6244d42::t_3baec1a0e71f94 3
+rust-toolchain.toml
+  s_d0bde5c6244d42::t_d11eb8f74acabd 2
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "98939692219b97a93cabc1bd773846a92a3e9d87",
+  "prompts": {},
+  "sessions": {
+    "s_d0bde5c6244d42": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0aade-79eb-71e3-81ed-7128000ef156",
+        "model": "gpt-5.6-sol"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
