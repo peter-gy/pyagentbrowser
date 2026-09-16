@@ -22,6 +22,10 @@ with Browser.launch() as browser:
 
 `SnapshotSpec` controls an optional selector, interactive-node filtering, compact output, maximum depth, and URL inclusion. Refreshes and ref actions reuse the same specification. Frame snapshots cover the selected frame document and require `selector=None`.
 
+Repeated snapshots preserve a ref ID while the same DOM element remains in the
+same document. Replacing the element, navigating its page or frame, or closing
+its browser scope makes the retained `Ref` stale.
+
 Focused snippets that start from `snapshot` or `link` are partial. Run them inside an active `Browser` context such as the preceding example.
 
 ## Select refs from observed content

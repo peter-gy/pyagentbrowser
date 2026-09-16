@@ -96,6 +96,7 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | `FrameLookupError` | `not_found`, `ambiguous`, `detached`, or `scope_mismatch` reason plus criteria and bounded frame candidates. |
 | `ScrollResult` | Document scope, container, before and after offsets, and derived movement state. |
 | `Screenshot` | File path, format, scope, annotations, raw capture data, bytes, image content, copying, image loading, and notebook display. |
+| `ScreenshotObservation` | Change state, revision, changed-pixel ratio, threshold, document scope, raw data, and an optional written `Screenshot`. |
 | `ConsoleMessage` | Console type, text, level, URL, line, column, and raw data. |
 
 ### `Screenshot`
@@ -115,6 +116,10 @@ notebook display data from their file bytes.
 `ImageContent(data, media_type, source=None)` carries non-empty image bytes,
 an image MIME type, and an optional source path. `Screenshot.content()`
 constructs it from the captured file.
+
+`ScreenshotObservation.path` returns the written image path for a changed
+capture and `None` for an unchanged revision. Its `screenshot` field provides
+the complete `Screenshot` when an image was written.
 
 ## Session, tab, and storage models
 

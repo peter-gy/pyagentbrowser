@@ -14,7 +14,6 @@ from agentbrowser import (
     AsyncBrowser,
     AsyncRef,
     AsyncSnapshot,
-    AsyncStaleRefError,
     Browser,
     BrowserError,
     CloseResult,
@@ -335,23 +334,30 @@ def test_stale_ref_translation_uses_structured_error_codes() -> None:
     assert not isinstance(error.value, StaleRefError)
 
 
-def test_new_snapshot_invalidates_older_refs_before_native_dispatch() -> None:
+def test_same_document_snapshot_keeps_older_refs_usable() -> None:
     native = TransitionNative()
     browser = _browser(native)
     old_ref = browser.page.observe().one(name="Submit")
 
     browser.page.observe()
 
-    with pytest.raises(StaleRefError, match="stale snapshot generation"):
-        old_ref.click()
-    assert [command["action"] for command in native.commands] == ["snapshot", "snapshot"]
+    result = old_ref.click()
+
+    assert result.target is old_ref
+    assert [command["action"] for command in native.commands] == [
+        "snapshot",
+        "snapshot",
+        "click",
+        "snapshot",
+    ]
 
 
-def test_annotated_screenshot_invalidates_older_refs(tmp_path: Path) -> None:
+def test_annotated_screenshot_keeps_older_refs_usable(tmp_path: Path) -> None:
     native = ScriptedNative(
         {
             "snapshot": _snapshot(),
             "screenshot": {"path": str(tmp_path / "annotated.png")},
+            "click": {},
         }
     )
     browser = _browser(native)
@@ -359,11 +365,10 @@ def test_annotated_screenshot_invalidates_older_refs(tmp_path: Path) -> None:
 
     browser.page.capture.screenshot(tmp_path / "annotated.png", annotate=True, wait_ms=0)
 
-    with pytest.raises(StaleRefError, match="stale snapshot generation"):
-        old_ref.click()
+    assert old_ref.click().target is old_ref
 
 
-def test_async_new_snapshot_invalidates_older_refs_before_native_dispatch() -> None:
+def test_async_same_document_snapshot_keeps_older_refs_usable() -> None:
     native = TransitionNative()
 
     async def run() -> None:
@@ -371,12 +376,16 @@ def test_async_new_snapshot_invalidates_older_refs_before_native_dispatch() -> N
         old_ref = (await browser.page.observe()).one(name="Submit")
         await browser.page.observe()
 
-        with pytest.raises(AsyncStaleRefError, match="stale snapshot generation"):
-            await old_ref.click()
+        assert (await old_ref.click()).target is old_ref
         await browser.close()
 
     asyncio.run(run())
-    assert [command["action"] for command in native.commands[:2]] == ["snapshot", "snapshot"]
+    assert [command["action"] for command in native.commands[:4]] == [
+        "snapshot",
+        "snapshot",
+        "click",
+        "snapshot",
+    ]
 
 
 def test_confirmed_ref_action_finishes_the_same_high_level_contract() -> None:

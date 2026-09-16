@@ -2,7 +2,7 @@
 
 PYTHON_SOURCES = src tests scripts examples
 BUILD_PYTHON ?= 3.11
-RUST_TOOLCHAIN ?= 1.97.0
+RUST_TOOLCHAIN ?= 1.98.1
 UPSTREAM_REF ?= origin/main
 ALLOW_NON_FAST_FORWARD ?= 0
 UPSTREAM_UPDATE_FLAGS = $(if $(filter 1,$(ALLOW_NON_FAST_FORWARD)),--allow-non-fast-forward)
@@ -79,12 +79,12 @@ format: sync
 lint: sync
 	uv lock --check
 	$(UV_RUN) ruff format --check $(PYTHON_SOURCES) pyproject.toml
-	$(UV_RUN) ruff check
+	$(UV_RUN) ruff check $(PYTHON_SOURCES)
 	$(UV_RUN) python -m compileall -q examples
 
 .PHONY: typecheck
 typecheck: sync
-	$(UV_RUN) ty check --python-platform all
+	$(UV_RUN) ty check --python-platform all $(PYTHON_SOURCES)
 
 .PHONY: test
 test: native-dev
@@ -149,7 +149,7 @@ package: submodule-init
 	uv build --sdist --force-pep517 --python $(BUILD_PYTHON) --out-dir $(PEP517_DIST_DIR)
 	mv $(PEP517_DIST_DIR)/* $(DIST_DIR)/
 	$(PYTHON_RUN) -m scripts.package_smoke $(DIST_DIR)
-	$(PYTHON_RUN) scripts/verify-install-artifacts.py $(DIST_DIR)
+	$(RUST_ENV) $(PYTHON_RUN) scripts/verify-install-artifacts.py $(DIST_DIR)
 
 .PHONY: release-version-check
 release-version-check: submodule-init

@@ -47,7 +47,7 @@ impl Engine {
 
     /// Expires refs after an interrupted dispatch whose page effects may have completed.
     pub fn invalidate_refs(&mut self) -> u64 {
-        self.state.ref_map.clear();
+        self.state.ref_map.invalidate_all_documents();
         self.state.ref_map.generation
     }
 

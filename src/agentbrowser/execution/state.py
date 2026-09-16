@@ -68,11 +68,6 @@ class CommandState:
         force_cdp_invalidation: bool = False,
     ) -> Literal["reset", "invalidate"] | None:
         action = response.action
-        if response.raw.get("refGeneration") is None and (
-            action in {"snapshot", "diff_snapshot", "diff_url"}
-            or (action == "screenshot" and bool((params or {}).get("annotate")))
-        ):
-            self.generation += 1
         browser_launched = response_browser_launched(response)
         if browser_launched is not None:
             self.launched = browser_launched

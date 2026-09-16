@@ -18,7 +18,7 @@ from agentbrowser.contracts.images import ImageContent
 from agentbrowser.contracts.protocol import BrowserResponse
 from agentbrowser.contracts.scope import DocumentScope
 from agentbrowser.execution.pending import AsyncPendingAction, PendingAction
-from agentbrowser.features.capture.models import Screenshot
+from agentbrowser.features.capture.models import Screenshot, ScreenshotObservation
 from agentbrowser.features.diagnostics.models import (
     AccessibilityAudit,
     AccessibilityCounts,
@@ -119,6 +119,7 @@ __all__ = [
     "RestoreSaveError",
     "RouteResponse",
     "Screenshot",
+    "ScreenshotObservation",
     "ScrollPosition",
     "ScrollResult",
     "SessionId",

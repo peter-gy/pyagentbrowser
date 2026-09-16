@@ -8,13 +8,30 @@ use std::{
 };
 
 pub(crate) fn rewrite_frame_capture(contents: Source) -> Source {
+    const UPSTREAM_SCREENSHOT_SIGNATURE: &str = r#"    let signature = format!(
+        "selector={:?};fullPage={};annotate={}",
+        cmd.get("selector").and_then(|v| v.as_str()),
+        cmd.get("fullPage")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        annotate
+    );"#;
+    const FRAME_SCREENSHOT_SIGNATURE: &str = r#"    let signature = format!(
+        "selector={:?};fullPage={};annotate={};frameId={:?}",
+        cmd.get("selector").and_then(|v| v.as_str()),
+        cmd.get("fullPage")
+            .and_then(|v| v.as_bool())
+            .unwrap_or(false),
+        annotate,
+        state.active_frame_id
+    );"#;
     const UPSTREAM_OPTIONS_END: &str = r#"        output_dir: cmd
             .get("screenshotDir")
             .and_then(|v| v.as_str())
             .map(String::from),
     };
 
-    if annotate {"#;
+    let (session_id, result) = if let Some(wb) = state"#;
     const FRAME_OPTIONS_END: &str = r#"        output_dir: cmd
             .get("screenshotDir")
             .and_then(|v| v.as_str())
@@ -29,7 +46,7 @@ pub(crate) fn rewrite_frame_capture(contents: Source) -> Source {
         return Err("Annotated frame screenshots require selector-scoped page capture".to_string());
     }
 
-    if annotate {"#;
+    let (session_id, result) = if let Some(wb) = state"#;
     const UPSTREAM_DIFF_OPTIONS: &str = r#"        annotate: false,
         output_dir: None,
     };
@@ -41,28 +58,42 @@ pub(crate) fn rewrite_frame_capture(contents: Source) -> Source {
     };
 
     let result = screenshot::take_screenshot("#;
-    const UPSTREAM_SCREENSHOT_RESULT: &str =
-        r#"    let mut response = json!({ "path": result.path });"#;
-    const SCOPED_SCREENSHOT_RESULT: &str = r#"    let origin = eval_body_in_active_frame(
-        mgr,
-        state.active_frame_id.as_deref(),
-        &session_id,
-        &state.iframe_sessions,
-        "(root) => root.defaultView.location.href",
-    )
-    .await?
-    .as_str()
-    .unwrap_or_default()
-    .to_string();
-    let target_id = mgr.active_target_id().ok();
-    let mut response = json!({
-        "path": result.path,
-        "origin": origin,
-        "targetId": target_id,
-        "frameId": state.active_frame_id.clone(),
-    });"#;
+    const UPSTREAM_SCREENSHOT_RESULT: &str = r#"    if !result.annotations.is_empty() {
+        response["annotations"] = serde_json::to_value(&result.annotations)
+            .map_err(|e| format!("Failed to serialize annotations: {}", e))?;
+    }
+
+    Ok(response)"#;
+    const SCOPED_SCREENSHOT_RESULT: &str = r#"    if !result.annotations.is_empty() {
+        response["annotations"] = serde_json::to_value(&result.annotations)
+            .map_err(|e| format!("Failed to serialize annotations: {}", e))?;
+    }
+    if let Some(mgr) = state.browser.as_ref() {
+        let origin = eval_body_in_active_frame(
+            mgr,
+            state.active_frame_id.as_deref(),
+            &session_id,
+            &state.iframe_sessions,
+            "(root) => root.defaultView.location.href",
+        )
+        .await?
+        .as_str()
+        .unwrap_or_default()
+        .to_string();
+        response["origin"] = json!(origin);
+        response["targetId"] = json!(mgr.active_target_id().ok());
+        response["frameId"] = json!(state.active_frame_id.clone());
+    }
+
+    Ok(response)"#;
     let rewritten = replace_once_named(
         contents,
+        "frame screenshot observation scope",
+        UPSTREAM_SCREENSHOT_SIGNATURE,
+        FRAME_SCREENSHOT_SIGNATURE,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
         "frame screenshot options",
         UPSTREAM_OPTIONS_END,
         FRAME_OPTIONS_END,
@@ -72,6 +103,12 @@ pub(crate) fn rewrite_frame_capture(contents: Source) -> Source {
         "frame diff screenshot options",
         UPSTREAM_DIFF_OPTIONS,
         FRAME_DIFF_OPTIONS,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "retained screenshot scope identity",
+        "            state,\n            session_id,\n            signature,",
+        "            state,\n            session_id.clone(),\n            signature,",
     );
     replace_once_named(
         rewritten,

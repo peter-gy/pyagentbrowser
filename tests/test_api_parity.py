@@ -56,6 +56,7 @@ def _public_methods(target: type[Any]) -> set[str]:
         "RouteResponse",
         "SessionId",
         "SessionStatus",
+        "ScreenshotObservation",
         "TabCloseResult",
         "TabInfo",
         "TabSwitchResult",
@@ -139,9 +140,13 @@ def test_sync_and_async_public_surfaces_keep_method_and_signature_parity() -> No
 
     sync_frame_capture = Frame(sync_browser._executor, frame_id="frame").capture
     async_frame_capture = AsyncFrame(async_browser._executor, frame_id="frame").capture
-    assert _public_methods(type(sync_frame_capture)) == {"screenshot"}
-    assert _public_methods(type(async_frame_capture)) == {"screenshot"}
+    assert _public_methods(type(sync_frame_capture)) == {"screenshot", "screenshot_if_changed"}
+    assert _public_methods(type(async_frame_capture)) == {"screenshot", "screenshot_if_changed"}
     assert (
         inspect.signature(sync_frame_capture.screenshot).parameters
         == inspect.signature(async_frame_capture.screenshot).parameters
+    )
+    assert (
+        inspect.signature(sync_frame_capture.screenshot_if_changed).parameters
+        == inspect.signature(async_frame_capture.screenshot_if_changed).parameters
     )

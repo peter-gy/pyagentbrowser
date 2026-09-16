@@ -161,3 +161,30 @@ def test_screenshot_content_preserves_png_bytes(chrome_path: Path, tmp_path: Pat
         assert content.data.startswith(b"\x89PNG\r\n\x1a\n")
         assert content.media_type == "image/png"
         assert shot._repr_png_() == content.data
+
+
+def test_conditional_screenshot_writes_only_changed_frames(
+    chrome_path: Path,
+    tmp_path: Path,
+) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content("<main style='width:300px;height:200px'>Stable</main>")
+        first = browser.page.capture.screenshot_if_changed(
+            tmp_path / "first.png", threshold=0.0, wait_ms=0
+        )
+        unchanged = browser.page.capture.screenshot_if_changed(
+            tmp_path / "unchanged.png", threshold=0.0, wait_ms=0
+        )
+        browser.page.evaluate("document.querySelector('main').style.background = 'rgb(255, 0, 0)'")
+        changed = browser.page.capture.screenshot_if_changed(
+            tmp_path / "changed.png", threshold=0.0, wait_ms=0
+        )
+
+    assert first.changed and first.path == tmp_path / "first.png"
+    assert first.path is not None
+    assert first.path.is_file()
+    assert unchanged.changed is False and unchanged.path is None
+    assert not (tmp_path / "unchanged.png").exists()
+    assert changed.changed and changed.path == tmp_path / "changed.png"
+    assert changed.revision == 3
+    assert changed.pixel_change_ratio > 0
