@@ -73,6 +73,24 @@ frame transforms raise `BrowserError`.
 Pass those values to the calling application's image channel. See
 [Code-mode integration](/guides/code-mode) for a tool-result example.
 
+Use conditional capture when repeated observations should write an image only
+after the rendered pixels change:
+
+```python
+with Browser.launch() as browser:
+    browser.page.open("https://example.com")
+    observation = browser.page.capture.screenshot_if_changed(
+        "artifacts/example.png",
+        threshold=0.01,
+    )
+    if observation.screenshot is not None:
+        print(observation.path, observation.pixel_change_ratio)
+```
+
+The first call for a document and capture mode establishes a baseline and
+writes an image. Later calls increment `revision`. An unchanged revision sets
+`changed=False`, `path=None`, and `screenshot=None`.
+
 ## Record the active page
 
 The native recorder captures the active tab at 30 frames per second by default.
@@ -101,6 +119,10 @@ with Browser.launch() as browser:
 through 60. Use a `.webm` or `.mp4` output path. `recording_restart` stops the
 current take and starts another at the requested path. Invalid frame rates or
 extensionless paths are rejected before replacing an active take.
+
+Pass `cursor=True` to render the pointer and click ripple. Pass
+`contactSheet=True` to write a timestamped summary image of visual changes.
+`contactSheetThreshold` controls the changed-pixel ratio used for the summary.
 
 Pass `url="https://example.com"` to either action to navigate the active tab
 before recording. These URL calls invalidate direct CDP frame and

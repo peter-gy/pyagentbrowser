@@ -8,10 +8,16 @@ from time import sleep as sync_sleep
 from agentbrowser.contracts.decode import required_path
 from agentbrowser.contracts.errors import ConfirmationRequired
 from agentbrowser.execution.commands import AsyncExecutor, Command, Executor, result_scope
-from agentbrowser.features.capture.codec import screenshot_from_data
-from agentbrowser.features.capture.models import Screenshot
+from agentbrowser.features.capture.codec import (
+    screenshot_from_data,
+    screenshot_observation_from_data,
+)
+from agentbrowser.features.capture.models import Screenshot, ScreenshotObservation
 from agentbrowser.features.capture.params import pdf_params, screenshot_params
-from agentbrowser.features.capture.validation import validate_screenshot_wait_ms
+from agentbrowser.features.capture.validation import (
+    validate_screenshot_threshold,
+    validate_screenshot_wait_ms,
+)
 
 DEFAULT_SCREENSHOT_WAIT_MS = 100
 
@@ -92,9 +98,66 @@ class _ScreenshotCapture:
             raise
         return self._result(screenshot)
 
+    def screenshot_if_changed(
+        self,
+        path: str | Path | None = None,
+        *,
+        selector: str | None = None,
+        full_page: bool = False,
+        annotate: bool = False,
+        output_dir: str | Path | None = None,
+        format: str = "png",
+        quality: int | None = None,
+        threshold: float = 0.0,
+        wait_ms: int = DEFAULT_SCREENSHOT_WAIT_MS,
+    ) -> ScreenshotObservation:
+        """Write a screenshot when its changed-pixel ratio exceeds `threshold`."""
+        validate_screenshot_threshold(threshold)
+        validate_screenshot_wait_ms(wait_ms)
+        if path is not None:
+            path = Path(path).expanduser()
+        if output_dir is not None:
+            output_dir = Path(output_dir).expanduser()
+        params = screenshot_params(
+            path=path,
+            selector=selector,
+            full_page=full_page,
+            annotate=annotate,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+            if_changed=True,
+            threshold=threshold,
+        )
+        _wait_before_screenshot(wait_ms)
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        if output_dir is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            observation = self.executor.execute(
+                Command(
+                    "screenshot",
+                    {**params},
+                    decode=lambda data: screenshot_observation_from_data(data, format=format),
+                )
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._observation_result)
+            raise
+        return self._observation_result(observation)
+
     def _result(self, screenshot: Screenshot) -> Screenshot:
         scope = result_scope(self.executor, screenshot.raw)
         return replace(screenshot, scope=scope)
+
+    def _observation_result(self, observation: ScreenshotObservation) -> ScreenshotObservation:
+        scope = result_scope(self.executor, observation.raw)
+        screenshot = observation.screenshot
+        if screenshot is not None:
+            screenshot = replace(screenshot, scope=scope)
+        return replace(observation, screenshot=screenshot, scope=scope)
 
 
 class Capture(_ScreenshotCapture):
@@ -145,6 +208,25 @@ class FrameCapture:
             output_dir=output_dir,
             format=format,
             quality=quality,
+            wait_ms=wait_ms,
+        )
+
+    def screenshot_if_changed(
+        self,
+        path: str | Path | None = None,
+        *,
+        output_dir: str | Path | None = None,
+        format: str = "png",
+        quality: int | None = None,
+        threshold: float = 0.0,
+        wait_ms: int = DEFAULT_SCREENSHOT_WAIT_MS,
+    ) -> ScreenshotObservation:
+        return _ScreenshotCapture(self.executor).screenshot_if_changed(
+            path,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+            threshold=threshold,
             wait_ms=wait_ms,
         )
 
@@ -232,9 +314,66 @@ class _AsyncScreenshotCapture:
             raise
         return self._result(screenshot)
 
+    async def screenshot_if_changed(
+        self,
+        path: str | Path | None = None,
+        *,
+        selector: str | None = None,
+        full_page: bool = False,
+        annotate: bool = False,
+        output_dir: str | Path | None = None,
+        format: str = "png",
+        quality: int | None = None,
+        threshold: float = 0.0,
+        wait_ms: int = DEFAULT_SCREENSHOT_WAIT_MS,
+    ) -> ScreenshotObservation:
+        """Write a screenshot when its changed-pixel ratio exceeds `threshold`."""
+        validate_screenshot_threshold(threshold)
+        validate_screenshot_wait_ms(wait_ms)
+        if path is not None:
+            path = Path(path).expanduser()
+        if output_dir is not None:
+            output_dir = Path(output_dir).expanduser()
+        params = screenshot_params(
+            path=path,
+            selector=selector,
+            full_page=full_page,
+            annotate=annotate,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+            if_changed=True,
+            threshold=threshold,
+        )
+        await async_sleep(wait_ms / 1000)
+        if path is not None:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        if output_dir is not None:
+            output_dir.mkdir(parents=True, exist_ok=True)
+        try:
+            observation = await self.executor.execute(
+                Command(
+                    "screenshot",
+                    {**params},
+                    decode=lambda data: screenshot_observation_from_data(data, format=format),
+                )
+            )
+        except ConfirmationRequired as error:
+            if error.pending is not None:
+                error.pending = error.pending.map(self._observation_result)
+            raise
+        return self._observation_result(observation)
+
     def _result(self, screenshot: Screenshot) -> Screenshot:
         scope = result_scope(self.executor, screenshot.raw)
         return replace(screenshot, scope=scope)
+
+    def _observation_result(self, observation: ScreenshotObservation) -> ScreenshotObservation:
+        scope = result_scope(self.executor, observation.raw)
+        screenshot = observation.screenshot
+        if screenshot is not None:
+            screenshot = replace(screenshot, scope=scope)
+        return replace(observation, screenshot=screenshot, scope=scope)
 
 
 class AsyncCapture(_AsyncScreenshotCapture):
@@ -285,5 +424,24 @@ class AsyncFrameCapture:
             output_dir=output_dir,
             format=format,
             quality=quality,
+            wait_ms=wait_ms,
+        )
+
+    async def screenshot_if_changed(
+        self,
+        path: str | Path | None = None,
+        *,
+        output_dir: str | Path | None = None,
+        format: str = "png",
+        quality: int | None = None,
+        threshold: float = 0.0,
+        wait_ms: int = DEFAULT_SCREENSHOT_WAIT_MS,
+    ) -> ScreenshotObservation:
+        return await _AsyncScreenshotCapture(self.executor).screenshot_if_changed(
+            path,
+            output_dir=output_dir,
+            format=format,
+            quality=quality,
+            threshold=threshold,
             wait_ms=wait_ms,
         )

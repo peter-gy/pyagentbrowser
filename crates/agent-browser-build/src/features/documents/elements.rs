@@ -10,14 +10,20 @@ use std::{
 pub(crate) fn rewrite_element_module(out_dir: &Path, source: &Path) -> PathBuf {
     let contents = read_rewrite_source(source, "element file").feature("documents");
     let contents = replace_once_named(contents, "ref map generation field",
-        "pub struct RefMap {\n    map: HashMap<String, RefEntry>,",
-        "static REF_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);\n\npub struct RefMap {\n    pub generation: u64,\n    map: HashMap<String, RefEntry>,");
+        "#[derive(Clone)]\npub struct RefMap {\n    map: HashMap<String, RefEntry>,",
+        "static REF_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);\n\n#[derive(Clone)]\npub struct RefMap {\n    pub generation: u64,\n    map: HashMap<String, RefEntry>,");
     let contents = replace_once_named(contents, "ref map generation initialization",
-        "            map: HashMap::new(),\n            next_ref: 1,",
-        "            generation: REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),\n            map: HashMap::new(),\n            next_ref: 1,");
-    let contents = replace_once_named(contents, "ref map generation invalidation",
-        "    pub fn clear(&mut self) {\n        self.map.clear();",
-        "    pub fn clear(&mut self) {\n        self.generation = REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        self.map.clear();");
+        "            map: HashMap::new(),\n            documents: HashMap::new(),\n            next_ref: 1,",
+        "            generation: REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed),\n            map: HashMap::new(),\n            documents: HashMap::new(),\n            next_ref: 1,");
+    let contents = replace_once_named(contents, "ref map terminal invalidation",
+        "    pub fn invalidate_all_documents(&mut self) {\n        self.documents.clear();",
+        "    pub fn invalidate_all_documents(&mut self) {\n        self.generation = REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        self.documents.clear();");
+    let contents = replace_once_named(contents, "ref map page invalidation",
+        "    pub fn invalidate_page(&mut self, page_session: &str) {\n        self.documents",
+        "    pub fn invalidate_page(&mut self, page_session: &str) {\n        self.generation = REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        self.documents");
+    let contents = replace_once_named(contents, "ref map scope invalidation",
+        "    pub fn begin_snapshot(&mut self) {\n        self.map.clear();\n    }",
+        "    pub fn begin_snapshot(&mut self) {\n        self.map.clear();\n    }\n\n    pub fn expire_active_refs(&mut self) {\n        self.generation = REF_GENERATION.fetch_add(1, std::sync::atomic::Ordering::Relaxed);\n        self.map.clear();\n    }");
     let contents = rewrite_element_scope(contents);
     let destination = out_dir.join("agent_browser_element.rs");
     fs::write(&destination, contents).expect("write element module");

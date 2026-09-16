@@ -15,6 +15,8 @@ def screenshot_params(
     output_dir: str | Path | None = None,
     format: str = "png",
     quality: int | None = None,
+    if_changed: bool = False,
+    threshold: float | None = None,
 ) -> dict[str, Any]:
     return {
         "path": optional(path_value(path)),
@@ -24,6 +26,8 @@ def screenshot_params(
         "screenshotDir": optional(path_value(output_dir)),
         "format": format,
         "quality": optional(quality),
+        "ifChanged": optional(True if if_changed else None),
+        "threshold": optional(threshold),
     }
 
 

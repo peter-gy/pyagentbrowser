@@ -9,6 +9,7 @@ from agentbrowser.features.capture.models import (
     Screenshot,
     ScreenshotAnnotation,
     ScreenshotBox,
+    ScreenshotObservation,
     _normalize_image_format,
 )
 
@@ -25,6 +26,38 @@ def screenshot_from_data(
         path=Path(path),
         format=_normalize_image_format(format),
         annotations=_parse_screenshot_annotations(data.get("annotations")),
+        raw=data,
+    )
+
+
+def screenshot_observation_from_data(
+    data: Mapping[str, Any],
+    *,
+    format: str = "png",
+) -> ScreenshotObservation:
+    changed = data.get("changed")
+    revision = data.get("revision")
+    pixel_change_ratio = data.get("pixelChangeRatio")
+    threshold = data.get("threshold")
+    if not isinstance(changed, bool):
+        raise NativeParseError("Conditional screenshot field 'changed' must be a boolean")
+    if not isinstance(revision, int) or isinstance(revision, bool):
+        raise NativeParseError("Conditional screenshot field 'revision' must be an integer")
+    if not isinstance(pixel_change_ratio, int | float) or isinstance(pixel_change_ratio, bool):
+        raise NativeParseError("Conditional screenshot field 'pixelChangeRatio' must be a number")
+    if not isinstance(threshold, int | float) or isinstance(threshold, bool):
+        raise NativeParseError("Conditional screenshot field 'threshold' must be a number")
+    screenshot = None
+    if data.get("path") is not None:
+        screenshot = screenshot_from_data(data, format=format)
+    if changed and screenshot is None:
+        raise NativeParseError("Changed conditional screenshot requires field 'path'")
+    return ScreenshotObservation(
+        changed=changed,
+        revision=revision,
+        pixel_change_ratio=float(pixel_change_ratio),
+        threshold=float(threshold),
+        screenshot=screenshot,
         raw=data,
     )
 

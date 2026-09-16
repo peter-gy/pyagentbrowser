@@ -1,4 +1,7 @@
-use super::super::super::{patch::replace_once_named, source::Source};
+use super::super::super::{
+    patch::{replace_n_named, replace_once_named},
+    source::Source,
+};
 
 pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
     const UPSTREAM_SCOPE_SYNC: &str = r#"    // Keep element resolution in sync with the `frame` selection (see
@@ -171,18 +174,6 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
     );
     let rewritten = replace_once_named(
         rewritten,
-        "navigation invalidates snapshot refs",
-        "                    let session_matches = if let Some(ref browser) = self.browser {",
-        "                    if matches!(event.method.as_str(), \"Page.frameNavigated\" | \"Page.frameDetached\") {\n                        self.ref_map.clear();\n                    }\n\n                    let session_matches = if let Some(ref browser) = self.browser {",
-    );
-    let rewritten = replace_once_named(
-        rewritten,
-        "process detach invalidates snapshot refs",
-        "                                detached_iframe_sessions.push(sid.to_string());",
-        "                                self.ref_map.clear();\n                                detached_iframe_sessions.push(sid.to_string());",
-    );
-    let rewritten = replace_once_named(
-        rewritten,
         "typed document scope errors",
         r#"    let mut resp = match result {
         Ok(data) => success_response(&id, data),
@@ -228,6 +219,37 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
         owner_session,
         &state.iframe_sessions,
     );"#,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "top-level auth document scope",
+        "        super::element::set_active_frame(None);",
+        "        mgr.client.documents.set_frame(None);",
+    );
+    let rewritten = replace_n_named(
+        rewritten,
+        "target changes expire active refs",
+        "state.ref_map.begin_snapshot();\n    state.active_iframe_sessions.clear();",
+        "state.ref_map.expire_active_refs();\n    state.active_iframe_sessions.clear();",
+        3,
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "new-tab click expires active refs",
+        "        state.ref_map.begin_snapshot();\n        state.active_iframe_sessions.clear();",
+        "        state.ref_map.expire_active_refs();\n        state.active_iframe_sessions.clear();",
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "fallback navigation expires active refs",
+        "    } else {\n        state.ref_map.begin_snapshot();\n    }\n    state.active_iframe_sessions.clear();",
+        "    } else {\n        state.ref_map.expire_active_refs();\n    }\n    state.active_iframe_sessions.clear();",
+    );
+    let rewritten = replace_once_named(
+        rewritten,
+        "window creation expires active refs",
+        "    state.ref_map.begin_snapshot();\n\n    Ok(json!({",
+        "    state.ref_map.expire_active_refs();\n\n    Ok(json!({",
     );
     let rewritten = replace_once_named(
         rewritten,

@@ -140,6 +140,28 @@ class Screenshot:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class ScreenshotObservation:
+    """Result of a conditional screenshot capture.
+
+    `screenshot` contains the written image when the pixels crossed the
+    configured threshold. Unchanged observations leave it as `None`.
+    """
+
+    changed: bool
+    revision: int
+    pixel_change_ratio: float
+    threshold: float
+    screenshot: Screenshot | None
+    raw: Mapping[str, Any]
+    scope: DocumentScope | None = None
+
+    @property
+    def path(self) -> Path | None:
+        """Return the written image path, if this observation changed."""
+        return self.screenshot.path if self.screenshot is not None else None
+
+
 def _normalize_image_format(value: str) -> str:
     normalized = value.lower()
     return "jpeg" if normalized in {"jpg", "jpeg"} else normalized

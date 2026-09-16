@@ -3,7 +3,7 @@ from __future__ import annotations
 import time
 from collections.abc import Iterable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -65,6 +65,52 @@ def test_ref_action_returns_transition_evidence_across_the_native_boundary(
         assert result.target.name == "Greet"
         assert result.after.spec == page.spec
         assert isinstance(result.diff, SnapshotDiff)
+
+
+def test_same_document_snapshots_preserve_refs_across_the_native_boundary(
+    chrome_path: Path,
+) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content("<button onclick=\"this.dataset.clicked='true'\">Keep me</button>")
+        first = browser.page.observe()
+        retained = first.one(role="button", name="Keep me")
+        second = browser.page.observe()
+
+        assert second.one(role="button", name="Keep me").id == retained.id
+        assert second.generation == first.generation
+        result = retained.click()
+        assert result.target is retained
+        assert browser.page.evaluate("document.querySelector('button').dataset.clicked") == "true"
+
+
+def test_native_snapshot_delta_reports_full_unchanged_and_changed_revisions(
+    chrome_path: Path,
+) -> None:
+    buttons = "".join(f"<button>Item {index}</button>" for index in range(50))
+    with _browser(chrome_path) as browser:
+        browser.page.set_content(buttons)
+        baseline = cast(
+            dict[str, Any],
+            browser.native.data("snapshot", interactive=True, delta=True, full=True),
+        )
+        unchanged = cast(
+            dict[str, Any], browser.native.data("snapshot", interactive=True, delta=True)
+        )
+        browser.page.evaluate("document.querySelector('button').textContent = 'Updated item'")
+        changed = cast(
+            dict[str, Any], browser.native.data("snapshot", interactive=True, delta=True)
+        )
+
+    assert baseline["snapshot"]["kind"] == "full"
+    assert unchanged["snapshot"] == {
+        "kind": "unchanged",
+        "baseRevision": 1,
+        "revision": 2,
+    }
+    assert changed["snapshot"]["kind"] == "delta"
+    assert changed["snapshot"]["baseRevision"] == 2
+    assert changed["snapshot"]["revision"] == 3
+    assert changed["snapshot"]["treeChange"]["lines"]
 
 
 def test_cdp_frame_resolution_uses_the_active_native_target(

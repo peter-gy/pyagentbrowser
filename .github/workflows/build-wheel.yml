@@ -54,7 +54,7 @@ jobs:
         with:
           python-version: ${{ inputs.python }}
       - uses: astral-sh/setup-uv@v8.2.0
-      - uses: dtolnay/rust-toolchain@1.97.0
+      - uses: dtolnay/rust-toolchain@1.98.1
 
       - name: Set reproducible build inputs
         run: |
@@ -92,7 +92,7 @@ jobs:
           CFLAGS_aarch64_unknown_linux_gnu: "-D__ARM_ARCH=8"
         with:
           maturin-version: v1.14.1
-          rust-toolchain: 1.97.0
+          rust-toolchain: 1.98.1
           target: ${{ inputs.target }}
           manylinux: ${{ inputs.manylinux }}
           sccache: ${{ inputs.sccache }}
@@ -115,7 +115,7 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           maturin-version: v1.14.1
-          rust-toolchain: 1.97.0
+          rust-toolchain: 1.98.1
           target: ${{ inputs.target }}
           sccache: ${{ inputs.sccache }}
           args: >-

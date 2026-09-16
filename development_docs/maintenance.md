@@ -196,6 +196,10 @@ fails, fix forward with a new version and tag.
 | Installed artifacts    | `make package`              | Build inputs, extras, ABI, wheel, or sdist changes                       |
 | Release                | `make check-release`        | Upstream pins, versions, CI, publishing, release work                    |
 
+`make package` keeps the pinned Rust toolchain active through clean-install
+verification. The source-distribution check rebuilds the extension, so its
+toolchain must match the wheel build.
+
 CI uses the same ownership boundaries. `Release Check` separates quality, SDK
 versions, platform builds, and real-browser seams. `Publish` reuses the wheel
 builder, then verifies the public index from clean environments. `Required

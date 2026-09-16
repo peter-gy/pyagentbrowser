@@ -121,15 +121,17 @@ pub(crate) fn rewrite_scoped_waits(contents: Source) -> Source {
     };
 
     let refs: serde_json::Map<String, Value> = state"#;
-    const UPSTREAM_SNAPSHOT_RESULT: &str =
-        r#"    Ok(json!({ "snapshot": tree, "origin": url, "refs": refs }))"#;
-    const SCOPED_SNAPSHOT_RESULT: &str = r#"    let target_id = mgr.active_target_id().ok();
-    Ok(json!({
-        "snapshot": tree,
-        "origin": url,
-        "refs": refs,
-        "targetId": target_id,
-    }))"#;
+    const UPSTREAM_SNAPSHOT_RESULT: &str = r#"        return Ok(
+            json!({ "snapshot": tree, "origin": url, "refs": refs, "removedRefs": removed_refs }),
+        );"#;
+    const SCOPED_SNAPSHOT_RESULT: &str = r#"        let target_id = mgr.active_target_id().ok();
+        return Ok(json!({
+            "snapshot": tree,
+            "origin": url,
+            "refs": refs,
+            "removedRefs": removed_refs,
+            "targetId": target_id,
+        }));"#;
 
     let rewritten = replace_once_named(
         contents,

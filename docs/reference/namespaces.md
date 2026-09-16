@@ -82,13 +82,15 @@ operations.
 | Method | Contract |
 | --- | --- |
 | `capture.screenshot(path=None, *, selector=None, full_page=False, annotate=False, output_dir=None, format="png", quality=None, wait_ms=100)` | Write a PNG or JPEG screenshot and return `Screenshot`. JPEG quality ranges from 0 through 100. |
+| `capture.screenshot_if_changed(path=None, *, selector=None, full_page=False, annotate=False, output_dir=None, format="png", quality=None, threshold=0.0, wait_ms=100)` | Compare pixels with the prior capture of the same document and capture mode. Return `ScreenshotObservation`, with an image when the changed-pixel ratio exceeds `threshold`. |
 | `capture.pdf(path=None, *, print_background=True, landscape=False, prefer_css_page_size=False)` | Write a PDF and return its `Path`. |
 | `frame.capture.screenshot(path=None, *, output_dir=None, format="png", quality=None, wait_ms=100)` | Capture the visible frame rectangle, clipped by enclosing frames and overflow containers. |
+| `frame.capture.screenshot_if_changed(path=None, *, output_dir=None, format="png", quality=None, threshold=0.0, wait_ms=100)` | Conditionally capture the visible frame rectangle. Each frame keeps its own comparison baseline. |
 | `diff.snapshot(baseline=None, *, selector=None, compact=False, max_depth=None)` | Compare the active snapshot with text, a path, or a prior baseline. |
 | `downloads.download(selector, path)` | Click a selector and return the completed download path. |
 | `downloads.wait(path=None, *, timeout_ms=None)` | Wait for the next download. |
 
-`wait_ms` must be non-negative. Pillow-backed screenshot members require the `images` extra.
+`wait_ms` must be non-negative. `threshold` ranges from 0 through 1. Pillow-backed screenshot members require the `images` extra.
 
 Screenshot paths expand `~` and create parent directories. A frame screenshot
 captures the rendered frame rectangle. Selector, full-page, annotated, and
