@@ -51,6 +51,8 @@ const NATIVE_MODULES: &[(&str, &str)] = &[
     ("webmcp", "webmcp.rs"),
 ];
 
+const NATIVE_RESOURCES: &[&str] = &["recording-cursor.js"];
+
 pub(crate) fn write_upstream_modules(source_root: &Path, out_dir: &Path) {
     let native_module = write_native_module(source_root, out_dir);
     let upstream_root = source_root.join("cli/src");
@@ -115,6 +117,10 @@ fn write_native_module(source_root: &Path, out_dir: &Path) -> PathBuf {
     let upstream_native = source_root.join("cli/src/native");
     let native_module = out_dir.join("agent_browser_native.rs");
     let mut output = String::new();
+
+    for relative_path in NATIVE_RESOURCES {
+        require_file(&upstream_native.join(relative_path));
+    }
 
     for (name, relative_path) in NATIVE_MODULES {
         let path = upstream_native.join(relative_path);

@@ -131,7 +131,7 @@ def audit(candidate: Path, *, compile_adapter: bool) -> dict[str, Any]:
         changes["dependencies"] = _changes(_dependencies(before), _dependencies(after))
         changes["configuration"] = _changes(_configuration(before), _configuration(after))
         changes["modules"] = _changes(
-            _inventory(baseline, "cli/src/**/*.rs"), _inventory(candidate, "cli/src/**/*.rs")
+            _inventory(baseline, "cli/src/**/*"), _inventory(candidate, "cli/src/**/*")
         )
         changes["generator"] = _changes(
             _inventory(baseline, "cli/build.rs") | _inventory(baseline, "cli/cdp-protocol/**/*"),

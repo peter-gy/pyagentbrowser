@@ -34,9 +34,10 @@ def test_recording_retains_the_active_page_and_survives_invalid_restart(
         browser.page.evaluate("document.getElementById('draft').value = 'unsaved'")
         active = next(tab for tab in browser.tabs.list() if tab.active)
         frame = browser.cdp.frames.get()
-        started = browser.native.data("recording_start", path=str(path), fps=12)
+        started = browser.native.data("recording_start", path=str(path), fps=12, cursor=True)
 
         assert started["fps"] == 12
+        browser.mouse.move(20, 20)
         assert next(tab for tab in browser.tabs.list() if tab.active).target_id == active.target_id
         assert frame.evaluate("document.getElementById('draft').value") == "unsaved"
         with pytest.raises(BrowserError, match="Invalid fps"):

@@ -62,6 +62,7 @@ SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
         "third_party/agent-browser/cli/src/ca_bundle.rs",
         "third_party/agent-browser/cli/src/native/actions.rs",
         "third_party/agent-browser/cli/src/native/cdp/windows_process.rs",
+        "third_party/agent-browser/cli/src/native/recording-cursor.js",
         "third_party/agent-browser/cli/src/native/tab_binding.rs",
         "third_party/agent-browser/cli/src/native/webmcp.rs",
         "third_party/agent-browser/cli/cdp-protocol/browser_protocol.json",
