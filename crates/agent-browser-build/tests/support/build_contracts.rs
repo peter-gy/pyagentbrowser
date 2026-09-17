@@ -83,6 +83,9 @@ fn pinned_source_generates_an_attributed_patch_report() {
     assert_eq!(scope.feature, "documents");
     assert_eq!(scope.matches, 1);
     assert!(report.inputs.contains(&root.join("cli/build.rs")));
+    assert!(report
+        .inputs
+        .contains(&root.join("cli/src/native/recording-cursor.js")));
 }
 
 #[test]

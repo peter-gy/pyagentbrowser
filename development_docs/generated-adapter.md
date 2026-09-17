@@ -18,6 +18,7 @@ owned by upstream.
 | Kind                         | Location                                      |
 | ---------------------------- | --------------------------------------------- |
 | Pinned source modules        | `third_party/agent-browser/cli/src/`          |
+| Pinned source resources      | Files included by registered source modules   |
 | Pinned protocol schemas      | `third_party/agent-browser/cli/cdp-protocol/` |
 | Downstream dependency mirror | `crates/agent-browser-adapter/Cargo.toml`     |
 | Module registry and protocol generation | `crates/agent-browser-build/src/registry.rs` and `src/protocol/` |
@@ -81,8 +82,9 @@ cardinality is explicit.
 ## Adding registered modules
 
 Upstream modules referenced by registered source must also appear in the adapter
-module tree. Update the module registry, source-distribution inclusion, and
-smoke tests together.
+module tree. Non-Rust files included by those modules must be registered as
+source inputs. Update the module and resource registry, source-distribution
+inclusion, and smoke tests together.
 
 ## Dependency mirror
 

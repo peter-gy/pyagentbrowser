@@ -94,6 +94,24 @@ def test_upstream_inputs_require_explicit_review(tmp_path: Path, kind: str) -> N
     assert report["review_required"] == [kind]
 
 
+def test_new_non_rust_source_input_requires_explicit_review(tmp_path: Path) -> None:
+    candidate = tmp_path / "candidate"
+    shutil.copytree(UPSTREAM / "cli", candidate / "cli")
+    (candidate / "cli/src/native/overlay.js").write_text("document.body.dataset.ready = '1';\n")
+
+    result = run_cli("--source", str(candidate))
+
+    assert result.returncode == 1, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["generation"]["success"] is True
+    assert report["changes"]["modules"]["added"] == {
+        "cli/src/native/overlay.js": hashlib.sha256(
+            b"document.body.dataset.ready = '1';\n"
+        ).hexdigest()
+    }
+    assert report["review_required"] == ["modules"]
+
+
 def test_existing_report_directory_is_rejected_before_writing(tmp_path: Path) -> None:
     report = tmp_path / "report.json"
     report.write_text("keep this result")
