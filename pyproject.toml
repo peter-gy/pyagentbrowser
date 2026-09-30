@@ -1,6 +1,6 @@
 [project]
 name = "pyagentbrowser"
-version = "0.38.1"
+version = "0.38.1.1"
 description = "Python SDK for controlling the native agent-browser engine in-process"
 readme = "README.md"
 authors = [
@@ -39,7 +39,7 @@ keywords = [
     "snapshots",
 ]
 dependencies = [
-    "agent-plugins==0.2.0",
+    "agent-plugins>=0.2.4",
 ]
 
 [project.optional-dependencies]
@@ -64,7 +64,7 @@ images = [
 pyagentbrowser = "agentbrowser.agent"
 
 [build-system]
-requires = ["agent-plugins==0.2.0", "maturin==1.14.1"]
+requires = ["agent-plugins>=0.2.4", "maturin==1.14.1"]
 backend-path = ["."]
 build-backend = "_agent_plugins_maturin"
 
