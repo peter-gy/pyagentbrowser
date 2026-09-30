@@ -127,7 +127,7 @@ jobs:
 
       - name: Attach Agent Plugin resources
         run: >-
-          uv run --no-project --with "agent-plugins==0.2.0"
+          uv run --no-project --with "agent-plugins>=0.2.4"
           agent-plugins attach-wheel dist/*.whl --project .
 
       - name: Check built distributions
