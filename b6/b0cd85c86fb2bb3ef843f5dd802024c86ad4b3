@@ -1,0 +1,25 @@
+.github/workflows/build-wheel.yml
+  s_4f1d9cbe4c261d::t_6bd8557db1bd20 130
+crates/pyagentbrowser/Cargo.toml
+  s_4f1d9cbe4c261d::t_6bd8557db1bd20 3
+src/agentbrowser/_version.py
+  s_4f1d9cbe4c261d::t_6bd8557db1bd20 7
+pyproject.toml
+  s_4f1d9cbe4c261d::t_6bd8557db1bd20 3,42,67
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.5.2",
+  "base_commit_sha": "b6b0cd85c86fb2bb3ef843f5dd802024c86ad4b3",
+  "prompts": {},
+  "sessions": {
+    "s_4f1d9cbe4c261d": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a0f332-2880-7192-a002-5278da14e8b9",
+        "model": "gpt-6-luna"
+      },
+      "human_author": "Péter Ferenc Gyarmati <dev.petergy@gmail.com>"
+    }
+  }
+}
