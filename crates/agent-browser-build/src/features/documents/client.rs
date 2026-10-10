@@ -38,6 +38,7 @@ pub(crate) fn rewrite_cdp_module(out_dir: &Path, source: &Path) -> PathBuf {
         "client",
         "discovery",
         "lightpanda",
+        "obscura",
         "types",
         "windows_process",
     ] {

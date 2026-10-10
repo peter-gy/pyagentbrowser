@@ -69,8 +69,8 @@ function, frame, capture, scrolling, and geometry operations.
 | Field | Default | Contract |
 | --- | --- | --- |
 | `headless` | `True` | Run a local browser without a visible window. |
-| `executable_path` | `None` | Select a Chrome or Chromium executable. |
-| `engine` | `None` | Select `chrome` or `lightpanda`. Chrome is the default. |
+| `executable_path` | `None` | Select the executable for the chosen browser engine. |
+| `engine` | `None` | Select `chrome`, `lightpanda`, or `obscura`. Chrome is the default. |
 | `profile` | `None` | Use a browser profile directory. |
 | `storage_state` | `None` | Load serialized browser storage state during launch. |
 | `extensions` | `()` | Load extension paths. |
@@ -99,6 +99,8 @@ Built-in providers are `browserbase`, `browserless`, `browser-use` or `browserus
 When attaching, `CDPTarget` supplies the endpoint and `launch` supplies remaining browser settings. Attachment rejects profiles, extensions, `ca_cert`, WebGPU, `no_xvfb=True`, and session domain containment. Local executable and browser-argument fields have no local process to configure.
 
 [Lightpanda](https://lightpanda.io/) is a headless browser engine designed for machine workloads. Install its binary before selecting it. Profiles, storage-state launch, extensions, file access, headed mode, WebGPU, private CA import, and custom Chrome arguments are Chrome-specific. The [agent-browser Lightpanda guide](https://agent-browser.dev/engines/lightpanda) records its installation and current protocol coverage.
+
+[Obscura](https://github.com/h4ckf0r0day/obscura) is an experimental headless browser engine. Install its binary and select `LaunchOptions(engine="obscura", executable_path="/path/to/obscura")`. Its accessibility, iframe, and screenshot behavior has gaps documented in the [agent-browser Obscura guide](https://agent-browser.dev/engines/obscura). It rejects the Chrome-specific settings listed for Lightpanda and `ProxyConfig.bypass` rules. Discovery and protocol initialization each have a 10-second deadline, and failed startup closes the owned process.
 
 ## `SessionOptions`
 

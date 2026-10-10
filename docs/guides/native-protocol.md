@@ -29,6 +29,20 @@ with Browser.launch() as browser:
 
 Both paths retain local-browser preparation, domain checks, policy and confirmation context, lifecycle updates, and direct CDP invalidation.
 
+For an explicit HTTPS `read`, the `tls` object selects the [TLS](https://www.rfc-editor.org/rfc/rfc8446) certificate trust used to verify the server. `useSystemCa=True` selects the operating system trust store, and `caCert` adds a private certificate authority file. These fields configure the HTTP reader on every platform. Browser trust remains configured by `LaunchOptions.ca_cert`.
+
+```python
+with Browser() as browser:
+    document = browser.native.data(
+        "read",
+        url="https://example.com",
+        tls={"useSystemCa": True},
+    )
+    print(document["url"])
+```
+
+An explicit `caCert` path must contain a valid certificate. Certificate and hostname verification remain enabled.
+
 Pass `_timeoutMs` as a positive integer to bound one native dispatch. The async
 worker includes queue time in this budget. Expiry before dispatch raises
 `TimeoutError`. An interrupted native command reports `code="execution_timeout"`.

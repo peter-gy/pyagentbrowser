@@ -126,7 +126,7 @@ impl Session {
 
         self.runtime.block_on(async {
             let mut state = self.state.lock().await;
-            state.disable_stream().await;
+            Box::pin(state.disable_stream()).await;
         });
         sidecar.cleanup();
         Ok(())
@@ -135,7 +135,7 @@ impl Session {
     fn shutdown_native(&self) {
         self.runtime.block_on(async {
             let mut state = self.state.lock().await;
-            state.shutdown().await;
+            Box::pin(state.shutdown()).await;
         });
     }
 }

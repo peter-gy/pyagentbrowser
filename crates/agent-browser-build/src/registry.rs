@@ -21,6 +21,7 @@ const ROOT_MODULES: &[(&str, &str)] = &[
     ("install", "install.rs"),
     ("plugins", "plugins.rs"),
     ("read", "read.rs"),
+    ("tls", "tls.rs"),
     ("validation", "validation.rs"),
 ];
 
