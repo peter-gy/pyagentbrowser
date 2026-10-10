@@ -223,6 +223,9 @@ def test_agent_plugin_backend_normalizes_sdist_member_timestamps(
 def test_sdist_rejects_ci_and_upstream_support_payloads() -> None:
     for forbidden in (
         ".github/workflows/release.yml",
+        ".pixi/envs/default/bin/python",
+        "pixi.toml",
+        "pixi.lock",
         "third_party/agent-browser/docs/internal.md",
     ):
         with pytest.raises(PackageSmokeError):

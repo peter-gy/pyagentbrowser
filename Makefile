@@ -6,7 +6,11 @@ RUST_TOOLCHAIN ?= 1.98.1
 UPSTREAM_REF ?= origin/main
 ALLOW_NON_FAST_FORWARD ?= 0
 UPSTREAM_UPDATE_FLAGS = $(if $(filter 1,$(ALLOW_NON_FAST_FORWARD)),--allow-non-fast-forward)
+ifneq ($(PIXI_PROJECT_ROOT),)
+RUST_ENV = test "$$(rustc --version | cut -d ' ' -f 2)" = "$(RUST_TOOLCHAIN)" &&
+else
 RUST_ENV = cargo_path="$$(rustup which --toolchain $(RUST_TOOLCHAIN) cargo)" && rust_bin="$$(dirname "$$cargo_path")" && PATH="$$rust_bin:$$PATH"
+endif
 RUST_CARGO = $(RUST_ENV) cargo
 UV_RUN = uv run --no-sync
 PYTHON_RUN = uv run --no-project --python $(BUILD_PYTHON) python

@@ -90,6 +90,9 @@ module-name = "agentbrowser._native"
 python-source = "src"
 manifest-path = "crates/pyagentbrowser/Cargo.toml"
 exclude = [
+    ".pixi/**",
+    "pixi.toml",
+    "pixi.lock",
     ".gitattributes",
     ".github/**",
     ".venv*/**",

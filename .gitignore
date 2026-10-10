@@ -13,6 +13,7 @@ target/
 
 # Virtual environments
 .venv*
+/.pixi/
 /.agent-plugin/
 
 # JavaScript and VitePress generated files

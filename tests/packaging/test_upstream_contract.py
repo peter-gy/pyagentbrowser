@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import runpy
 import subprocess
 import tomllib
@@ -250,20 +251,7 @@ def test_upstream_update_syncs_adapter_version_and_cargo_lock(
     assert len(cargo_commands) == 1
     cargo_env = cargo_commands[0][1]
     assert cargo_env is not None
-    configured_cargo = subprocess.check_output(
-        [
-            "rustup",
-            "which",
-            "--toolchain",
-            update_upstream._rust_toolchain(),
-            "cargo",
-        ],
-        text=True,
-    ).strip()
-    assert (
-        Path(cargo_env["PATH"].split(update_upstream.os.pathsep)[0])
-        == Path(configured_cargo).parent
-    )
+    assert cargo_env == update_upstream._rust_environment()
 
 
 def test_upstream_update_rejects_a_non_fast_forward_pin(
@@ -373,3 +361,46 @@ def test_upstream_update_refuses_a_dirty_submodule(
 
     with pytest.raises(SystemExit):
         update_upstream.main([])
+
+
+@pytest.mark.parametrize("pixi", [False, True])
+def test_upstream_update_selects_the_pinned_rust_toolchain(
+    pixi: bool,
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    cargo = tmp_path / "toolchain" / "cargo"
+    monkeypatch.setenv("PATH", "original-path")
+    if pixi:
+        monkeypatch.setenv("PIXI_PROJECT_ROOT", str(tmp_path))
+    else:
+        monkeypatch.delenv("PIXI_PROJECT_ROOT", raising=False)
+    commands: list[list[str]] = []
+
+    def check_output(command: list[str], *, text: bool) -> str:
+        assert text
+        commands.append(command)
+        if command == ["rustc", "--version"]:
+            return f"rustc {update_upstream._rust_toolchain()} (test)\n"
+        return f"{cargo}\n"
+
+    monkeypatch.setattr(update_upstream.subprocess, "check_output", check_output)
+    monkeypatch.setattr(update_upstream.shutil, "which", lambda name: str(cargo))
+    env = update_upstream._rust_environment()
+    assert env["PATH"] == f"{cargo.parent}{os.pathsep}original-path"
+    assert commands == (
+        [["rustc", "--version"]]
+        if pixi
+        else [["rustup", "which", "--toolchain", update_upstream._rust_toolchain(), "cargo"]]
+    )
+
+
+def test_upstream_update_rejects_a_mismatched_pixi_rust(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("PIXI_PROJECT_ROOT", str(ROOT))
+    monkeypatch.setattr(
+        update_upstream.subprocess, "check_output", lambda *args, **kwargs: "rustc 1.0.0 (test)\n"
+    )
+    with pytest.raises(RuntimeError, match=r"expected Rust .*found 1\.0\.0"):
+        update_upstream._rust_environment()

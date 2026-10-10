@@ -3,6 +3,12 @@
 The Makefile is the executable command index. This guide records the ordering
 and evidence behind upstream updates, package releases, and CI.
 
+For development, provision the locked system tools using the
+[Pixi setup](../AGENTS.md#development-setup), then use `pixi shell` for the Make
+commands below. Pixi supplies the pinned Rust compiler directly; manually
+provisioned environments select the same pin through rustup. Release wheel
+builders continue to use the platform and manylinux toolchains in CI.
+
 Read [the generated adapter contract](generated-adapter.md) before changing a
 rewrite. Read [the packaging contract](packaging.md) before changing artifact
 contents or build inputs.

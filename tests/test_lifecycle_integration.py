@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -121,6 +122,7 @@ def test_browser_attaches_to_an_existing_cdp_target(
             "--headless=new",
             "--disable-gpu",
             "--no-first-run",
+            *(("--no-sandbox",) if "CI" in os.environ else ()),
             "about:blank",
         ],
         stdout=subprocess.DEVNULL,

@@ -25,6 +25,7 @@ PATH_COMMANDS = (
 BROWSER_CACHE_PATTERNS = (
     "chrome-*/Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
     "chrome-*/chrome-linux64/chrome",
+    "chrome-*/chrome",
     "chrome-*/chrome-win64/chrome.exe",
     "chrome-*/chrome.exe",
 )
