@@ -15,6 +15,7 @@ import pytest
 import agentbrowser.skills as skills
 from agentbrowser import (
     Browser,
+    BrowserError,
     ConfirmationRequired,
     DashboardOptions,
     RestoreOptions,
@@ -50,6 +51,28 @@ def _dashboard_control_client(socket_dir: Path, session: str) -> socket.socket:
 
 def test_native_extension_reports_exact_upstream_provenance() -> None:
     assert __agent_browser_version__ == UPSTREAM_VERSION
+
+
+def test_native_read_rejects_an_unusable_explicit_ca_bundle(tmp_path: Path) -> None:
+    with Browser() as browser, pytest.raises(BrowserError, match="CA certificate"):
+        browser.native.data(
+            "read",
+            url="https://example.com",
+            tls={"caCert": str(tmp_path / "missing.pem")},
+        )
+
+
+def test_native_obscura_rejects_profiles_before_starting_a_process(tmp_path: Path) -> None:
+    with (
+        Browser() as browser,
+        pytest.raises(BrowserError, match="Profiles are not supported with Obscura"),
+    ):
+        browser.native.data(
+            "launch",
+            engine="obscura",
+            executablePath=str(tmp_path / "obscura"),
+            profile=str(tmp_path / "profile"),
+        )
 
 
 def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:

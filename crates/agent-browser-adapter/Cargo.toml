@@ -1,6 +1,6 @@
 [package]
 name = "agent-browser"
-version = "0.38.1"
+version = "0.39.0"
 edition = "2021"
 description = "Library adapter for the agent-browser upstream submodule"
 license = "Apache-2.0"
@@ -38,6 +38,8 @@ hmac = "0.12"
 hex = "0.4"
 chrono = "0.4"
 urlencoding = "2"
+rustls-native-certs = "0.8"
+webpki-roots = "0.26"
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

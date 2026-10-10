@@ -13,6 +13,7 @@ from agentbrowser import (
     ConfirmationRequired,
     SessionOptions,
     SnapshotDiff,
+    SnapshotSpec,
     Wait,
 )
 from tests.support.browser import (
@@ -111,6 +112,36 @@ def test_native_snapshot_delta_reports_full_unchanged_and_changed_revisions(
     assert changed["snapshot"]["baseRevision"] == 2
     assert changed["snapshot"]["revision"] == 3
     assert changed["snapshot"]["treeChange"]["lines"]
+
+
+def test_scoped_snapshot_renders_controls_under_ignored_wrappers_once(chrome_path: Path) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content(
+            '<main id="scope"><div><div><button>Nested action</button></div></div></main>'
+            "<button>Outside action</button>"
+        )
+        snapshot = browser.page.observe(SnapshotSpec(selector="#scope", interactive=False))
+
+        assert snapshot.text.count('button "Nested action"') == 1
+        assert "Outside action" not in snapshot.text
+        assert snapshot.one(role="button", name="Nested action").name == "Nested action"
+
+
+def test_scoped_snapshot_includes_shadow_root_controls(chrome_path: Path) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content(
+            '<scope-panel id="scope"><span>Slotted content</span></scope-panel>'
+            "<button>Outside action</button>"
+        )
+        browser.page.evaluate(
+            "document.querySelector('scope-panel').attachShadow({mode:'open'}).innerHTML = "
+            "'<button>Shadow action</button><slot></slot>'"
+        )
+        snapshot = browser.page.observe(SnapshotSpec(selector="#scope", interactive=False))
+
+        assert snapshot.one(role="button", name="Shadow action").name == "Shadow action"
+        assert "Slotted content" in snapshot.text
+        assert "Outside action" not in snapshot.text
 
 
 def test_cdp_frame_resolution_uses_the_active_native_target(

@@ -86,10 +86,11 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
         """<!doctype html>
 <output id="result">idle</output>
 <script>
-  if (typeof document.modelContext?.registerTool !== "function") {
+  const modelContext = document.modelContext ?? navigator.modelContext;
+  if (typeof modelContext?.registerTool !== "function") {
     document.body.dataset.webmcpReady = "unavailable";
   } else {
-    const setMessage = document.modelContext.registerTool({
+    const setMessage = modelContext.registerTool({
       name: "set_message",
       description: "Sets the visible message",
       inputSchema: {
@@ -104,7 +105,7 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
         return {message};
       }
     });
-    const waitForCancel = document.modelContext.registerTool({
+    const waitForCancel = modelContext.registerTool({
       name: "wait_for_cancel",
       description: "Waits until canceled",
       inputSchema: {type: "object", properties: {}},
