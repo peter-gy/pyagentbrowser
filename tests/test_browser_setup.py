@@ -11,7 +11,9 @@ from scripts import prepare_browser
 pytestmark = pytest.mark.sdk_dx
 
 
-@pytest.mark.parametrize("override", [None, "", "custom browser/chromium"])
+@pytest.mark.parametrize(
+    "override", [None, "", "custom browser/chromium", r"C:\custom browser\chrome.exe"]
+)
 def test_browser_preparation_uses_the_integration_test_override(
     override: str | None,
     monkeypatch: pytest.MonkeyPatch,
@@ -22,10 +24,11 @@ def test_browser_preparation_uses_the_integration_test_override(
         monkeypatch.delenv("PYAGENTBROWSER_CHROME", raising=False)
     else:
         monkeypatch.setenv("PYAGENTBROWSER_CHROME", override)
-    selected = Path(override or "existing-browser")
+    selected_text = override or "existing-browser"
+    selected = Path(selected_text)
 
     def install() -> InstallResult:
-        assert os.environ["AGENT_BROWSER_EXECUTABLE_PATH"] == str(selected)
+        assert os.environ["AGENT_BROWSER_EXECUTABLE_PATH"] == selected_text
         return InstallResult(selected, None, "environment", False)
 
     monkeypatch.setattr(prepare_browser, "ensure_installed", install)
