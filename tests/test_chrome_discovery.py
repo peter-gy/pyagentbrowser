@@ -34,17 +34,21 @@ def test_chrome_discovery_rejects_missing_env_override(tmp_path: Path) -> None:
     )
 
 
-def test_chrome_discovery_checks_agent_browser_browser_cache(tmp_path: Path) -> None:
-    cached = (
-        tmp_path
-        / ".agent-browser"
-        / "browsers"
-        / "chrome-123"
-        / "Google Chrome for Testing.app"
-        / "Contents"
-        / "MacOS"
-        / "Google Chrome for Testing"
-    )
+@pytest.mark.parametrize(
+    "relative_path",
+    [
+        "Google Chrome for Testing.app/Contents/MacOS/Google Chrome for Testing",
+        "chrome-linux64/chrome",
+        "chrome",
+        "chrome-win64/chrome.exe",
+        "chrome.exe",
+    ],
+)
+def test_chrome_discovery_checks_agent_browser_browser_cache(
+    tmp_path: Path,
+    relative_path: str,
+) -> None:
+    cached = tmp_path / ".agent-browser" / "browsers" / "chrome-123" / relative_path
     cached.parent.mkdir(parents=True)
     cached.write_text("")
 

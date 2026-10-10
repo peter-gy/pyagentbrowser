@@ -4,6 +4,7 @@ import argparse
 import importlib
 import json
 import os
+import shutil
 import subprocess
 import tomllib
 from collections.abc import Sequence
@@ -103,10 +104,18 @@ def _rust_toolchain() -> str:
 
 
 def _rust_environment() -> dict[str, str]:
-    cargo = subprocess.check_output(
-        ["rustup", "which", "--toolchain", _rust_toolchain(), "cargo"],
-        text=True,
-    ).strip()
+    if os.environ.get("PIXI_PROJECT_ROOT"):
+        version = subprocess.check_output(["rustc", "--version"], text=True).split()[1]
+        if version != _rust_toolchain():
+            raise RuntimeError(f"expected Rust {_rust_toolchain()}, found {version}")
+        cargo = shutil.which("cargo")
+        if cargo is None:
+            raise RuntimeError("cargo not found in the Pixi environment")
+    else:
+        cargo = subprocess.check_output(
+            ["rustup", "which", "--toolchain", _rust_toolchain(), "cargo"],
+            text=True,
+        ).strip()
     rust_bin = str(Path(cargo).parent)
     env = os.environ.copy()
     env["PATH"] = os.pathsep.join(part for part in (rust_bin, env.get("PATH")) if part)

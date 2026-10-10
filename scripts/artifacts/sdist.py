@@ -76,6 +76,7 @@ SDIST_REQUIRED_UPSTREAM_SOURCE = frozenset(
 
 FORBIDDEN_SUPPORT_PREFIXES = (
     ".github/",
+    ".pixi/",
     "crates/agent-browser-adapter/target/",
     "development_docs/",
     "docs/figures/",
@@ -89,6 +90,8 @@ FORBIDDEN_SUPPORT_EXACT = frozenset(
         ".gitattributes",
         "AGENTS.md",
         "CLAUDE.md",
+        "pixi.toml",
+        "pixi.lock",
         "crates/AGENTS.md",
         "crates/agent-browser-adapter/Cargo.lock",
         "src/agentbrowser/AGENTS.md",

@@ -2,9 +2,23 @@
 
 ## Setup
 
+Install [Pixi](https://pixi.sh/latest/installation/) 0.81.x. From a checkout:
+
 ```bash
-make install
+pixi install --locked
+pixi run --locked install
+pixi run --locked check
 ```
+
+Pixi locks the system toolchain for Linux x86-64/arm64 and macOS Intel/Apple
+Silicon. Windows contributors can use WSL2 and a Linux checkout. macOS needs
+Apple's SDK from `xcode-select --install`. See [AGENTS.md](AGENTS.md#development-setup)
+for tool versions, browser setup, focused tests, and dependency updates.
+
+Run `pixi shell` to use the Make commands below, or use their matching Pixi tasks
+(e.g. `pixi run --locked test-sdk`). Python dependencies remain locked by
+`uv.lock` and install into `.venv`; Pixi owns the interpreter and native tools.
+Build the editable extension again after changing Rust code.
 
 ## Command map
 
@@ -52,8 +66,7 @@ When changing public API:
 Start the VitePress site with:
 
 ```bash
-make docs-install
-make docs-dev
+pixi run --locked docs-dev
 ```
 
 Portless prints the stable HTTPS URL for the checkout. The main checkout uses

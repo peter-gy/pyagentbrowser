@@ -1,0 +1,61 @@
+[workspace]
+name = "pyagentbrowser-dev"
+description = "Locked system toolchain for pyagentbrowser development"
+channels = ["conda-forge"]
+platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
+requires-pixi = ">=0.81.0,<0.82"
+
+# Python packages remain owned by pyproject.toml and uv.lock; Pixi supplies
+# the interpreter, native toolchain, and documentation/recording tools.
+[dependencies]
+python = "3.14.*"
+rust = "==1.98.1"
+c-compiler = "*"
+cxx-compiler = "*"
+make = "*"
+git = "*"
+pkg-config = "*"
+uv = "==0.12.21"
+nodejs = "24.*"
+pnpm = "==11.10.0"
+ffmpeg = "*"
+
+[target.linux.dependencies]
+nss = "*"
+gtk3 = "*"
+alsa-lib = "*"
+libgbm = "*"
+libvulkan-loader = "*"
+
+[activation.env]
+BUILD_PYTHON = "3.14"
+UV_PYTHON = "$CONDA_PREFIX/bin/python"
+
+# Chrome for Testing is downloaded separately and does not have Conda RPATHs.
+[target.linux.activation.env]
+LD_LIBRARY_PATH = "$CONDA_PREFIX/lib"
+
+# Conda's GCC specs embed an absolute environment RPATH in shared libraries.
+# Use GCC's built-in specs while preserving its locked compiler and sysroot.
+[target.linux-64.activation.env]
+CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "$PIXI_PROJECT_ROOT/scripts/pixi_linker.py"
+
+[target.linux-aarch64.activation.env]
+CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "$PIXI_PROJECT_ROOT/scripts/pixi_linker.py"
+
+[tasks]
+install = { cmd = "make install", description = "Install locked Python dependencies and build the editable extension" }
+check = { cmd = "make check", description = "Run the normal Python and Rust handoff gate" }
+update-upstream = "make update-upstream"
+check-upstream = "make check-upstream"
+test-sdk = "make test-sdk"
+test-native = "make test-native"
+test-package = "make test-package"
+test-integration = "make test-integration"
+browser-install = { cmd = "uv run --no-sync python -m scripts.prepare_browser", depends-on = ["install"], description = "Find or download Chrome for Testing for browser feature work" }
+package = "make package"
+check-release = "make check-release"
+format = "make format"
+docs-install = "make docs-install"
+docs-dev = { cmd = "make docs-dev", depends-on = ["docs-install"] }
+docs-check = { cmd = "make docs-check", depends-on = ["docs-install", "install"] }
