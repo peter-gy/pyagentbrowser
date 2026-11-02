@@ -4,7 +4,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Any, TypeVar
 
-from agentbrowser.contracts.decode import none
+from agentbrowser.contracts.decode import evaluation_result, none
 from agentbrowser.contracts.errors import ConfirmationRequired
 from agentbrowser.contracts.protocol import optional
 from agentbrowser.contracts.scope import DocumentScope
@@ -120,10 +120,10 @@ class _AsyncDocument:
     async def evaluate(self, script: str) -> Any:
         """Evaluate JavaScript in the current page context."""
         try:
-            return (await self._evaluate_data(script)).get("result")
+            return evaluation_result(await self._evaluate_data(script))
         except ConfirmationRequired as error:
             if error.pending is not None:
-                error.pending = error.pending.map(lambda data: data.get("result"))
+                error.pending = error.pending.map(evaluation_result)
             raise
 
     async def _evaluate_data(self, script: str) -> Mapping[str, Any]:

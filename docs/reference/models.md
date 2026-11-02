@@ -97,7 +97,8 @@ Timeouts must be non-negative and use milliseconds. `Wait.all()` requires at lea
 | `ScrollResult` | Document scope, container, before and after offsets, and derived movement state. |
 | `Screenshot` | File path, format, scope, annotations, raw capture data, bytes, image content, copying, image loading, and notebook display. |
 | `ScreenshotObservation` | Change state, revision, changed-pixel ratio, threshold, document scope, raw data, and an optional written `Screenshot`. |
-| `ConsoleMessage` | Console type, text, level, URL, line, column, and raw data. |
+| `ConsoleMessage` | Console method type, rendered text, and JSON-serializable call arguments. |
+| `PageError` | Uncaught exception text with optional source URL, line, and column. |
 
 ### `Screenshot`
 
@@ -126,12 +127,13 @@ the complete `Screenshot` when an image was written.
 | Model | Fields and contract |
 | --- | --- |
 | `CloseResult` | `closed`, restore status, save status, state path, save error, and raw terminal data. |
-| `SessionStatus` | Native identity, socket path, background PID, browser launch state, page count, engine, compatibility, restore checks, save state, and raw data. |
+| `SessionStatus` | Native identity, socket path, background PID, browser launch state, page count, engine, compatibility, restore status, skipped restore origins, restore checks, save state, and raw data. |
 | `SessionId` | Derived session string, scope, source path, and hash. |
 | `TabInfo` | Native ID, URL, title, label, active state, optional stable target ID, and raw data. |
 | `TabSwitchResult` | Selected tab fields plus `revived` and `dialog_blocked`. |
 | `TabCloseResult` | Closed tab fields plus `closed` and `active_tab_revived`. |
 | `Cookie` | Name, value, domain, path, expiry, security flags, same-site value, and raw data. |
+| `StateLoadResult` | Loaded state path and the saved origins whose Web Storage was skipped. |
 
 Restore status values are `load_failed`, `loaded`, `loaded_but_invalid`, `missing`, `not_configured`, and `pending`.
 
@@ -141,9 +143,8 @@ Save status values are `disabled`, `error`, `invalid_policy`, `no_browser`, `not
 
 | Model | Fields and contract |
 | --- | --- |
-| `NetworkRequest` | ID, URL, method, resource type, status, and raw summary. |
-| `RequestDetail` | ID, URL, method, status, request headers, response headers, optional body, and raw data. |
-| `RouteResponse` | Optional status, body, content type, and headers for one registered response. |
+| `NetworkRequest` | ID, URL, method, resource type, timestamp, request headers, optional status, response headers, MIME type, post data, response body, and raw data. `response_body` is set by `network.request()`. |
+| `RouteResponse` | Optional status, body, content type, headers, and CORS `allow_origin` for one registered response. |
 | `ProxyConfig` | Proxy server, bypass rules, username, and password. |
 
 HTTP Archive content modes are `text`, `all`, and `none`.

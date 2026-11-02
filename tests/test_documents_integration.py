@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import time
 from collections.abc import Iterable
 from pathlib import Path
@@ -223,6 +224,24 @@ def test_page_and_nested_frame_handles_keep_one_explicit_scope(
         )
         assert any(sum(pixel) < 300 for pixel in deep_pixels)
         assert browser.page.title() == "Host"
+
+
+def test_page_and_frame_evaluation_return_values_json_cannot_carry(
+    chrome_path: Path,
+    local_site: LocalSite,
+) -> None:
+    _write_frame_site(local_site)
+    with _browser(chrome_path) as browser:
+        browser.page.open(f"{local_site.base_url}/index.html")
+        preview = browser.page.frames.get(selector="#target")
+
+        for document in (browser.page, preview):
+            assert math.isnan(document.evaluate("NaN"))
+            assert document.evaluate("-Infinity") == -math.inf
+            assert math.copysign(1.0, document.evaluate("-0")) == -1.0
+            assert document.evaluate("2n ** 70n") == 2**70
+            assert document.evaluate("undefined") is None
+            assert document.evaluate("Promise.resolve(Infinity)") == math.inf
 
 
 def test_completed_page_load_wait_returns_after_navigation(

@@ -30,6 +30,10 @@ Attachment selects a responsive page target. If every renderer is discarded, it 
 
 For a pinned attached session, `BrowserError.code == "tab_gone"` means another client closed the bound page target. Inspect `error.response["data"]` for the target ID and optional last URL before choosing a recovery tab.
 
+## A tab stopped responding
+
+`BrowserError.code == "page_wedged"` means the active tab did not answer before the command timeout. `error.response["data"]` contains the `targetId`, `replaced`, and an optional `lastUrl`. In a launched browser, a second timeout on the same tab replaces it with a blank tab and reports `replaced: True` with its `newTargetId`. Open the page again to continue. Refs and frame handles from the replaced tab are expired.
+
 ## A ref became stale
 
 A `Ref` belongs to its source snapshot. Refresh it against the current page:

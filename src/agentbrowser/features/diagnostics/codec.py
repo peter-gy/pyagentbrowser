@@ -4,9 +4,9 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from agentbrowser.contracts.decode import (
-    first_present,
     nullable_string,
-    optional_int,
+    optional_int_field,
+    optional_string,
     required_int,
     required_string,
 )
@@ -18,6 +18,7 @@ from agentbrowser.features.diagnostics.models import (
     AccessibilityNode,
     AccessibilityTargetPart,
     ConsoleMessage,
+    PageError,
 )
 
 
@@ -42,29 +43,42 @@ def accessibility_audit_from_data(data: Mapping[str, Any]) -> AccessibilityAudit
 
 
 def console_messages_from_data(data: Mapping[str, Any]) -> tuple[ConsoleMessage, ...]:
-    raw_messages = next(
-        (data[field] for field in ("messages", "logs", "entries") if field in data),
-        None,
+    return tuple(
+        ConsoleMessage(
+            type=required_string(item, "type", action="console"),
+            text=required_string(item, "text", action="console"),
+            args=tuple(_optional_list(item, "args", action="console")),
+        )
+        for item in _entries(data, "messages", action="console")
     )
-    if not isinstance(raw_messages, list):
-        raise NativeParseError("ConsoleMessage collection must be an array")
-    if any(not isinstance(item, Mapping) for item in raw_messages):
-        raise NativeParseError("ConsoleMessage collection entries must be objects")
-    return tuple(_console_message(cast(Mapping[str, Any], item)) for item in raw_messages)
 
 
-def _console_message(raw: Mapping[str, Any]) -> ConsoleMessage:
-    type_value = first_present(raw, "type", "kind", "level", model="ConsoleMessage", field="type")
-    text_value = first_present(raw, "text", "message", model="ConsoleMessage", field="text")
-    return ConsoleMessage(
-        type=str(type_value),
-        text=str(text_value),
-        level=str(raw["level"]) if raw.get("level") is not None else None,
-        url=str(raw["url"]) if raw.get("url") is not None else None,
-        line=optional_int(raw.get("line") or raw.get("lineNumber")),
-        column=optional_int(raw.get("column") or raw.get("columnNumber")),
-        raw=raw,
+def page_errors_from_data(data: Mapping[str, Any]) -> tuple[PageError, ...]:
+    return tuple(
+        PageError(
+            text=required_string(item, "text", action="errors"),
+            url=optional_string(item, "url", action="errors"),
+            line=optional_int_field(item, "line", action="errors"),
+            column=optional_int_field(item, "column", action="errors"),
+        )
+        for item in _entries(data, "errors", action="errors")
     )
+
+
+def _entries(data: Mapping[str, Any], field: str, *, action: str) -> list[Mapping[str, Any]]:
+    entries = data.get(field)
+    if not isinstance(entries, list):
+        raise NativeParseError(f"{action} field '{field}' must be an array")
+    if any(not isinstance(entry, Mapping) for entry in entries):
+        raise NativeParseError(f"{action} field '{field}' entries must be objects")
+    return cast(list[Mapping[str, Any]], entries)
+
+
+def _optional_list(data: Mapping[str, Any], field: str, *, action: str) -> list[Any]:
+    value = data.get(field, [])
+    if not isinstance(value, list):
+        raise NativeParseError(f"{action} field '{field}' must be an array")
+    return value
 
 
 def _accessibility_issues(

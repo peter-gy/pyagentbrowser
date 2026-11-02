@@ -73,9 +73,12 @@ with Browser.launch() as browser:
     state_path = browser.state.save("account.json")
 
 with Browser.launch() as browser:
-    browser.state.load(state_path)
     browser.page.open("https://example.com")
+    loaded = browser.state.load(state_path)
+    print(loaded.skipped_origins)
 ```
+
+`state.load()` sets cookies directly and writes each origin's Web Storage only while the page is on that origin. Open a page on the saved origin first. `StateLoadResult.skipped_origins` lists saved origins whose storage was not restored.
 
 An active domain allowlist filters exports and rejects state loading. Use the explicit unsafe flags only when the wider scope is part of the application contract.
 

@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any, cast
 
-from agentbrowser.contracts.decode import optional_bool, optional_float, require_keys
+from agentbrowser.contracts.decode import (
+    optional_bool,
+    optional_float,
+    require_keys,
+    required_string,
+    string_tuple,
+)
 from agentbrowser.contracts.errors import NativeParseError
-from agentbrowser.features.storage.models import Cookie
+from agentbrowser.features.storage.models import Cookie, StateLoadResult
 
 
 def cookies_from_data(data: Mapping[str, Any]) -> tuple[Cookie, ...]:
@@ -30,4 +37,12 @@ def _cookie(raw: Mapping[str, Any]) -> Cookie:
         secure=optional_bool(raw.get("secure")),
         same_site=str(raw["sameSite"]) if raw.get("sameSite") is not None else None,
         raw=raw,
+    )
+
+
+def state_load_result_from_data(data: Mapping[str, Any]) -> StateLoadResult:
+    action = "state_load"
+    return StateLoadResult(
+        path=Path(required_string(data, "path", action=action)),
+        skipped_origins=string_tuple(data, "skippedOrigins", action=action),
     )

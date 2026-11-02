@@ -173,17 +173,23 @@ pub(crate) fn rewrite_stream_http_module(out_dir: &Path, source: &Path) -> PathB
         contents,
         "dashboard asset serving",
         r###"pub(super) fn serve_embedded_file(url_path: &str) -> (&'static str, &'static str, Vec<u8>) {
-    let clean = url_path.trim_start_matches('/');
+    let clean = url_path
+        .split(['?', '#'])
+        .next()
+        .unwrap_or_default()
+        .trim_start_matches('/');
     let key = if clean.is_empty() {
         "index.html"
     } else {
         clean
     };
 
-    let file = DashboardAssets::get(key).or_else(|| DashboardAssets::get("index.html"));
+    let file = DashboardAssets::get(key)
+        .map(|file| (key, file))
+        .or_else(|| DashboardAssets::get("index.html").map(|file| ("index.html", file)));
 
     match file {
-        Some(content) => {
+        Some((key, content)) => {
             let ext = key.rsplit('.').next().unwrap_or("");
             let ct = match ext {
                 "html" => "text/html; charset=utf-8",

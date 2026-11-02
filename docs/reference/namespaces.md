@@ -38,7 +38,7 @@ frame scope.
 | `url()` | Return this document's URL. |
 | `content()` | Return this document's HTML. |
 | `set_content(html)` | Replace this page's document. |
-| `evaluate(script)` | Evaluate JavaScript in this document's default execution context and await promises. |
+| `evaluate(script)` | Evaluate JavaScript in this document's default execution context, await promises, and return the JSON value. `NaN`, `Infinity`, `-Infinity`, and `-0` become `float`, a `BigInt` becomes `int`, and `undefined` becomes `None`. |
 | `read(url=None, *, mode=None, filter=None, timeout_ms=None, headers=None, allowed_domains=None)` | Return `ReadResult` for an explicit URL or this page's rendered document. |
 | `ready(*, timeout_ms=None, min_text_length=1)` | Wait for minimum body text. |
 | `back()`, `forward()`, `reload()` | Navigate history and invalidate direct CDP frame and execution-context handles. |
@@ -136,7 +136,7 @@ When `cookies=` is present, it supplies the batch input. Use scalar fields for o
 | `storage.set(key, value, *, area="local")` | Write one storage value. |
 | `storage.clear(*, area="local")` | Clear one storage area. |
 | `state.save(path=None, *, unsafe_export_all=False)` | Write cookies and origin storage to a state file. |
-| `state.load(path, *, unsafe_import_all=False)` | Load a state file. Domain-restricted sessions reject this operation. |
+| `state.load(path, *, unsafe_import_all=False)` | Load a state file and return `StateLoadResult`. Web Storage is written only for the active page's origin. Domain-restricted sessions reject this operation. |
 | `state.list()` | List saved native state records. |
 | `state.show(path)` | Read one saved-state record. |
 | `state.clear(path=None)` | Clear selected saved state. |
@@ -147,15 +147,16 @@ When `cookies=` is present, it supplies the batch input. Use scalar fields for o
 
 | Method | Contract |
 | --- | --- |
-| `route(url, *, abort=False, response=None, status=None, body=None, content_type=None, headers=None, resource_type=None, resource_types=None)` | Register request abort or response behavior. |
+| `route(url, response=None, *, abort=False, resource_types=None)` | Answer matching requests with a `RouteResponse`, abort them, or continue them. A response and `abort=True` are mutually exclusive. |
 | `unroute(url=None)` | Remove one route or every route. |
-| `requests(*, clear=False, url_pattern=None, resource_type=None, method=None, status=None)` | Return captured request summaries. |
-| `request_detail(request_id)` | Return request and response details. |
+| `requests(*, url_pattern=None, resource_type=None, method=None, status=None)` | Start capture on first use and return captured `NetworkRequest` records. |
+| `clear_requests()` | Empty the request capture buffer. |
+| `request(request_id)` | Return one `NetworkRequest` with its response body. |
 | `har_start(*, content="text")` | Start HTTP Archive capture. Content is `text`, `all`, or `none`. |
 | `har_stop(path=None)` | Stop capture and return the written path. |
 | `credentials(username, password)` | Set HTTP authentication credentials. |
 
-If `response=` is present, it takes precedence over response shorthand fields.
+`RouteResponse(allow_origin=...)` answers CORS preflights from that origin and adds `Access-Control-Allow-Origin` to the mocked response.
 
 ## `browser.keyboard`
 
@@ -221,8 +222,10 @@ Supply one inline value or URL according to the method signature.
 
 | Method | Contract |
 | --- | --- |
-| `console(*, clear=False)` | Return `ConsoleMessage` records. |
-| `errors()` | Return page error data. |
+| `console()` | Return `ConsoleMessage` records. |
+| `clear_console()` | Empty the console buffer. |
+| `errors()` | Return `PageError` records for uncaught page exceptions. |
+| `clear_errors()` | Empty the page error buffer. |
 | `vitals()` | Reload the active page, wait three seconds, and return Core Web Vitals plus navigation and React hydration timing. |
 | `accessibility(url=None, *, tags=(), selector=None)` | Run axe-core and return `AccessibilityAudit`. |
 | `react_tree(*, selector=None)` | Return React tree data. Launch with `AGENT_BROWSER_ENABLE=react-devtools`. |

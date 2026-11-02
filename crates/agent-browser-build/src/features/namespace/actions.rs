@@ -3,11 +3,7 @@ use super::super::super::{patch::replace_once_named, source::Source};
 pub(crate) fn rewrite_actions_namespace(contents: Source) -> Source {
     const UPSTREAM_CONNECTION_IMPORT: &str =
         r#"use crate::connection::{get_socket_dir, INTERNAL_DAEMON_SHUTDOWN_ACTION};"#;
-    const REWRITTEN_CONNECTION_IMPORT: &str = r#"use crate::connection::{
-    get_socket_dir,
-    get_socket_dir_for_namespace,
-    INTERNAL_DAEMON_SHUTDOWN_ACTION,
-};"#;
+    const REWRITTEN_CONNECTION_IMPORT: &str = r#"use crate::connection::{get_socket_dir_for_namespace, INTERNAL_DAEMON_SHUTDOWN_ACTION};"#;
     const UPSTREAM_SESSION_FIELD: &str = r#"    pub session_id: String,
     pub tracing_state: TracingState,"#;
     const REWRITTEN_SESSION_FIELD: &str = r#"    pub session_id: String,
@@ -18,64 +14,10 @@ pub(crate) fn rewrite_actions_namespace(contents: Source) -> Source {
     const REWRITTEN_SESSION_INIT: &str = r#"            session_id,
             namespace: env::var("AGENT_BROWSER_NAMESPACE").ok(),
             tracing_state: TracingState::new(),"#;
-    const UPSTREAM_SESSION_INFO: &str = r#"async fn handle_session_info(state: &DaemonState) -> Result<Value, String> {
-    Ok(json!({
-        "session": state.session_id,
-        "namespace": env::var("AGENT_BROWSER_NAMESPACE").ok(),
-        "socketDir": get_socket_dir().to_string_lossy(),
-        "backgroundPid": std::process::id(),
-        "browserLaunched": state.browser.is_some(),
-        "pageCount": state.browser.as_ref().map(|mgr| mgr.page_count()).unwrap_or(0),
-        "engine": state.engine,
-        "launchHash": state.launch_hash,
-        "compatibilityStatus": "current",
-        "effectiveLaunch": {
-            "browserLaunched": state.browser.is_some(),
-            "engine": state.engine,
-            "launchHash": state.launch_hash,
-        },
-        "restoreKey": state.session_name,
-        "restoreStatus": state.restore_status,
-        "restoreStatusDetail": state.restore_status_detail,
-        "restoreLoadedPath": state.restore_loaded_path,
-        "restoreValidationPending": state.restore_validation_pending,
-        "restoreSave": state.restore_save,
-        "saveStatus": state.restore_save_status,
-        "restoreSavedPath": state.restore_saved_path,
-        "restoreCheckUrl": state.restore_check_url,
-        "restoreCheckText": state.restore_check_text,
-        "restoreCheckFn": state.restore_check_fn,
-    }))
-}"#;
-    const REWRITTEN_SESSION_INFO: &str = r#"async fn handle_session_info(state: &DaemonState) -> Result<Value, String> {
-    Ok(json!({
-        "session": state.session_id,
-        "namespace": state.namespace.as_deref(),
-        "socketDir": get_socket_dir_for_namespace(state.namespace.as_deref()).to_string_lossy(),
-        "backgroundPid": std::process::id(),
-        "browserLaunched": state.browser.is_some(),
-        "pageCount": state.browser.as_ref().map(|mgr| mgr.page_count()).unwrap_or(0),
-        "engine": state.engine,
-        "launchHash": state.launch_hash,
-        "compatibilityStatus": "current",
-        "effectiveLaunch": {
-            "browserLaunched": state.browser.is_some(),
-            "engine": state.engine,
-            "launchHash": state.launch_hash,
-        },
-        "restoreKey": state.session_name,
-        "restoreStatus": state.restore_status,
-        "restoreStatusDetail": state.restore_status_detail,
-        "restoreLoadedPath": state.restore_loaded_path,
-        "restoreValidationPending": state.restore_validation_pending,
-        "restoreSave": state.restore_save,
-        "saveStatus": state.restore_save_status,
-        "restoreSavedPath": state.restore_saved_path,
-        "restoreCheckUrl": state.restore_check_url,
-        "restoreCheckText": state.restore_check_text,
-        "restoreCheckFn": state.restore_check_fn,
-    }))
-}"#;
+    const UPSTREAM_SESSION_INFO: &str = r#"        "namespace": env::var("AGENT_BROWSER_NAMESPACE").ok(),
+        "socketDir": get_socket_dir().to_string_lossy(),"#;
+    const REWRITTEN_SESSION_INFO: &str = r#"        "namespace": state.namespace.as_deref(),
+        "socketDir": get_socket_dir_for_namespace(state.namespace.as_deref()).to_string_lossy(),"#;
     const UPSTREAM_STATE_DISPATCH: &str = r#"            state::dispatch_state_command(cmd)
                 .expect("dispatch_state_command must handle all state_* actions matched here")"#;
     const REWRITTEN_STATE_DISPATCH: &str = r#"            state::dispatch_state_command_for_namespace(cmd, state.namespace.as_deref())

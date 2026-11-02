@@ -17,7 +17,7 @@ from agentbrowser import Browser, RouteResponse
 with Browser.launch() as browser:
     browser.network.route(
         "**/api/profile",
-        response=RouteResponse(
+        RouteResponse(
             status=200,
             body='{"name":"Ada"}',
             content_type="application/json",
@@ -29,20 +29,37 @@ with Browser.launch() as browser:
     browser.network.unroute("**/api/profile")
 ```
 
-Use either the typed `response` object or the shorthand `status`, `body`, `content_type`, and `headers` fields in one call. A supplied `response` takes precedence.
+`RouteResponse` describes the status, body, content type, and headers sent for every matching request. A JSON body without a content type is sent as `application/json`.
 
-Set `abort=True` to stop matching requests. `resource_type` and `resource_types` narrow the route.
+Set `abort=True` without a response to stop matching requests. `resource_types=["fetch", "xhr"]` narrows the route to those request kinds.
+
+### Answer cross-origin requests
+
+A page on one origin that fetches a mocked API on another origin needs CORS headers. Set `allow_origin` to the page origin:
+
+```python
+browser.network.route(
+    "https://api.example.com/**",
+    RouteResponse(body='{"ok":true}', allow_origin="https://app.example.com"),
+)
+```
+
+The route answers the browser's CORS preflight for that origin and adds `Access-Control-Allow-Origin` to the mocked response.
 
 ## Inspect requests
 
 ```python
-requests = browser.network.requests(method="GET", status=200)
-for request in requests:
-    detail = browser.network.request_detail(request.id)
-    print(request.url, detail.status)
+browser.network.requests()  # start capture
+browser.page.open("https://example.com")
+
+for request in browser.network.requests(method="GET", status=200):
+    detail = browser.network.request(request.id)
+    print(request.url, request.status, len(detail.response_body or ""))
+
+browser.network.clear_requests()
 ```
 
-`requests(clear=True)` returns matching summaries and clears the capture buffer. Filters include URL pattern, resource type, method, and status. `network.credentials()` sets HTTP authentication credentials.
+Capture starts with the first `requests()` call. Filters include URL substring, resource type, method, and status. Each `NetworkRequest` carries request headers, response status and headers, and MIME type. `request(id)` adds the response body. `clear_requests()` empties the capture buffer. `network.credentials()` sets HTTP authentication credentials.
 
 ## Record an HTTP Archive
 
@@ -64,13 +81,17 @@ HAR files can contain cookies, authorization headers, request data, and response
 ## Read browser diagnostics
 
 ```python
-console = browser.diagnostics.console()
-errors = browser.diagnostics.errors()
-vitals = browser.diagnostics.vitals()
+for message in browser.diagnostics.console():
+    print(message.type, message.text)
+for error in browser.diagnostics.errors():
+    print(error.text, error.url, error.line)
 
-for message in console:
-    print(message.level, message.text)
+browser.diagnostics.clear_console()
+browser.diagnostics.clear_errors()
+vitals = browser.diagnostics.vitals()
 ```
+
+`console()` returns `ConsoleMessage` records and `errors()` returns `PageError` records for uncaught exceptions. The clear methods empty each buffer, so a later read reports only new output.
 
 `diagnostics.vitals()` reloads the active page, waits three seconds for layout shifts and React effects, and returns a raw mapping. Time to First Byte (TTFB), First Contentful Paint (FCP), Interaction to Next Paint (INP), hydration, phase, and component timing values use milliseconds. Largest Contentful Paint (LCP) contains start time, rendered size, element name, and URL. Cumulative Layout Shift (CLS) contains a unitless score and layout-shift entries. The [web.dev metric guides](https://web.dev/explore/learn-core-web-vitals) explain how to interpret these metrics.
 

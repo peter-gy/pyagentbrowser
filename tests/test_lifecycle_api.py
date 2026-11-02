@@ -42,6 +42,7 @@ def test_session_namespace_returns_typed_lifecycle_status() -> None:
         restore_key="research",
         restore_status="loaded",
         restore_status_detail=None,
+        restore_skipped_origins=("https://partner.example",),
         restore_loaded_path=Path("/tmp/research.json"),
         restore_validation_pending=False,
         restore_save="always",

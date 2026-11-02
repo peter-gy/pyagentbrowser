@@ -9,6 +9,7 @@ import pytest
 from agentbrowser import (
     AccessibilityAudit,
     BrowserError,
+    RouteResponse,
 )
 from agentbrowser.cdp import CDPStaleObjectError
 from tests.support.browser import (
@@ -157,3 +158,44 @@ def test_webmcp_discovery_invocation_and_cancellation_cross_the_native_boundary(
         with pytest.raises(BrowserError) as missing:
             browser.webmcp.invoke("missing_tool")
         assert missing.value.code == "webmcp_tool_not_found"
+
+
+def test_page_errors_are_captured_and_cleared(chrome_path: Path, local_site: LocalSite) -> None:
+    (local_site.root / "index.html").write_text(
+        "<script>console.log('ready', 2); throw new Error('boot failed')</script>"
+    )
+    with _browser(chrome_path) as browser:
+        browser.page.open(f"{local_site.base_url}/index.html")
+
+        errors = browser.diagnostics.errors()
+        messages = browser.diagnostics.console()
+        assert any("boot failed" in error.text for error in errors)
+        assert any(message.type == "log" and message.text == "ready 2" for message in messages)
+
+        browser.diagnostics.clear_errors()
+        browser.diagnostics.clear_console()
+        assert browser.diagnostics.errors() == ()
+        assert browser.diagnostics.console() == ()
+
+
+def test_routed_cross_origin_response_answers_cors_preflight(
+    chrome_path: Path, local_site: LocalSite
+) -> None:
+    (local_site.root / "index.html").write_text("<title>App</title>")
+    api_url = local_site.base_url.replace("127.0.0.1", "localhost") + "/api/data"
+    fetch = (
+        f"fetch({api_url!r}, {{headers: {{'X-Client': 'sdk'}}}}).then(response => response.json())"
+    )
+    with _browser(chrome_path) as browser:
+        browser.page.open(f"{local_site.base_url}/index.html")
+        browser.network.route(
+            "**/api/data",
+            RouteResponse(body='{"ok": true}', allow_origin=local_site.base_url),
+        )
+        assert browser.network.requests() == ()
+
+        assert browser.page.evaluate(fetch) == {"ok": True}
+        requests = browser.network.requests(url_pattern="/api/data")
+        assert requests and requests[-1].url == api_url
+        browser.network.clear_requests()
+        assert browser.network.requests() == ()

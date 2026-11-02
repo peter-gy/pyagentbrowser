@@ -30,6 +30,7 @@ def _session_status_data() -> dict[str, Any]:
         "restoreKey": "research",
         "restoreStatus": "loaded",
         "restoreStatusDetail": None,
+        "restoreSkippedOrigins": ["https://partner.example"],
         "restoreLoadedPath": "/tmp/research.json",
         "restoreValidationPending": False,
         "restoreSave": "always",

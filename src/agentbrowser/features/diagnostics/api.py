@@ -5,13 +5,15 @@ from dataclasses import dataclass
 from typing import Any
 
 from agentbrowser.contracts.connection import normalize_url
+from agentbrowser.contracts.decode import none
 from agentbrowser.contracts.protocol import optional
 from agentbrowser.execution.commands import AsyncExecutor, Command, Executor
 from agentbrowser.features.diagnostics.codec import (
     accessibility_audit_from_data,
     console_messages_from_data,
+    page_errors_from_data,
 )
-from agentbrowser.features.diagnostics.models import AccessibilityAudit, ConsoleMessage
+from agentbrowser.features.diagnostics.models import AccessibilityAudit, ConsoleMessage, PageError
 from agentbrowser.features.diagnostics.params import accessibility_audit_params
 
 
@@ -21,15 +23,21 @@ class Diagnostics:
 
     executor: Executor
 
-    def console(self, *, clear: bool = False) -> tuple[ConsoleMessage, ...]:
+    def console(self) -> tuple[ConsoleMessage, ...]:
         """Return captured console messages."""
-        return self.executor.execute(
-            Command("console", {"clear": clear}, decode=console_messages_from_data)
-        )
+        return self.executor.execute(Command("console", {}, decode=console_messages_from_data))
 
-    def errors(self) -> Mapping[str, Any]:
-        """Return captured page errors."""
-        return self.executor.execute(Command("errors", {}))
+    def clear_console(self) -> None:
+        """Discard every captured console message."""
+        self.executor.execute(Command("console", {"clear": True}, decode=none))
+
+    def errors(self) -> tuple[PageError, ...]:
+        """Return captured uncaught page exceptions."""
+        return self.executor.execute(Command("errors", {}, decode=page_errors_from_data))
+
+    def clear_errors(self) -> None:
+        """Discard every captured page error."""
+        self.executor.execute(Command("errors", {"clear": True}, decode=none))
 
     def vitals(self) -> Mapping[str, Any]:
         """Return page vitals when supported by the native engine."""
@@ -63,15 +71,23 @@ class AsyncDiagnostics:
 
     executor: AsyncExecutor
 
-    async def console(self, *, clear: bool = False) -> tuple[ConsoleMessage, ...]:
+    async def console(self) -> tuple[ConsoleMessage, ...]:
         """Return captured console messages."""
         return await self.executor.execute(
-            Command("console", {"clear": clear}, decode=console_messages_from_data)
+            Command("console", {}, decode=console_messages_from_data)
         )
 
-    async def errors(self) -> Mapping[str, Any]:
-        """Return captured page errors."""
-        return await self.executor.execute(Command("errors", {}))
+    async def clear_console(self) -> None:
+        """Discard every captured console message."""
+        await self.executor.execute(Command("console", {"clear": True}, decode=none))
+
+    async def errors(self) -> tuple[PageError, ...]:
+        """Return captured uncaught page exceptions."""
+        return await self.executor.execute(Command("errors", {}, decode=page_errors_from_data))
+
+    async def clear_errors(self) -> None:
+        """Discard every captured page error."""
+        await self.executor.execute(Command("errors", {"clear": True}, decode=none))
 
     async def vitals(self) -> Mapping[str, Any]:
         """Return page vitals when supported by the native engine."""
