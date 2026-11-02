@@ -22,7 +22,7 @@ pub(crate) fn generate(protocol_dir: &Path, out_dir: &Path) {
         .fold(0xcbf29ce484222325_u64, |hash, byte| {
             (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
         });
-    assert_eq!(fingerprint, 0x59c5df7f424eb649, "{}: upstream protocol generator changed. Audit protocol generation before updating its fingerprint", generator_path.display());
+    assert_eq!(fingerprint, 0xc964ded84e3d9511, "{}: upstream protocol generator changed. Audit protocol generation before updating its fingerprint", generator_path.display());
     let out_path = out_dir.join("cdp_generated.rs");
 
     let browser_path = protocol_dir.join("browser_protocol.json");

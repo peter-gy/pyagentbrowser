@@ -7,8 +7,8 @@ from typing import Any
 
 from agentbrowser.contracts.decode import none, required_path
 from agentbrowser.execution.commands import AsyncExecutor, Command, Executor
-from agentbrowser.features.storage.codec import cookies_from_data
-from agentbrowser.features.storage.models import Cookie, SameSite, StorageArea
+from agentbrowser.features.storage.codec import cookies_from_data, state_load_result_from_data
+from agentbrowser.features.storage.models import Cookie, SameSite, StateLoadResult, StorageArea
 from agentbrowser.features.storage.params import (
     cookies_clear_params,
     cookies_get_params,
@@ -230,16 +230,16 @@ class State:
             )
         )
 
-    def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> None:
-        """Load browser storage state from a file.
+    def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> StateLoadResult:
+        """Load cookies and origin storage from a state file.
 
         Raises `BrowserError` when the session uses `allowed_domains`.
         """
-        self.executor.execute(
+        return self.executor.execute(
             Command(
                 "state_load",
                 {**state_path_params(path, unsafeImportAll=unsafe_import_all)},
-                decode=none,
+                decode=state_load_result_from_data,
             )
         )
 
@@ -287,16 +287,16 @@ class AsyncState:
             )
         )
 
-    async def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> None:
-        """Load browser storage state from a file.
+    async def load(self, path: str | Path, *, unsafe_import_all: bool = False) -> StateLoadResult:
+        """Load cookies and origin storage from a state file.
 
         Raises `BrowserError` when the session uses `allowed_domains`.
         """
-        await self.executor.execute(
+        return await self.executor.execute(
             Command(
                 "state_load",
                 {**state_path_params(path, unsafeImportAll=unsafe_import_all)},
-                decode=none,
+                decode=state_load_result_from_data,
             )
         )
 

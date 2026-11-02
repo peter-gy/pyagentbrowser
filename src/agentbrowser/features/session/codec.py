@@ -11,6 +11,7 @@ from agentbrowser.contracts.decode import (
     required_bool,
     required_int,
     required_string,
+    string_tuple,
 )
 from agentbrowser.contracts.errors import NativeParseError
 from agentbrowser.features.session.models import (
@@ -64,6 +65,7 @@ def session_status_from_data(data: Mapping[str, Any]) -> SessionStatus:
         restore_key=nullable_string(data, "restoreKey", action=action),
         restore_status=_restore_status(data, action=action),
         restore_status_detail=nullable_string(data, "restoreStatusDetail", action=action),
+        restore_skipped_origins=string_tuple(data, "restoreSkippedOrigins", action=action),
         restore_loaded_path=(
             Path(restore_loaded_path) if restore_loaded_path is not None else None
         ),

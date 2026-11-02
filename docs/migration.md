@@ -1,14 +1,53 @@
 ---
-title: Migrate to scoped browser agents
-description: Update code-mode controller lifecycle, frame operations, and screenshot delivery to the scoped API.
+title: Migration guide
+description: Update applications for pyagentbrowser 0.41 contracts and the scoped browser agent API.
 ---
 
-# Migrate to scoped browser agents
+# Migration guide
+
+Each section lists the replacement for a changed contract.
+
+## Upgrade to pyagentbrowser 0.41
+
+### Pass one `RouteResponse` to `network.route()`
+
+```python
+from agentbrowser import RouteResponse
+
+browser.network.route(
+    "**/api/profile",
+    RouteResponse(status=200, body='{"name":"Ada"}', content_type="application/json"),
+    resource_types=["fetch"],
+)
+```
+
+Move `status`, `body`, `content_type`, and `headers` keywords into
+`RouteResponse`, and pass it as the second argument. Replace
+`resource_type="fetch"` with `resource_types=["fetch"]`.
+
+### Read and clear capture buffers
+
+| Previous call | Replacement |
+| --- | --- |
+| `network.requests(clear=True)` | `network.clear_requests()` |
+| `diagnostics.console(clear=True)` | `diagnostics.clear_console()` |
+| `network.request_detail(id)` | `network.request(id)` |
+
+`network.request()` returns `NetworkRequest` with `response_body` set.
+`diagnostics.errors()` returns `PageError` records with `text`, `url`, `line`,
+and `column`. `ConsoleMessage` carries `type`, `text`, and `args`.
+
+### Read the result of `state.load()`
+
+`state.load()` returns `StateLoadResult`. Check `skipped_origins` for saved
+origins whose Web Storage was not restored because the page was elsewhere.
+
+## Migrate to scoped browser agents
 
 The scoped API gives each browser operation an explicit page or frame handle.
 Update controller lifecycle, frame selection, and screenshot delivery together.
 
-## Move document operations to `browser.page`
+### Move document operations to `browser.page`
 
 ```python
 browser.page.open("https://example.com")
@@ -21,7 +60,7 @@ The `Browser` owns lifecycle, tabs, session policy, storage, network, and raw
 native access. The `Page` owns navigation, reading, evaluation, waits, queries,
 snapshots, scrolling, geometry, frames, and capture.
 
-## Create and retrieve controllers explicitly
+### Create and retrieve controllers explicitly
 
 ```python
 import agentbrowser
@@ -39,7 +78,7 @@ Replace `connect()` with `create()` at ownership boundaries and `get()` at
 retrieval sites. Replace `disconnect()` with `close()`. Duplicate and missing
 names now fail, which prevents a retrieval typo from starting another browser.
 
-## Carry frame scope through a handle
+### Carry frame scope through a handle
 
 ```python
 preview = browser.page.frames.get(selector="iframe[title='Preview']")
@@ -52,7 +91,7 @@ Replace ambient frame selection with `Page.frames.get()`. Move observation,
 queries, evaluation, waits, scrolling, geometry, and capture to the returned
 `Frame`. Return to the main document by using `browser.page`.
 
-## Read screenshot content
+### Read screenshot content
 
 ```python
 screenshot = preview.capture.screenshot("artifacts/preview.png")
@@ -65,7 +104,7 @@ can render the screenshot through standard image display protocols. An agent
 host forwards the content through its own image channel. See
 [Code-mode integration](/guides/code-mode).
 
-## Import public types from `agentbrowser`
+### Import public types from `agentbrowser`
 
 ```python
 from agentbrowser import (

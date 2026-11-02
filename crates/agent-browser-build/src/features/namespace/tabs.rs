@@ -11,15 +11,17 @@ pub(crate) fn rewrite_tab_binding_module(out_dir: &Path, source: &Path) -> PathB
         contents,
         "tab binding namespace path",
         r#"pub fn binding_path(session: &str) -> PathBuf {
-    crate::connection::get_socket_dir().join(format!("{}.target", session))
+    crate::session_files::SessionFile::Target.path(session)
 }"#,
         r#"pub fn binding_path(session: &str) -> PathBuf {
     binding_path_for_namespace(session, None)
 }
 
 pub fn binding_path_for_namespace(session: &str, namespace: Option<&str>) -> PathBuf {
-    crate::connection::get_socket_dir_for_namespace(namespace)
-        .join(format!("{}.target", session))
+    crate::session_files::SessionFile::Target.path_in(
+        &crate::connection::get_socket_dir_for_namespace(namespace),
+        session,
+    )
 }"#,
     );
     let contents = replace_once_named(

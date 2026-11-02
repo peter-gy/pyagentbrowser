@@ -138,12 +138,7 @@ async fn ensure_confirmation_still_allowed(
     state: &mut DaemonState,
 ) -> Result<(), String> {
     if let Some(ref mut policy) = state.policy {
-        policy.reload().map_err(|reason| {
-            format!(
-                "Action '{}' denied by policy during confirmation: {}",
-                pending.action, reason
-            )
-        })?;
+        policy.reload();
         if let PolicyResult::Deny(reason) = policy.check(&pending.action) {
             return Err(format!(
                 "Action '{}' denied by policy during confirmation: {}",

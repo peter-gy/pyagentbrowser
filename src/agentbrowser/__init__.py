@@ -25,6 +25,7 @@ from agentbrowser.features.diagnostics.models import (
     AccessibilityIssue,
     AccessibilityNode,
     ConsoleMessage,
+    PageError,
 )
 from agentbrowser.features.documents.handles import Frame, Page
 from agentbrowser.features.documents.handles_async import AsyncFrame, AsyncPage
@@ -40,7 +41,6 @@ from agentbrowser.features.evidence.waits import Wait
 from agentbrowser.features.network.models import (
     HarContentMode,
     NetworkRequest,
-    RequestDetail,
     RouteResponse,
 )
 from agentbrowser.features.queries import AsyncQuery, Query
@@ -52,7 +52,7 @@ from agentbrowser.features.session.models import (
     SessionId,
     SessionStatus,
 )
-from agentbrowser.features.storage.models import Cookie
+from agentbrowser.features.storage.models import Cookie, StateLoadResult
 from agentbrowser.features.tabs.models import TabCloseResult, TabInfo, TabSwitchResult
 from agentbrowser.features.webmcp.models import WebMCPInvocation, WebMCPInvocationStatus, WebMCPTool
 from agentbrowser.install import BrowserInstallError, InstallResult, ensure_installed
@@ -108,13 +108,13 @@ __all__ = [
     "NativeParseError",
     "NetworkRequest",
     "Page",
+    "PageError",
     "PendingAction",
     "ProxyConfig",
     "Query",
     "ReadMode",
     "ReadResult",
     "Ref",
-    "RequestDetail",
     "RestoreOptions",
     "RestoreSaveError",
     "RouteResponse",
@@ -129,6 +129,7 @@ __all__ = [
     "SnapshotDiff",
     "SnapshotSpec",
     "StaleRefError",
+    "StateLoadResult",
     "TabCloseResult",
     "TabInfo",
     "TabSwitchResult",

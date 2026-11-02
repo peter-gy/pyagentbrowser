@@ -167,7 +167,7 @@ mobile = preview.capture.screenshot("artifacts/details-mobile.png")
 movement = preview.scroll.by(y=600)
 geometry = preview.geometry()
 console = browser.diagnostics.console()
-errors = browser.diagnostics.errors()
+errors = browser.diagnostics.errors()  # PageError records
 ```
 
 Deliver `desktop.content()` and `mobile.content()` through the calling host's

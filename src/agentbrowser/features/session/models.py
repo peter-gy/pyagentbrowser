@@ -82,6 +82,7 @@ class SessionStatus:
     restore_key: str | None
     restore_status: RestoreStatus
     restore_status_detail: str | None
+    restore_skipped_origins: tuple[str, ...]
     restore_loaded_path: Path | None
     restore_validation_pending: bool
     restore_save: RestoreSave

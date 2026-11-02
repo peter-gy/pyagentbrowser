@@ -70,7 +70,7 @@ pub(crate) fn rewrite_scoped_waits(contents: Source) -> Source {
     }"#;
     const UPSTREAM_WAIT_LOAD: &str = r#"    if let Some(load_state) = cmd.get("loadState").and_then(|v| v.as_str()) {
         let wait_until = WaitUntil::from_str(load_state);
-        mgr.wait_for_lifecycle_external(wait_until, &session_id)
+        mgr.wait_for_lifecycle_external(wait_until, &session_id, timeout_ms)
             .await?;
         return Ok(json!({ "waited": "load", "state": load_state }));
     }"#;
@@ -97,7 +97,7 @@ pub(crate) fn rewrite_scoped_waits(contents: Source) -> Source {
             .await?;
         } else {
             let wait_until = WaitUntil::from_str(load_state);
-            mgr.wait_for_lifecycle_external(wait_until, &session_id).await?;
+            mgr.wait_for_lifecycle_external(wait_until, &session_id, timeout_ms).await?;
         }
         return Ok(json!({ "waited": "load", "state": load_state }));
     }"#;

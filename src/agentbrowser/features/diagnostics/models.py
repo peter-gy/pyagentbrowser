@@ -55,12 +55,22 @@ class AccessibilityAudit:
 
 @dataclass(frozen=True, slots=True)
 class ConsoleMessage:
-    """Captured browser console message."""
+    """One captured console call.
+
+    `type` is the console method, such as `log`, `warning`, or `error`. `args`
+    holds the call arguments that serialize to JSON.
+    """
 
     type: str
     text: str
-    level: str | None = None
+    args: tuple[Any, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class PageError:
+    """One uncaught page exception with its source location when known."""
+
+    text: str
     url: str | None = None
     line: int | None = None
     column: int | None = None
-    raw: Mapping[str, Any] = field(default_factory=dict)

@@ -66,7 +66,7 @@ The pinned engine compares exact native action names. Deny rules run first, then
 
 `SessionOptions.confirm_actions=("click", "cookies_set")` requests the same exact-name confirmation directly. The installed engine's native dispatcher defines the JSON action vocabulary. Print `agentbrowser.__agent_browser_commit__` and inspect `cli/src/native/actions.rs` at that exact upstream revision. The [raw native protocol guide](/guides/native-protocol#find-the-action-vocabulary) builds the source URL.
 
-The policy file must remain readable and valid JSON. Confirmation reloads it before replay and fails closed when it changed to deny, became invalid, or disappeared.
+The policy file must remain readable and valid JSON. The engine rereads it before each action. While the file is unreadable or invalid, every action except `close` fails with `action policy failed to load`. Confirmation rereads it before replay and fails when the action is now denied.
 
 ## Explicit unscoped operations
 

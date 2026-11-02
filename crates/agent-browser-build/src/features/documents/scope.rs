@@ -9,8 +9,8 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
     super::element::set_active_frame(state.active_frame_id.as_deref());"#;
     const SCOPED_SYNC: &str =
         r#"    // Explicit page and frame scope is applied after policy admission."#;
-    const UPSTREAM_POLICY_ACTIONS: &str =
-        r#"    let policy_actions = policy_actions_for_command(cmd, action, needs_launch);"#;
+    const UPSTREAM_POLICY_ACTIONS: &str = r#"    let policy_actions =
+        policy_actions_for_command(cmd, action, needs_launch, state.attached_target.as_ref());"#;
     const SCOPED_POLICY_ACTIONS: &str = r#"    let needs_scope_switch = cmd
         .get("_targetId")
         .and_then(Value::as_str)
@@ -22,11 +22,12 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
                     .and_then(|manager| manager.active_target_id().ok())
                     != Some(target_id)
         });
-    let mut policy_actions = policy_actions_for_command(cmd, action, needs_launch);
+    let mut policy_actions =
+        policy_actions_for_command(cmd, action, needs_launch, state.attached_target.as_ref());
     if needs_scope_switch {
         policy_actions.insert(0, "tab_switch".to_string());
     }"#;
-    const UPSTREAM_ACTION_DISPATCH: &str = r#"    let result = match action {"#;
+    const UPSTREAM_ACTION_DISPATCH: &str = r#"    let mut result = match action {"#;
     const SCOPED_ACTION_DISPATCH: &str = r#"    if let Some(expected) = cmd.get("_refGeneration").and_then(Value::as_u64) {
         if expected != state.ref_map.generation {
             return json!({ "id": id, "success": false, "code": "stale_ref", "error": "Snapshot ref generation expired" });
@@ -64,7 +65,7 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
         manager.client.documents.set_strict_refs(cmd.get("_refGeneration").is_some());
     }
 
-    let result = match action {"#;
+    let mut result = match action {"#;
     const UPSTREAM_INTERNAL_FIELDS: &str = r#"            || cmd.get("restoreCheckFn").is_some();"#;
     const SCOPED_INTERNAL_FIELDS: &str = r#"            || cmd.get("restoreCheckFn").is_some()
             || cmd.get("_targetId").is_some()
@@ -128,19 +129,34 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
         }
     }
 }"###;
-    const UPSTREAM_EVALUATE: &str = r#"    let result = mgr.evaluate(script, None).await?;
+    const UPSTREAM_EVALUATE: &str = r#"    let result = mgr.evaluate_remote_object(script).await?;
+    let unserializable = result
+        .unserializable_value
+        .clone()
+        .or_else(|| (result.object_type == "undefined").then(|| "undefined".to_string()));
     let url = mgr.get_url().await.unwrap_or_default();
-    Ok(json!({ "result": result, "origin": url }))"#;
+    let mut data = json!({ "result": result.value.unwrap_or(Value::Null), "origin": url });"#;
     const SCOPED_EVALUATE: &str = r#"    let target_id = mgr.active_target_id().ok();
-    let (result, origin) = if let Some(frame) = state.active_frame_id.as_deref() {
+    let (value, unserializable, origin) = if let Some(frame) = state.active_frame_id.as_deref() {
         let session = mgr.active_session_id()?;
-        let result = crate::documents::evaluate(&mgr.client, session, &state.iframe_sessions, frame, script).await?;
+        let (_, response) = crate::documents::evaluate_remote(&mgr.client, session, &state.iframe_sessions, frame, script, true).await?;
+        let remote = &response["result"];
+        let unserializable = remote
+            .get("unserializableValue")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .or_else(|| (remote["type"] == "undefined").then(|| "undefined".to_string()));
         let origin = crate::documents::evaluate(&mgr.client, session, &state.iframe_sessions, frame, "location.href").await?;
-        (result, origin)
+        (remote.get("value").cloned().unwrap_or(Value::Null), unserializable, origin)
     } else {
-        (mgr.evaluate(script, None).await?, json!(mgr.get_url().await?))
+        let remote = mgr.evaluate_remote_object(script).await?;
+        let unserializable = remote
+            .unserializable_value
+            .clone()
+            .or_else(|| (remote.object_type == "undefined").then(|| "undefined".to_string()));
+        (remote.value.unwrap_or(Value::Null), unserializable, json!(mgr.get_url().await?))
     };
-    Ok(json!({ "result": result, "origin": origin, "targetId": target_id }))"#;
+    let mut data = json!({ "result": value, "origin": origin, "targetId": target_id });"#;
 
     let rewritten = replace_once_named(
         contents,
@@ -175,13 +191,8 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
     let rewritten = replace_once_named(
         rewritten,
         "typed document scope errors",
-        r#"    let mut resp = match result {
-        Ok(data) => success_response(&id, data),
-        Err(e) => error_response(&id, &super::browser::to_ai_friendly_error(&e)),
-    };"#,
-        r#"    let mut resp = match result {
-        Ok(data) => success_response(&id, data),
-        Err(e) => {
+        r#"        (Err(e), None) => error_response(&id, &super::browser::to_ai_friendly_error(&e)),"#,
+        r#"        (Err(e), None) => {
             let mut response = error_response(&id, &super::browser::to_ai_friendly_error(&e));
             if e.starts_with("Frame execution context detached:") || e.starts_with("Frame parent detached:")
                 || (e.starts_with("CDP error (") && (e.contains("Frame with the given frameId is not found")
@@ -193,8 +204,7 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
                 response["code"] = json!("stale_ref");
             }
             response
-        }
-    };"#,
+        }"#,
     );
     let rewritten = replace_once_named(
         rewritten,
@@ -231,7 +241,7 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
         "target changes expire active refs",
         "state.ref_map.begin_snapshot();\n    state.active_iframe_sessions.clear();",
         "state.ref_map.expire_active_refs();\n    state.active_iframe_sessions.clear();",
-        3,
+        4,
     );
     let rewritten = replace_once_named(
         rewritten,

@@ -1,20 +1,17 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 from agentbrowser.contracts.decode import none, required_path
 from agentbrowser.contracts.protocol import optional, path_value
 from agentbrowser.execution.commands import AsyncExecutor, Command, Executor
-from agentbrowser.features.network.codec import network_requests_from_data, request_detail_from_data
-from agentbrowser.features.network.models import (
-    HarContentMode,
-    NetworkRequest,
-    RequestDetail,
-    RouteResponse,
+from agentbrowser.features.network.codec import (
+    network_request_from_data,
+    network_requests_from_data,
 )
+from agentbrowser.features.network.models import HarContentMode, NetworkRequest, RouteResponse
 from agentbrowser.features.network.params import har_start_params, requests_params, route_params
 
 
@@ -27,76 +24,59 @@ class Network:
     def route(
         self,
         url: str,
+        response: RouteResponse | None = None,
         *,
         abort: bool = False,
-        response: RouteResponse | Mapping[str, Any] | None = None,
-        status: int | None = None,
-        body: str | None = None,
-        content_type: str | None = None,
-        headers: Mapping[str, str] | None = None,
-        resource_type: str | None = None,
         resource_types: Sequence[str] | None = None,
     ) -> None:
-        """Register a request route."""
+        """Answer requests matching `url` with `response`, or abort them with `abort=True`."""
         self.executor.execute(
             Command(
                 "route",
-                {
-                    **route_params(
-                        url=url,
-                        abort=abort,
-                        response=response,
-                        status=status,
-                        body=body,
-                        content_type=content_type,
-                        headers=headers,
-                        resource_type=resource_type,
-                        resource_types=resource_types,
-                    )
-                },
+                route_params(url, response, abort=abort, resource_types=resource_types),
                 decode=none,
             )
         )
 
     def unroute(self, url: str | None = None) -> None:
-        """Remove one route or all routes."""
+        """Remove the route for `url`, or every route when `url` is omitted."""
         self.executor.execute(Command("unroute", {"url": optional(url)}, decode=none))
 
     def requests(
         self,
         *,
-        clear: bool = False,
         url_pattern: str | None = None,
         resource_type: str | None = None,
         method: str | None = None,
         status: str | int | None = None,
     ) -> tuple[NetworkRequest, ...]:
-        """Return captured network requests."""
+        """Return captured requests, optionally filtered."""
         return self.executor.execute(
             Command(
                 "requests",
-                {
-                    **requests_params(
-                        clear=clear,
-                        url_pattern=url_pattern,
-                        resource_type=resource_type,
-                        method=method,
-                        status=status,
-                    )
-                },
+                requests_params(
+                    url_pattern=url_pattern,
+                    resource_type=resource_type,
+                    method=method,
+                    status=status,
+                ),
                 decode=network_requests_from_data,
             )
         )
 
-    def request_detail(self, request_id: str) -> RequestDetail:
-        """Return detailed request data for a captured request id."""
+    def clear_requests(self) -> None:
+        """Discard every captured request."""
+        self.executor.execute(Command("requests", {"clear": True}, decode=none))
+
+    def request(self, request_id: str) -> NetworkRequest:
+        """Return one captured request with its response body."""
         return self.executor.execute(
-            Command("request_detail", {"requestId": request_id}, decode=request_detail_from_data)
+            Command("request_detail", {"requestId": request_id}, decode=network_request_from_data)
         )
 
     def har_start(self, *, content: HarContentMode = "text") -> None:
         """Start HAR capture with the selected response-body content."""
-        self.executor.execute(Command("har_start", {**har_start_params(content)}, decode=none))
+        self.executor.execute(Command("har_start", har_start_params(content), decode=none))
 
     def har_stop(self, path: str | Path | None = None) -> Path:
         """Stop HAR capture and return the written file path."""
@@ -124,78 +104,59 @@ class AsyncNetwork:
     async def route(
         self,
         url: str,
+        response: RouteResponse | None = None,
         *,
         abort: bool = False,
-        response: RouteResponse | Mapping[str, Any] | None = None,
-        status: int | None = None,
-        body: str | None = None,
-        content_type: str | None = None,
-        headers: Mapping[str, str] | None = None,
-        resource_type: str | None = None,
         resource_types: Sequence[str] | None = None,
     ) -> None:
-        """Register a request route."""
+        """Answer requests matching `url` with `response`, or abort them with `abort=True`."""
         await self.executor.execute(
             Command(
                 "route",
-                {
-                    **route_params(
-                        url=url,
-                        abort=abort,
-                        response=response,
-                        status=status,
-                        body=body,
-                        content_type=content_type,
-                        headers=headers,
-                        resource_type=resource_type,
-                        resource_types=resource_types,
-                    )
-                },
+                route_params(url, response, abort=abort, resource_types=resource_types),
                 decode=none,
             )
         )
 
     async def unroute(self, url: str | None = None) -> None:
-        """Remove one route or all routes."""
+        """Remove the route for `url`, or every route when `url` is omitted."""
         await self.executor.execute(Command("unroute", {"url": optional(url)}, decode=none))
 
     async def requests(
         self,
         *,
-        clear: bool = False,
         url_pattern: str | None = None,
         resource_type: str | None = None,
         method: str | None = None,
         status: str | int | None = None,
     ) -> tuple[NetworkRequest, ...]:
-        """Return captured network requests."""
+        """Return captured requests, optionally filtered."""
         return await self.executor.execute(
             Command(
                 "requests",
-                {
-                    **requests_params(
-                        clear=clear,
-                        url_pattern=url_pattern,
-                        resource_type=resource_type,
-                        method=method,
-                        status=status,
-                    )
-                },
+                requests_params(
+                    url_pattern=url_pattern,
+                    resource_type=resource_type,
+                    method=method,
+                    status=status,
+                ),
                 decode=network_requests_from_data,
             )
         )
 
-    async def request_detail(self, request_id: str) -> RequestDetail:
-        """Return detailed request data for a captured request id."""
+    async def clear_requests(self) -> None:
+        """Discard every captured request."""
+        await self.executor.execute(Command("requests", {"clear": True}, decode=none))
+
+    async def request(self, request_id: str) -> NetworkRequest:
+        """Return one captured request with its response body."""
         return await self.executor.execute(
-            Command("request_detail", {"requestId": request_id}, decode=request_detail_from_data)
+            Command("request_detail", {"requestId": request_id}, decode=network_request_from_data)
         )
 
     async def har_start(self, *, content: HarContentMode = "text") -> None:
         """Start HAR capture with the selected response-body content."""
-        await self.executor.execute(
-            Command("har_start", {**har_start_params(content)}, decode=none)
-        )
+        await self.executor.execute(Command("har_start", har_start_params(content), decode=none))
 
     async def har_stop(self, path: str | Path | None = None) -> Path:
         """Stop HAR capture and return the written file path."""

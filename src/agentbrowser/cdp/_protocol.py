@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 import json
-import math
 from collections.abc import Mapping
 from typing import Any, cast
 
 from agentbrowser.cdp.errors import CDPEvaluationError, CDPProtocolError
+from agentbrowser.contracts.decode import unserializable_value
 
 
 def _evaluate_params(
@@ -62,22 +62,10 @@ def _runtime_evaluate_value(data: Mapping[str, Any]) -> Any:
         return result["value"]
     unserializable = result.get("unserializableValue")
     if isinstance(unserializable, str):
-        return _unserializable_value(unserializable)
+        return unserializable_value(unserializable)
     if result.get("type") == "undefined":
         return None
     return result.get("description")
-
-
-def _unserializable_value(value: str) -> Any:
-    if value == "NaN":
-        return math.nan
-    if value == "Infinity":
-        return math.inf
-    if value == "-Infinity":
-        return -math.inf
-    if value == "-0":
-        return -0.0
-    return value
 
 
 def _is_stale_context_error(err: CDPProtocolError) -> bool:

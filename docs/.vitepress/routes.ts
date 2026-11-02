@@ -31,7 +31,7 @@ export const introductionItems = [
   { text: "What is pyagentbrowser?", link: routes.introduction },
   { text: "Why pyagentbrowser?", link: routes.why },
   { text: "Get started", link: routes.gettingStarted },
-  { text: "Migrate scoped agents", link: routes.migration },
+  { text: "Migration guide", link: routes.migration },
 ] satisfies DefaultTheme.SidebarItem[];
 
 export const conceptItems = [

@@ -21,6 +21,7 @@ const ROOT_MODULES: &[(&str, &str)] = &[
     ("install", "install.rs"),
     ("plugins", "plugins.rs"),
     ("read", "read.rs"),
+    ("session_files", "session_files.rs"),
     ("tls", "tls.rs"),
     ("validation", "validation.rs"),
 ];
@@ -33,6 +34,7 @@ const NATIVE_MODULES: &[(&str, &str)] = &[
     ("cdp", "cdp/mod.rs"),
     ("cookies", "cookies.rs"),
     ("diff", "diff.rs"),
+    ("downloads", "downloads.rs"),
     ("element", "element.rs"),
     ("inspect_server", "inspect_server.rs"),
     ("interaction", "interaction.rs"),

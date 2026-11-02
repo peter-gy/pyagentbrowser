@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Literal
 
 SameSite = Literal["Strict", "Lax", "None"]
@@ -23,3 +24,15 @@ class Cookie:
     secure: bool | None = None
     same_site: str | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True, slots=True)
+class StateLoadResult:
+    """Outcome of `browser.state.load()`.
+
+    The engine writes Web Storage only while the page is on the saved origin.
+    `skipped_origins` lists saved origins whose storage was not restored.
+    """
+
+    path: Path
+    skipped_origins: tuple[str, ...]

@@ -90,6 +90,7 @@ async fn resolve_center_in_same_process_frame(
     session_id: &str,
     frame_id: &str,
     selector: &str,
+    require_actionable: bool,
 ) -> Result<(f64, f64), String> {
     let owner_object_id = frame_owner_object_id(client, session_id, frame_id).await?;
     let find_expr = build_find_element_js_in("doc", selector);
@@ -112,8 +113,9 @@ async fn resolve_center_in_same_process_frame(
                 win = win.parent;
             }}
             const blockerAt = {BLOCKER_AT_JS};
+            const notActionable = {ACTIONABILITY_JS};
             const topDoc = win ? win.document : doc;
-            return {{ x: x, y: y, blocker: blockerAt(topDoc, el, x, y) }};
+            return {{ x: x, y: y, reason: notActionable(topDoc, el, x, y), blocker: blockerAt(topDoc, el, x, y) }};
         }}"#,
     );
     let result = client
@@ -128,6 +130,11 @@ async fn resolve_center_in_same_process_frame(
         )
         .await?;
     let value = result.get("result").and_then(|r| r.get("value"));
+    if require_actionable {
+        if let Some(reason) = value.and_then(|v| v.get("reason")).and_then(|v| v.as_str()) {
+            return Err(not_actionable_error(selector, reason));
+        }
+    }
     if let Some(blocker) = value
         .and_then(|v| v.get("blocker"))
         .and_then(|v| v.as_str())
@@ -196,6 +203,7 @@ async fn resolve_center_in_same_process_frame(
     session_id: &str,
     frame_id: &str,
     selector: &str,
+    require_actionable: bool,
 ) -> Result<(f64, f64), String> {
     let object = resolve_object_in_same_process_frame(client, session_id, frame_id, selector).await?;
     let node = client.send_command("DOM.describeNode", Some(serde_json::json!({"objectId": object})), Some(session_id)).await?;
@@ -208,7 +216,7 @@ async fn resolve_center_in_same_process_frame(
         }, Some(session_id),
     ).await?;
     let (x, y) = box_model_center(&result.model);
-    check_node_interception(client, session_id, backend, selector, x, y).await?;
+    check_node_interception(client, session_id, backend, selector, x, y, require_actionable).await?;
     Ok((x, y))
 }
 
@@ -220,26 +228,6 @@ async fn resolve_center_in_same_process_frame(
         "        // Fallback: re-query the accessibility tree to find a fresh node by role/name",
         "        if client.documents.strict_refs() {\n            return Err(format!(\"stale_ref: Captured node for {} is detached\", selector_or_ref));\n        }\n\n        // Fallback: re-query the accessibility tree to find a fresh node by role/name",
         2,
-    );
-    let contents = replace_once_named(
-        contents,
-        "typed ref object connectivity",
-        r#"                if let Some(object_id) = r.object.object_id {
-                    return Ok((object_id, effective_session_id.to_string()));
-                }"#,
-        r#"                if let Some(object_id) = r.object.object_id {
-                    if client.documents.strict_refs() {
-                        let connected = client.send_command("Runtime.callFunctionOn", Some(serde_json::json!({
-                            "objectId": object_id,
-                            "functionDeclaration": "function() { return this.isConnected; }",
-                            "returnByValue": true,
-                        })), Some(effective_session_id)).await?;
-                        if connected.pointer("/result/value").and_then(Value::as_bool) != Some(true) {
-                            return Err(format!("stale_ref: Captured node for {} is detached", selector_or_ref));
-                        }
-                    }
-                    return Ok((object_id, effective_session_id.to_string()));
-                }"#,
     );
     replace_once_named(
         contents,
