@@ -15,7 +15,7 @@ The Python-facing surface is deliberately small:
 | `browser_cache_dir()`         | Report the upstream browser cache location                               |
 | `find_chrome_executable()`    | Run native browser discovery                                             |
 | `_run_browser_install()`      | Invoke the bundled upstream installer                                    |
-| `skill_data_json()`           | Return build-time embedded skill data                                    |
+| `skill_names()`, `skill_record()`, `skill_file()` | Look up build-time embedded skill tables                    |
 
 Keep Python workflow semantics above this boundary. Add native entry points
 when the value depends on Rust-owned engine state, build-time data, process

@@ -77,6 +77,7 @@ def _tabs_data() -> dict[str, Any]:
             {
                 "tabId": "t1",
                 "targetId": TARGET_ID,
+                "label": None,
                 "url": ORIGIN,
                 "title": "Application",
                 "active": True,

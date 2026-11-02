@@ -4,8 +4,6 @@ from collections.abc import Mapping
 from typing import Any, cast
 
 from agentbrowser.contracts.decode import (
-    first_mapping,
-    first_present,
     nullable_string,
     optional_flag,
     optional_string,
@@ -26,16 +24,25 @@ def tabs_from_data(data: Mapping[str, Any]) -> tuple[TabInfo, ...]:
 
 
 def tab_from_data(data: Mapping[str, Any]) -> TabInfo:
-    raw = first_mapping(data, "tab", "page") or data
-    return _tab_info(raw)
+    """Decode `tab_new`, which activates the new tab and reports its title after navigation."""
+    action = "tab_new"
+    return TabInfo(
+        id=required_string(data, "tabId", action=action),
+        url=required_string(data, "url", action=action),
+        title=optional_string(data, "title", action=action) or "",
+        label=nullable_string(data, "label", action=action),
+        active=True,
+        target_id=required_string(data, "targetId", action=action),
+        raw=data,
+    )
 
 
 def tab_switch_from_data(data: Mapping[str, Any]) -> TabSwitchResult:
-    tab = _tab_info(data)
+    action = "tab_switch"
     return TabSwitchResult(
-        id=tab.id,
-        url=tab.url,
-        title=required_string(data, "title", action="tab_switch"),
+        id=required_string(data, "tabId", action=action),
+        url=required_string(data, "url", action=action),
+        title=required_string(data, "title", action=action),
         label=nullable_string(data, "label", action="tab_switch"),
         revived=optional_flag(data, "revived", model="TabSwitchResult"),
         dialog_blocked=optional_flag(
@@ -43,8 +50,8 @@ def tab_switch_from_data(data: Mapping[str, Any]) -> TabSwitchResult:
             "dialogBlocked",
             model="TabSwitchResult",
         ),
-        target_id=tab.target_id,
-        raw=tab.raw,
+        target_id=required_string(data, "targetId", action=action),
+        raw=data,
     )
 
 
@@ -67,29 +74,13 @@ def tab_close_result_from_data(data: Mapping[str, Any]) -> TabCloseResult:
 
 
 def _tab_info(raw: Mapping[str, Any]) -> TabInfo:
-    id_value = first_present(raw, "id", "tabId", "targetId", model="TabInfo", field="id")
-    url_value = first_present(raw, "url", model="TabInfo", field="url")
-    if not isinstance(id_value, str):
-        raise NativeParseError("TabInfo field 'id' must be a string")
-    if not isinstance(url_value, str):
-        raise NativeParseError("TabInfo field 'url' must be a string")
-    title = raw.get("title", "")
-    if not isinstance(title, str):
-        raise NativeParseError("TabInfo field 'title' must be a string")
-    active = False
-    for field_name in ("active", "selected", "current"):
-        if field_name not in raw:
-            continue
-        value = raw[field_name]
-        if not isinstance(value, bool):
-            raise NativeParseError(f"TabInfo field '{field_name}' must be a boolean")
-        active = active or value
+    action = "tab_list"
     return TabInfo(
-        id=id_value,
-        url=url_value,
-        title=title,
-        label=optional_string(raw, "label", action="TabInfo"),
-        active=active,
-        target_id=optional_string(raw, "targetId", action="TabInfo"),
+        id=required_string(raw, "tabId", action=action),
+        url=required_string(raw, "url", action=action),
+        title=required_string(raw, "title", action=action),
+        label=nullable_string(raw, "label", action=action),
+        active=required_bool(raw, "active", action=action),
+        target_id=required_string(raw, "targetId", action=action),
         raw=raw,
     )

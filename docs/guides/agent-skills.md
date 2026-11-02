@@ -89,18 +89,22 @@ The `core` skill teaches the engine's browser interaction workflow. `read(name)`
 
 ### Inspect supporting parts
 
-| Function | Result |
+```python
+core = skills.get("core")
+print(core.description)
+print(core.parts)  # ("SKILL.md", "references/commands.md", ...)
+print(core.read("references/commands.md"))
+bundle = core.markdown(full=True)
+```
+
+| Call | Result |
 | --- | --- |
-| `available(*, include_hidden=False)` | Skill names |
-| `list(*, full=False, include_hidden=False)` | Skill metadata, optionally with loaded files |
-| `get(name, *, full=False)` | One `Skill` |
-| `parts(name)` | `SkillPart` metadata for every file |
-| `part(name, path)` | One `SkillFile` |
+| `available(*, include_hidden=False)` | Sorted skill names |
+| `get(name)` | One `Skill` with name, description, hidden flag, and part paths |
 | `read(name, path="SKILL.md")` | One file's text |
-| `markdown(name, *, full=False)` | Main instructions or combined skill Markdown |
+| `Skill.read(path="SKILL.md")` | One file of that skill |
+| `Skill.markdown(*, full=False)` | `SKILL.md`, or every part joined under `--- path ---` headers |
 
-Use the main file when the agent needs the normal browser workflow. Load individual parts when a task reaches the capability they describe. Use `full=True` when the host needs to package the complete instruction tree in one operation.
+Use the main file when the agent needs the normal browser workflow. Load individual parts when a task reaches the capability they describe. Use `markdown(full=True)` when the host needs the complete instruction tree as one document.
 
-Skill paths reject absolute paths, traversal, empty components, and malformed relative paths. Missing skills or files raise `KeyError`.
-
-`Skill` records its name, frontmatter description, main content, part metadata, loaded files, and hidden state. `SkillPart` records a relative path and kind. `SkillFile` records a relative path and text content.
+Skill files are compiled into the native extension, so reads return text without parsing or file access. Part paths reject absolute paths, traversal, empty components, and malformed relative paths. Missing skills or files raise `KeyError`.

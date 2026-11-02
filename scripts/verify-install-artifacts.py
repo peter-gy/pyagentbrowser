@@ -85,16 +85,17 @@ assert "core" in skills.available()
 assert "derive-client" in skills.available()
 assert skills.get("core").parts
 assert skills.get("derive-client").parts
-core = skills.get("core", full=True)
-assert core.files
-full_markdown = skills.markdown("core", full=True)
+core = skills.get("core")
+supplements = [part for part in core.parts if part != "SKILL.md"]
+assert supplements
+full_markdown = core.markdown(full=True)
 core_content = skills.read("core")
 assert core_content
 assert core_content in full_markdown
-for supplement in core.files:
-    supplement_content = skills.read("core", supplement.path)
+for supplement in supplements:
+    supplement_content = skills.read("core", supplement)
     assert supplement_content
-    assert supplement.path in full_markdown
+    assert supplement in full_markdown
     assert supplement_content in full_markdown
 
 try:

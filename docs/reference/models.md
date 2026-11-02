@@ -129,10 +129,10 @@ the complete `Screenshot` when an image was written.
 | `CloseResult` | `closed`, restore status, save status, state path, save error, and raw terminal data. |
 | `SessionStatus` | Native identity, socket path, background PID, browser launch state, page count, engine, compatibility, restore status, skipped restore origins, restore checks, save state, and raw data. |
 | `SessionId` | Derived session string, scope, source path, and hash. |
-| `TabInfo` | Native ID, URL, title, label, active state, optional stable target ID, and raw data. |
+| `TabInfo` | Native ID, URL, title, label, active state, stable target ID, and raw data. A tab from `tabs.new()` has an empty title when the engine creates it without navigating. |
 | `TabSwitchResult` | Selected tab fields plus `revived` and `dialog_blocked`. |
 | `TabCloseResult` | Closed tab fields plus `closed` and `active_tab_revived`. |
-| `Cookie` | Name, value, domain, path, expiry, security flags, same-site value, and raw data. |
+| `Cookie` | Name, value, domain, path, expiry in epoch seconds (`-1` for a session cookie), `http_only`, `secure`, `session`, optional same-site value, and raw data. |
 | `StateLoadResult` | Loaded state path and the saved origins whose Web Storage was skipped. |
 
 Restore status values are `load_failed`, `loaded`, `loaded_but_invalid`, `missing`, `not_configured`, and `pending`.
@@ -231,4 +231,4 @@ Standard Python exceptions also define public contracts. Invalid options raise `
 
 ## Embedded skill models
 
-`agentbrowser.skills` returns `Skill`, `SkillPart`, and `SkillFile` dataclasses. A skill records its name, frontmatter description, main content, part metadata, loaded files, and hidden status. A skill file records its relative path and text content.
+`agentbrowser.skills.get()` returns a frozen `Skill` dataclass with its name, frontmatter description, hidden flag, and relative part paths. `Skill.read(path)` returns one part's text and `Skill.markdown(full=False)` renders the skill.

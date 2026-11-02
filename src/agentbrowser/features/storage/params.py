@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
@@ -24,10 +24,9 @@ def cookies_clear_params(*, unsafe_clear_all: bool = False) -> dict[str, Any]:
 
 
 def cookies_set_params(
-    name: str | None = None,
-    value: str | None = None,
+    name: str,
+    value: str,
     *,
-    cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
     url: str | None = None,
     domain: str | None = None,
     path: str | None = None,
@@ -36,15 +35,6 @@ def cookies_set_params(
     secure: bool | None = None,
     same_site: SameSite | None = None,
 ) -> dict[str, Any]:
-    if cookies is not None:
-        payload = (
-            [dict(cookies)] if isinstance(cookies, Mapping) else [dict(item) for item in cookies]
-        )
-        return {"cookies": payload}
-
-    if name is None or value is None:
-        raise ValueError("cookies.set requires either cookies=... or name and value")
-
     return {
         "name": name,
         "value": value,

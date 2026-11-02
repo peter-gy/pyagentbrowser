@@ -5,6 +5,7 @@ from typing import Any
 
 import pytest
 from fakes import ScriptedNative
+from support.sdk import _tab
 
 from agentbrowser import ActionResult, AsyncBrowser, Browser, ConfirmationRequired, Wait
 from agentbrowser.transport.async_ import AsyncNativeSession
@@ -69,11 +70,7 @@ def _launch_then_navigate_native() -> ScriptedNative:
 
 def _chained_tab_switch_native() -> ScriptedNative:
     attempts = 0
-    existing = {
-        "id": "existing",
-        "url": "https://example.com/old",
-        "label": "work",
-    }
+    existing = _tab("existing", "CDP-EXISTING", "https://example.com/old", label="work")
 
     def confirm(command: dict[str, Any]) -> dict[str, Any]:
         nonlocal attempts
@@ -100,6 +97,7 @@ def _chained_tab_switch_native() -> ScriptedNative:
             "plugin:provider:launch.mutate",
             {
                 "tabId": "existing",
+                "targetId": "CDP-EXISTING",
                 "url": "https://example.com/old",
                 "title": "Existing",
                 "label": "work",
@@ -332,6 +330,7 @@ def test_sync_tab_labels_are_forwarded_to_native_without_listing() -> None:
         {
             "tab_switch": {
                 "tabId": "t1",
+                "targetId": "CDP-TARGET-1",
                 "url": "https://example.com",
                 "title": "Example",
                 "label": "work",
@@ -360,6 +359,7 @@ def test_async_tab_labels_are_forwarded_to_native_without_listing() -> None:
             {
                 "tab_switch": {
                     "tabId": "t1",
+                    "targetId": "CDP-TARGET-1",
                     "url": "https://example.com",
                     "title": "Example",
                     "label": "work",

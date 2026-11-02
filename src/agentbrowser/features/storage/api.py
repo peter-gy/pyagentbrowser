@@ -43,10 +43,9 @@ class Cookies:
 
     def set(
         self,
-        name: str | None = None,
-        value: str | None = None,
+        name: str,
+        value: str,
         *,
-        cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
         url: str | None = None,
         domain: str | None = None,
         path: str | None = None,
@@ -55,24 +54,21 @@ class Cookies:
         secure: bool | None = None,
         same_site: SameSite | None = None,
     ) -> None:
-        """Set one cookie or a sequence of cookie dictionaries."""
+        """Set one cookie for `url`, for `domain` and `path`, or for the active page."""
         self.executor.execute(
             Command(
                 "cookies_set",
-                {
-                    **cookies_set_params(
-                        name=name,
-                        value=value,
-                        cookies=cookies,
-                        url=url,
-                        domain=domain,
-                        path=path,
-                        expires=expires,
-                        http_only=http_only,
-                        secure=secure,
-                        same_site=same_site,
-                    )
-                },
+                cookies_set_params(
+                    name,
+                    value,
+                    url=url,
+                    domain=domain,
+                    path=path,
+                    expires=expires,
+                    http_only=http_only,
+                    secure=secure,
+                    same_site=same_site,
+                ),
                 decode=none,
             )
         )
@@ -111,10 +107,9 @@ class AsyncCookies:
 
     async def set(
         self,
-        name: str | None = None,
-        value: str | None = None,
+        name: str,
+        value: str,
         *,
-        cookies: Mapping[str, Any] | Sequence[Mapping[str, Any]] | None = None,
         url: str | None = None,
         domain: str | None = None,
         path: str | None = None,
@@ -123,24 +118,21 @@ class AsyncCookies:
         secure: bool | None = None,
         same_site: SameSite | None = None,
     ) -> None:
-        """Set one cookie or a sequence of cookie dictionaries."""
+        """Set one cookie for `url`, for `domain` and `path`, or for the active page."""
         await self.executor.execute(
             Command(
                 "cookies_set",
-                {
-                    **cookies_set_params(
-                        name=name,
-                        value=value,
-                        cookies=cookies,
-                        url=url,
-                        domain=domain,
-                        path=path,
-                        expires=expires,
-                        http_only=http_only,
-                        secure=secure,
-                        same_site=same_site,
-                    )
-                },
+                cookies_set_params(
+                    name,
+                    value,
+                    url=url,
+                    domain=domain,
+                    path=path,
+                    expires=expires,
+                    http_only=http_only,
+                    secure=secure,
+                    same_site=same_site,
+                ),
                 decode=none,
             )
         )
