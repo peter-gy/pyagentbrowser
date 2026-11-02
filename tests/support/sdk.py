@@ -16,6 +16,27 @@ def _command_without_id(command: dict[str, Any]) -> dict[str, Any]:
     return {key: value for key, value in command.items() if key != "id" and not key.startswith("_")}
 
 
+def _tab(
+    tab_id: str,
+    target_id: str,
+    url: str,
+    *,
+    title: str = "",
+    label: str | None = None,
+    active: bool = False,
+) -> dict[str, Any]:
+    """Return one native `tab_list` entry."""
+    return {
+        "tabId": tab_id,
+        "targetId": target_id,
+        "label": label,
+        "title": title,
+        "url": url,
+        "type": "page",
+        "active": active,
+    }
+
+
 def _session_status_data() -> dict[str, Any]:
     return {
         "session": "research",

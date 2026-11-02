@@ -23,18 +23,20 @@ class MultiTargetCommands:
             data = {
                 "tabs": [
                     {
-                        "id": "t1",
+                        "tabId": "t1",
                         "targetId": "one",
                         "url": "https://example.com/one",
                         "title": "One",
                         "label": "first",
+                        "active": True,
                     },
                     {
-                        "id": "t2",
+                        "tabId": "t2",
                         "targetId": "two",
                         "url": "https://example.com/two",
                         "title": "Two",
                         "label": "second",
+                        "active": False,
                     },
                 ]
             }

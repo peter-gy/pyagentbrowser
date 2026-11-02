@@ -134,55 +134,8 @@ def optional_mapping(data: Mapping[str, Any], field: str, *, action: str) -> Map
     return value
 
 
-def first_mapping(data: Mapping[str, Any], *keys: str) -> Mapping[str, Any] | None:
-    for key in keys:
-        value = data.get(key)
-        if isinstance(value, Mapping):
-            return value
-    return None
-
-
-def require_keys(raw: Mapping[str, Any], model: str, *keys: str) -> None:
-    missing = [key for key in keys if raw.get(key) is None]
-    if missing:
-        raise NativeParseError(f"{model} missing required native field: {', '.join(missing)}")
-
-
-def first_present(
-    raw: Mapping[str, Any],
-    *keys: str,
-    model: str,
-    field: str,
-) -> Any:
-    for key in keys:
-        value = raw.get(key)
-        if value is not None:
-            return value
-    raise NativeParseError(f"{model} missing required native field: {field}")
-
-
 def optional_flag(data: Mapping[str, Any], field: str, *, model: str) -> bool:
     value = data.get(field, False)
     if not isinstance(value, bool):
         raise NativeParseError(f"{model} field '{field}' must be a boolean")
     return value
-
-
-def optional_bool(value: Any) -> bool | None:
-    return bool(value) if value is not None else None
-
-
-def optional_int(value: Any) -> int | None:
-    if value is None:
-        return None
-    return int(value)
-
-
-def optional_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    return float(value)
-
-
-def float_value(value: Any) -> float:
-    return float(value if value is not None else 0)

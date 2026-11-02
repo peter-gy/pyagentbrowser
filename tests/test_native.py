@@ -85,11 +85,11 @@ def test_native_skill_data_matches_upstream_submodule_snapshot() -> None:
         for path in upstream.rglob("*")
         if path.is_file()
     }
-    public_files: dict[Path, str] = {}
-    for skill in skills.list(include_hidden=True, full=True):
-        public_files[Path(skill.name) / "SKILL.md"] = skills.read(skill.name)
-        for file in skill.files:
-            public_files[Path(skill.name) / file.path] = skills.read(skill.name, file.path)
+    public_files = {
+        Path(name) / part: skills.read(name, part)
+        for name in skills.available(include_hidden=True)
+        for part in skills.get(name).parts
+    }
 
     assert public_files == upstream_files
 

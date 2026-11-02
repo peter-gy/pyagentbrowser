@@ -71,15 +71,5 @@ class ConfirmationRequired(BrowserError, Generic[T]):
 
 
 def _error_code_from_response(response: Mapping[str, Any]) -> str | None:
-    for key in ("code", "error_code", "errorCode"):
-        value = response.get(key)
-        if value is not None:
-            return str(value)
-
-    data = response.get("data")
-    if isinstance(data, Mapping):
-        for key in ("code", "error_code", "errorCode"):
-            value = data.get(key)
-            if value is not None:
-                return str(value)
-    return None
+    code = response.get("code")
+    return code if isinstance(code, str) else None

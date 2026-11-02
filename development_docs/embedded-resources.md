@@ -21,14 +21,19 @@ contains the resulting extension, provenance record, and license material.
 ## Skill-data pipeline
 
 `crates/pyagentbrowser/build.rs` walks the pinned upstream `skill-data` tree,
-sorts normalized relative paths, normalizes line endings, and writes one JSON
-payload into Cargo `OUT_DIR`. The native extension exposes that payload through
-`skill_data_json()`.
+normalizes line endings, parses each `SKILL.md` frontmatter, and writes static
+Rust tables into Cargo `OUT_DIR`:
 
-`src/agentbrowser/skills.py` parses the payload lazily and exposes skill names,
-frontmatter descriptions, main `SKILL.md` content, supplementary parts, and a
-combined Markdown view. It validates that each directory name matches the
-skill's frontmatter name.
+| Table           | Shape                                                        |
+| --------------- | ------------------------------------------------------------ |
+| `SKILLS`        | Rows sorted by name with description, hidden flag, and a `files` range |
+| `FILE_PATHS`    | Relative paths, sorted within each skill's range             |
+| `FILE_CONTENTS` | File text at the same index as its path                      |
+
+The build fails when a skill's frontmatter name differs from its directory.
+`skill_names()`, `skill_record()`, and `skill_file()` answer lookups with binary
+searches over these tables, so the Python process parses no skill data.
+`src/agentbrowser/skills.py` validates part paths and builds `Skill` values.
 
 The pinned upstream files are the content source. Python owns the stable read
 API and its validation. A skill-data change therefore requires upstream-diff

@@ -3,112 +3,58 @@ from __future__ import annotations
 import pytest
 
 import agentbrowser.skills as skills
-from agentbrowser.skills import Skill, SkillFile, SkillPart
 
 pytestmark = pytest.mark.sdk_dx
 
 
-def test_skills_module_lists_native_embedded_skill_data() -> None:
-    available = skills.available()
-    listed = skills.list()
+def test_available_lists_visible_skills_in_sorted_order() -> None:
+    names = skills.available()
 
-    assert "core" in available
-    assert all(isinstance(skill, Skill) for skill in listed)
-    assert {skill.name for skill in listed} == set(available)
+    assert "core" in names
+    assert list(names) == sorted(names)
+    assert set(names) <= set(skills.available(include_hidden=True))
+    assert all(not skills.get(name).hidden for name in names)
 
 
-def test_skills_get_loads_core_skill_payload() -> None:
+def test_get_returns_frontmatter_and_part_paths() -> None:
     core = skills.get("core")
 
     assert core.name == "core"
     assert core.description
-    assert core.content
-    assert core.parts
-    assert SkillPart(path="SKILL.md", kind="main") in core.parts
-    assert core.files == ()
+    assert "SKILL.md" in core.parts
+    assert any(part.startswith("references/") for part in core.parts)
 
 
-def test_skills_include_the_upstream_derive_client_workflow() -> None:
-    skill = skills.get("derive-client")
+def test_read_returns_main_and_supplementary_parts() -> None:
+    core = skills.get("core")
+    reference = next(part for part in core.parts if part.startswith("references/"))
 
-    assert skill.name == "derive-client"
-    assert skill.description
-    assert SkillPart(path="SKILL.md", kind="main") in skill.parts
-
-
-def test_skills_full_load_includes_supplementary_parts() -> None:
-    skill = skills.get("core", full=True)
-    file_by_path = {file.path: file for file in skill.files}
-    supplementary_parts = [part for part in skill.parts if part.path != "SKILL.md"]
-
-    assert all(isinstance(file, SkillFile) for file in skill.files)
-    assert skill.files
-    for part in supplementary_parts:
-        assert skill.part(part.path) == file_by_path[part.path]
-        assert skill.part(part.path).content
+    assert core.read().startswith("---")
+    assert skills.read("core") == core.read("SKILL.md")
+    assert skills.read("core", reference) == core.read(reference)
+    assert core.read(f"./{reference}") == core.read(reference)
 
 
-def test_skills_read_returns_main_part_content() -> None:
-    skill = skills.get("core")
-    part_paths = [part.path for part in skill.parts]
+def test_markdown_appends_every_part_when_full() -> None:
+    core = skills.get("core")
 
-    assert "SKILL.md" in part_paths
-    assert skills.parts("core") == skill.parts
-    assert skills.read("core") == skill.content
-
-
-@pytest.mark.parametrize(
-    "part_path",
-    [part.path for part in skills.get("core").parts if part.path != "SKILL.md"],
-)
-def test_skills_read_resolves_supplementary_part(part_path: str) -> None:
-    skill = skills.get("core")
-
-    supplementary_file = skill.part(part_path)
-    assert supplementary_file == skills.part("core", part_path)
-    assert supplementary_file.path == part_path
-    assert supplementary_file.content
+    assert core.markdown() == core.read()
+    full = core.markdown(full=True)
+    for part in core.parts:
+        assert core.read(part) in full
+        if part != "SKILL.md":
+            assert f"--- {part} ---" in full
 
 
-def test_skills_read_normalizes_relative_part_path() -> None:
-    skill = skills.get("core")
-    part_path = next(part.path for part in skill.parts if part.path != "SKILL.md")
-    supplementary_file = skill.part(part_path)
-
-    assert skill.read(f"./{part_path}") == supplementary_file.content
-
-
-def test_skills_markdown_renders_main_skill_content() -> None:
-    skill = skills.get("core")
-
-    markdown = skills.markdown("core")
-    assert markdown == skill.markdown
-    assert markdown == skill.content
-    assert skills.markdown("core", full=False) == skill.content
-
-
-def test_skills_markdown_full_includes_supplementary_files() -> None:
-    skill = skills.get("core")
-
-    full_markdown = skills.markdown("core", full=True)
-    assert skill.content in full_markdown
-    for file in skills.get("core", full=True).files:
-        assert file.path in full_markdown
-        assert file.content in full_markdown
-
-
-def test_skill_part_rejects_missing_part() -> None:
-    skill = skills.get("core")
-
+def test_read_rejects_missing_and_invalid_parts() -> None:
     with pytest.raises(KeyError, match="no part"):
-        skill.part("references/missing.md")
-
-
-def test_skills_read_rejects_invalid_part_path() -> None:
+        skills.read("core", "references/missing.md")
     with pytest.raises(KeyError, match="invalid skill part path"):
         skills.read("core", "../SKILL.md")
 
 
-def test_skills_get_missing_name_raises_key_error() -> None:
+def test_unknown_skill_raises_key_error() -> None:
     with pytest.raises(KeyError, match="skill not found"):
         skills.get("missing")
+    with pytest.raises(KeyError, match="skill not found"):
+        skills.read("missing")

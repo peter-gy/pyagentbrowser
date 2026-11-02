@@ -123,10 +123,10 @@ uses the same setup path.
 | Method | Contract |
 | --- | --- |
 | `get(urls=None, *, unsafe_export_all=False)` | Return cookies visible to selected URLs. |
-| `set(name=None, value=None, *, cookies=None, url=None, domain=None, path=None, expires=None, http_only=None, secure=None, same_site=None)` | Set one cookie or a sequence of cookie mappings. |
+| `set(name, value, *, url=None, domain=None, path=None, expires=None, http_only=None, secure=None, same_site=None)` | Set one cookie. Without `url` or `domain`, the cookie belongs to the active page URL. |
 | `clear(*, unsafe_clear_all=False)` | Clear cookies. A restricted session requires explicit unscoped authorization. |
 
-When `cookies=` is present, it supplies the batch input. Use scalar fields for one cookie.
+Set several cookies in one native call with `browser.native.data("cookies_set", cookies=[...])`. The domain allowlist checks every entry.
 
 ## `browser.storage` and `browser.state`
 

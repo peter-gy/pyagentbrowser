@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 from fakes import ScriptedNative
-from support.sdk import _browser, _command_without_id
+from support.sdk import _browser, _command_without_id, _tab
 
 from agentbrowser import (
     AsyncBrowser,
@@ -24,13 +24,13 @@ def test_tabs_get_returns_page_bound_to_exact_target() -> None:
         {
             "tab_list": {
                 "tabs": [
-                    {
-                        "tabId": "t1",
-                        "targetId": "0123456789ABCDEF",
-                        "url": "https://example.com",
-                        "title": "Example",
-                        "active": True,
-                    }
+                    _tab(
+                        "t1",
+                        "0123456789ABCDEF",
+                        "https://example.com",
+                        title="Example",
+                        active=True,
+                    )
                 ]
             },
             "title": {"title": "Example"},
@@ -50,8 +50,8 @@ def test_tabs_get_index_uses_the_stable_tab_id_suffix() -> None:
         {
             "tab_list": {
                 "tabs": [
-                    {"tabId": "t2", "targetId": "B" * 16, "url": "https://two.example"},
-                    {"tabId": "t1", "targetId": "A" * 16, "url": "https://one.example"},
+                    _tab("t2", "B" * 16, "https://two.example"),
+                    _tab("t1", "A" * 16, "https://one.example"),
                 ]
             }
         }
@@ -106,6 +106,7 @@ def test_tab_switch_result_surfaces_a_blocking_dialog() -> None:
             {
                 "tab_switch": {
                     "tabId": "t2",
+                    "targetId": "CDP-TARGET-2",
                     "url": "https://example.com/form",
                     "title": "Form",
                     "label": None,
@@ -136,6 +137,7 @@ def test_tab_switch_result_surfaces_a_blocking_dialog() -> None:
 def test_tab_switch_rejects_malformed_native_metadata(field: str, value: Any) -> None:
     data: dict[str, Any] = {
         "tabId": "t2",
+        "targetId": "CDP-TARGET-2",
         "url": "https://example.com/form",
         "title": "Form",
         "label": None,
@@ -152,10 +154,11 @@ def test_tabs_open_creates_a_labelled_tab_when_no_reusable_tab_exists() -> None:
         {
             "tab_list": {"tabs": []},
             "tab_new": {
-                "id": "created",
-                "url": "https://example.com/created",
+                "tabId": "created",
+                "targetId": "CDP-CREATED",
                 "label": "work",
-                "active": True,
+                "url": "https://example.com/created",
+                "total": 1,
             },
         }
     )
@@ -213,10 +216,11 @@ def test_async_tabs_open_creates_a_labelled_tab_when_no_reusable_tab_exists() ->
             {
                 "tab_list": {"tabs": []},
                 "tab_new": {
-                    "id": "created",
-                    "url": "https://example.com/created",
+                    "tabId": "created",
+                    "targetId": "CDP-CREATED",
                     "label": "work",
-                    "active": True,
+                    "url": "https://example.com/created",
+                    "total": 1,
                 },
             },
             default={},
@@ -240,11 +244,7 @@ def test_async_tabs_open_creates_a_labelled_tab_when_no_reusable_tab_exists() ->
 
 def test_async_tabs_open_confirmation_continues_switch_and_navigation() -> None:
     async def run() -> None:
-        existing = {
-            "id": "existing",
-            "url": "https://example.com/old",
-            "label": "work",
-        }
+        existing = _tab("existing", "CDP-EXISTING", "https://example.com/old", label="work")
         native = ScriptedNative(
             {
                 "tab_list": {
@@ -270,6 +270,7 @@ def test_async_tabs_open_confirmation_continues_switch_and_navigation() -> None:
                 },
                 "tab_switch": {
                     "tabId": "existing",
+                    "targetId": "CDP-EXISTING",
                     "url": "https://example.com/old",
                     "title": "Existing",
                     "label": "work",

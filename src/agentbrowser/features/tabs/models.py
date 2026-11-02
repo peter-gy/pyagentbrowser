@@ -11,10 +11,10 @@ class TabInfo:
 
     id: str
     url: str
-    title: str = ""
-    label: str | None = None
-    active: bool = False
-    target_id: str | None = None
+    title: str
+    label: str | None
+    active: bool
+    target_id: str
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
@@ -28,7 +28,7 @@ class TabSwitchResult:
     label: str | None
     revived: bool
     dialog_blocked: bool
-    target_id: str | None = None
+    target_id: str
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 

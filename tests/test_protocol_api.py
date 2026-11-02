@@ -7,7 +7,7 @@ from typing import Any, cast
 
 import pytest
 from fakes import ScriptedNative
-from support.sdk import _browser, _command_without_id
+from support.sdk import _browser, _command_without_id, _tab
 
 from agentbrowser import (
     AgentBrowserError,
@@ -78,22 +78,29 @@ def test_typed_collections_reject_missing_native_arrays(action: str, invoke: Any
     [
         (
             "tab_list",
-            {
-                "tabs": [
-                    {
-                        "id": "tab-1",
-                        "targetId": "CDP-TARGET-1",
-                        "url": "https://example.com",
-                    }
-                ]
-            },
+            {"tabs": [_tab("t1", "CDP-TARGET-1", "https://example.com")]},
             lambda browser: browser.tabs.list()[0],
             "target_id",
             "CDP-TARGET-1",
         ),
         (
             "cookies_get",
-            {"cookies": [{"name": "session", "value": "abc", "domain": "example.com"}]},
+            {
+                "cookies": [
+                    {
+                        "name": "session",
+                        "value": "abc",
+                        "domain": "example.com",
+                        "path": "/",
+                        "expires": -1,
+                        "size": 10,
+                        "httpOnly": True,
+                        "secure": True,
+                        "session": True,
+                        "sameSite": "Lax",
+                    }
+                ]
+            },
             lambda browser: browser.cookies.get()[0],
             "name",
             "session",
@@ -353,3 +360,22 @@ def test_route_rejects_a_response_for_an_aborted_route() -> None:
 
     with pytest.raises(ValueError, match="abort"):
         browser.network.route("**/ads", RouteResponse(status=204), abort=True)
+
+
+def test_cookies_decode_webdriver_provider_cookies() -> None:
+    webdriver_cookie = {
+        "name": "session",
+        "value": "abc",
+        "domain": "example.com",
+        "path": "/",
+        "secure": True,
+        "httpOnly": False,
+        "sameSite": "None",
+    }
+    persistent = {**webdriver_cookie, "name": "theme", "expiry": 1_900_000_000}
+    browser = _browser(ScriptedNative({"cookies_get": {"cookies": [webdriver_cookie, persistent]}}))
+
+    session_cookie, theme = browser.cookies.get()
+
+    assert (session_cookie.session, session_cookie.expires) == (True, -1.0)
+    assert (theme.session, theme.expires) == (False, 1_900_000_000.0)

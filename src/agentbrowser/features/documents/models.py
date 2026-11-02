@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, Literal
+from typing import Literal
 
 from agentbrowser.contracts.scope import DocumentScope
 
@@ -10,17 +9,6 @@ LoadState = Literal["load", "domcontentloaded", "networkidle", "none"]
 
 
 WaitSelectorState = Literal["attached", "detached", "hidden", "visible"]
-
-
-@dataclass(frozen=True, slots=True)
-class BoundingBox:
-    """Element bounding box in CSS pixels."""
-
-    x: float
-    y: float
-    width: float
-    height: float
-    raw: Mapping[str, Any]
 
 
 @dataclass(frozen=True, slots=True)

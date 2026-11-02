@@ -37,6 +37,38 @@ Move `status`, `body`, `content_type`, and `headers` keywords into
 `diagnostics.errors()` returns `PageError` records with `text`, `url`, `line`,
 and `column`. `ConsoleMessage` carries `type`, `text`, and `args`.
 
+### Set one cookie per `cookies.set()` call
+
+```python
+browser.cookies.set("session", "abc", url="https://example.com", http_only=True)
+```
+
+Replace `cookies.set(cookies=[...])` with one `cookies.set(name, value, ...)`
+call per cookie, or send the batch through
+`browser.native.data("cookies_set", cookies=[...])`.
+
+### Rely on required model fields
+
+`Cookie.domain`, `path`, `expires`, `http_only`, `secure`, and `session` are
+always set, and a session cookie reports `expires == -1`. `TabInfo.target_id`
+and `TabSwitchResult.target_id` are always set. Remove `None` checks for these
+fields.
+
+### Read embedded skills through `Skill`
+
+| Previous call | Replacement |
+| --- | --- |
+| `skills.list()` | `[skills.get(name) for name in skills.available()]` |
+| `skills.parts(name)` | `skills.get(name).parts` |
+| `skills.part(name, path).content` | `skills.read(name, path)` |
+| `skills.markdown(name, full=True)` | `skills.get(name).markdown(full=True)` |
+| `skill.content` | `skill.read()` |
+| `skill.markdown` | `skill.markdown()` |
+
+`Skill.parts` holds relative path strings. Drop `full=True` from `get()`
+calls and replace `SkillPart` and `SkillFile` imports with these path strings
+and `read()`.
+
 ### Read the result of `state.load()`
 
 `state.load()` returns `StateLoadResult`. Check `skipped_origins` for saved

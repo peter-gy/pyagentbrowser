@@ -13,16 +13,20 @@ StorageArea = Literal["local", "session"]
 
 @dataclass(frozen=True, slots=True)
 class Cookie:
-    """Browser cookie metadata."""
+    """One browser cookie.
+
+    `expires` is seconds since the Unix epoch, or `-1` for a session cookie.
+    """
 
     name: str
     value: str
-    domain: str | None = None
-    path: str | None = None
-    expires: float | None = None
-    http_only: bool | None = None
-    secure: bool | None = None
-    same_site: str | None = None
+    domain: str
+    path: str
+    expires: float
+    http_only: bool
+    secure: bool
+    session: bool
+    same_site: SameSite | None = None
     raw: Mapping[str, Any] = field(default_factory=dict)
 
 
