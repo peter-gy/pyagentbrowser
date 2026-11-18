@@ -13,6 +13,10 @@ if str(ROOT) not in sys.path:
 
 chrome_executable = importlib.import_module("scripts.check_chrome").chrome_executable
 
+# The engine otherwise fetches the Chrome release feed once per launched browser
+# and reports an outdated build as a warning on the next response.
+os.environ.setdefault("AGENT_BROWSER_NO_VERSION_CHECK", "1")
+
 _skipped_integration: list[str] = []
 
 

@@ -132,57 +132,6 @@ pub fn dispatch_state_command_for_namespace(
     cmd: &Value,
     namespace: Option<&str>,
 ) -> Option<Result<Value, String>> {"#;
-    const UPSTREAM_STATE_DIR: &str = r#"pub fn get_state_dir() -> PathBuf {
-    let base = if let Some(home) = dirs::home_dir() {
-        home.join(".agent-browser")
-    } else {
-        std::env::temp_dir().join("agent-browser")
-    };
-
-    if let Ok(namespace) = std::env::var("AGENT_BROWSER_NAMESPACE") {
-        let namespace = sanitize_session_component(&namespace);
-        if !namespace.is_empty() {
-            return base.join("namespaces").join(namespace).join("state");
-        }
-    }
-
-    base
-}
-
-pub fn get_sessions_dir() -> PathBuf {
-    get_state_dir().join("sessions")
-}"#;
-    const REWRITTEN_STATE_DIR: &str = r#"pub fn get_state_dir() -> PathBuf {
-    let namespace = std::env::var("AGENT_BROWSER_NAMESPACE").ok();
-    get_state_dir_for_namespace(namespace.as_deref())
-}
-
-pub fn get_state_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
-    let base = if let Some(home) = dirs::home_dir() {
-        home.join(".agent-browser")
-    } else {
-        std::env::temp_dir().join("agent-browser")
-    };
-
-    if let Some(namespace) = namespace {
-        let namespace = sanitize_session_component(namespace);
-        if !namespace.is_empty() {
-            return base.join("namespaces").join(namespace).join("state");
-        }
-    }
-
-    base
-}
-
-pub fn get_sessions_dir() -> PathBuf {
-    let namespace = std::env::var("AGENT_BROWSER_NAMESPACE").ok();
-    get_sessions_dir_for_namespace(namespace.as_deref())
-}
-
-pub fn get_sessions_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
-    get_state_dir_for_namespace(namespace).join("sessions")
-}"#;
-
     let mut rewritten = replace_once_named(
         contents,
         "state save namespace signature",
@@ -281,17 +230,42 @@ pub fn get_sessions_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
     );
     rewritten = replace_once_named(
         rewritten,
-        "state directory namespace helpers",
-        UPSTREAM_STATE_DIR,
-        REWRITTEN_STATE_DIR,
+        "state directory namespace signature",
+        "pub fn get_state_dir() -> PathBuf {\n",
+        r#"pub fn get_state_dir() -> PathBuf {
+    let namespace = std::env::var("AGENT_BROWSER_NAMESPACE").ok();
+    get_state_dir_for_namespace(namespace.as_deref())
+}
+
+pub fn get_state_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
+"#,
     );
-    assert!(
-        rewritten.contains("pub fn get_state_dir_for_namespace("),
-        "upstream state directory helper changed"
+    rewritten = replace_once_named(
+        rewritten,
+        "state directory namespace selection",
+        r#"    if let Ok(namespace) = std::env::var("AGENT_BROWSER_NAMESPACE") {
+        let namespace = sanitize_session_component(&namespace);
+        if !namespace.is_empty() {
+            return base.join("namespaces").join(namespace).join("state");"#,
+        r#"    if let Some(namespace) = namespace {
+        let namespace = sanitize_session_component(namespace);
+        if !namespace.is_empty() {
+            return base.join("namespaces").join(namespace).join("state");"#,
     );
-    assert!(
-        rewritten.contains("pub async fn save_auto_state_transactional_for_namespace("),
-        "upstream transactional state save changed"
+    rewritten = replace_once_named(
+        rewritten,
+        "state sessions directory namespace helper",
+        r#"pub fn get_sessions_dir() -> PathBuf {
+    get_state_dir().join("sessions")
+}"#,
+        r#"pub fn get_sessions_dir() -> PathBuf {
+    let namespace = std::env::var("AGENT_BROWSER_NAMESPACE").ok();
+    get_sessions_dir_for_namespace(namespace.as_deref())
+}
+
+pub fn get_sessions_dir_for_namespace(namespace: Option<&str>) -> PathBuf {
+    get_state_dir_for_namespace(namespace).join("sessions")
+}"#,
     );
     rewritten
 }

@@ -36,6 +36,8 @@ The native engine receives allowed domains, the action-policy path, and exact co
 
 Raw native launch actions cannot silently weaken an active allowlist. A successful explicitly authorized launch can adopt a new policy through the same session transition rules.
 
+The engine accepts settings from a `settings` patch on every command, from the `launch` envelope, and from each command a saved flow replays, and it applies them before its policy gates. The adapter authorizes every planned change where the engine applies it. A change to `action-policy` or `confirm-actions` fails with `code: "security_settings"`, and so does a change to `allowed-domains` on a session that has a list. A session without allowed domains can adopt a list. The settings come from `EngineOptions` at construction and stay in process memory.
+
 ## Confirmation replay
 
 `NativeSession` keeps the initiating JSON command and Python domain policy under the confirmation ID. The adapter validates the ID, reloads current action policy, and rechecks target-bearing inputs against current domain policy before replay.

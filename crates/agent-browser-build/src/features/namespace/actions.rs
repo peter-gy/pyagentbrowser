@@ -5,15 +5,15 @@ pub(crate) fn rewrite_actions_namespace(contents: Source) -> Source {
         r#"use crate::connection::{get_socket_dir, INTERNAL_DAEMON_SHUTDOWN_ACTION};"#;
     const REWRITTEN_CONNECTION_IMPORT: &str = r#"use crate::connection::{get_socket_dir_for_namespace, INTERNAL_DAEMON_SHUTDOWN_ACTION};"#;
     const UPSTREAM_SESSION_FIELD: &str = r#"    pub session_id: String,
-    pub tracing_state: TracingState,"#;
+    /// The settings this session runs with."#;
     const REWRITTEN_SESSION_FIELD: &str = r#"    pub session_id: String,
     pub namespace: Option<String>,
-    pub tracing_state: TracingState,"#;
+    /// The settings this session runs with."#;
     const UPSTREAM_SESSION_INIT: &str = r#"            session_id,
-            tracing_state: TracingState::new(),"#;
+            engine: settings.engine()"#;
     const REWRITTEN_SESSION_INIT: &str = r#"            session_id,
             namespace: env::var("AGENT_BROWSER_NAMESPACE").ok(),
-            tracing_state: TracingState::new(),"#;
+            engine: settings.engine()"#;
     const UPSTREAM_SESSION_INFO: &str = r#"        "namespace": env::var("AGENT_BROWSER_NAMESPACE").ok(),
         "socketDir": get_socket_dir().to_string_lossy(),"#;
     const REWRITTEN_SESSION_INFO: &str = r#"        "namespace": state.namespace.as_deref(),
@@ -140,13 +140,11 @@ pub(crate) fn rewrite_actions_namespace(contents: Source) -> Source {
         "tab_binding::clear(&session);",
         "tab_binding::clear_for_namespace(&session, state.namespace.as_deref());",
     );
-    assert!(
-        rewritten.contains("pub namespace: Option<String>"),
-        "upstream DaemonState namespace layout changed"
-    );
-    assert!(
-        rewritten.contains("dispatch_state_command_for_namespace("),
-        "upstream state command dispatch changed"
+    rewritten = replace_once_named(
+        rewritten,
+        "actions namespace pin release",
+        "tab_binding::release_pin(&state.session_id)",
+        "tab_binding::release_pin_for_namespace(&state.session_id, state.namespace.as_deref())",
     );
     rewritten
 }

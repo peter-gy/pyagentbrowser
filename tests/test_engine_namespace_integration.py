@@ -13,7 +13,7 @@ from agentbrowser import Browser, LaunchOptions, SessionOptions
 pytestmark = pytest.mark.integration
 
 
-def test_session_binding_persists_target_in_its_namespace(
+def test_session_binding_stays_in_its_namespace_and_close_releases_the_pin(
     chrome_path: Path,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
@@ -34,13 +34,13 @@ def test_session_binding_persists_target_in_its_namespace(
         ) as browser:
             browser.page.open(f"{url}?token=fixture#section")
             browser.native.data("url", pinTab=True)
-            binding = json.loads(
-                (socket_dir / "namespaces" / "worker-a" / "run" / "research.target").read_text()
-            )
+            binding_path = socket_dir / "namespaces" / "worker-a" / "run" / "research.target"
+            binding = json.loads(binding_path.read_text())
 
             assert binding["targetId"] == browser.page.target_id
             assert binding["url"] == url
             assert binding["pinned"] is True
+        assert json.loads(binding_path.read_text())["pinned"] is False
     finally:
         server.shutdown()
         server.server_close()
