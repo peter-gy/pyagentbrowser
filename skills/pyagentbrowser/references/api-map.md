@@ -25,6 +25,9 @@ session boundary.
 | Inspect failures | `browser.diagnostics` | Console, page error, vital, and audit records |
 | Inspect the native session | `browser.session.status()` | Typed identity and lifecycle state |
 | Call page tools | `browser.webmcp` | Typed WebMCP tools and invocations |
+| Tell apart same-named controls | `snapshot.one(..., hint="Invoice 42")` | The ref whose hint contains the text |
+| Record a repeatable task | `Browser.launch(LaunchOptions(capture=["flow"]))`, then `browser.flows.save(name, params=...)` | `SavedFlow` with params, requests, and writes |
+| Run a saved flow | `browser.flows.run(name, params=...)` | `FlowRun` with the JSON answer and the tier that produced it |
 | Use a CDP session | `browser.cdp` | Direct protocol targets and execution contexts |
 | Call any native action | `browser.native.execute()` | Complete native response envelope |
 | Read native action data | `browser.native.data()` | Native response data mapping |

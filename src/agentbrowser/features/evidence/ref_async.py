@@ -58,6 +58,11 @@ class AsyncRef:
         return self._ref.name
 
     @property
+    def hint(self) -> str | None:
+        """Engine hint for a control whose name is empty or shared in the snapshot."""
+        return self._ref.hint
+
+    @property
     def raw(self) -> Mapping[str, Any]:
         """Native ref metadata."""
         return self._ref.raw
@@ -79,12 +84,18 @@ class AsyncRef:
         """Resolve this element from a fresh snapshot."""
 
         def resolve(snapshot: AsyncSnapshot) -> AsyncRef:
-            return snapshot.one(
-                role=self.role if role is None else role,
-                name=self.name if name is None and contains is None else name,
-                contains=contains,
-                exact=exact,
-            )
+            criteria = {
+                "role": self.role if role is None else role,
+                "name": self.name if name is None and contains is None else name,
+                "contains": contains,
+            }
+            if self.hint is not None:
+                same_hint = [
+                    ref for ref in snapshot.all(**criteria, exact=exact) if ref.hint == self.hint
+                ]
+                if len(same_hint) == 1:
+                    return same_hint[0]
+            return snapshot.one(**criteria, exact=exact)
 
         try:
             refreshed = await self.snapshot.refresh()

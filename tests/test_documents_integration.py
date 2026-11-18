@@ -12,6 +12,7 @@ from agentbrowser import (
     ActionResult,
     BrowserError,
     ConfirmationRequired,
+    EngineWarning,
     SessionOptions,
     SnapshotDiff,
     SnapshotSpec,
@@ -83,6 +84,51 @@ def test_same_document_snapshots_preserve_refs_across_the_native_boundary(
         result = retained.click()
         assert result.target is retained
         assert browser.page.evaluate("document.querySelector('button').dataset.clicked") == "true"
+
+
+def test_click_that_opens_a_dialog_emits_the_engine_warning(chrome_path: Path) -> None:
+    with _browser(chrome_path) as browser:
+        browser.page.set_content(
+            "<button onclick=\"this.textContent = confirm('Publish?') ? 'yes' : 'no'\">"
+            "Publish</button>"
+        )
+
+        with pytest.warns(EngineWarning, match=r'confirm dialog is blocking the page: "Publish\?"'):
+            browser.page.find.role("button").click()
+        browser.dialogs.accept()
+
+        assert browser.page.find.role("button").text() == "yes"
+
+
+def test_snapshot_hints_select_one_of_several_same_named_controls(chrome_path: Path) -> None:
+    rows = "".join(
+        f"<li>Invoice {number} <button onclick=\"this.dataset.deleted='true'\">Delete</button></li>"
+        for number in (41, 42)
+    )
+    with _browser(chrome_path) as browser:
+        browser.page.set_content(f"<ul>{rows}</ul>")
+
+        target = browser.page.observe().one(name="Delete", hint="Invoice 42")
+        target.click()
+
+        assert target.hint == "in:Invoice 42"
+        assert browser.page.evaluate(
+            "[...document.querySelectorAll('button')].map(b => b.dataset.deleted ?? null)"
+        ) == [None, "true"]
+
+
+def test_snapshot_hints_survive_bracketed_link_urls(chrome_path: Path) -> None:
+    rows = "".join(
+        f'<li>Invoice {name} <a href="/edit?ids[]={name}">Edit</a></li>' for name in ("A", "B")
+    )
+    with _browser(chrome_path) as browser:
+        browser.page.set_content(f"<ul>{rows}</ul>")
+
+        snapshot = browser.page.observe(SnapshotSpec(urls=True))
+        edit = snapshot.one(role="link", name="Edit", hint="Invoice B")
+
+        assert edit.hint == "in:Invoice B"
+        assert f"ref={edit.id}, url=/edit?ids[]=B]" in snapshot.text
 
 
 def test_native_snapshot_delta_reports_full_unchanged_and_changed_revisions(

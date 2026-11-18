@@ -278,6 +278,51 @@ async fn confirmation_replay_fails_closed_for_unvalidated_allowlist_targets() {
 }
 
 #[tokio::test]
+async fn commands_cannot_replace_session_security_settings() {
+    let mut state = engine(EngineOptions {
+        session: Some("adapter-security-settings".to_string()),
+        allowed_domains: Some("Example.com, *.example.org".to_string()),
+        confirm_actions: Some(vec!["session_info".to_string()]),
+        ..EngineOptions::default()
+    });
+
+    for command in [
+        json!({"action": "session_info", "settings": {"confirm-actions": ""}}),
+        json!({"action": "session_info", "settings": {"action-policy": "/tmp/permissive.json"}}),
+        json!({"action": "session_info", "settings": {"allowed-domains": []}}),
+        json!({"action": "launch", "allowedDomains": []}),
+        json!({"action": "launch", "allowedDomains": "example.com,evil.example"}),
+    ] {
+        let response = run(&mut state, command.clone()).await;
+        assert_error_contains(&response, "a session keeps the allowed domains");
+        assert_eq!(
+            response["code"], "security_settings",
+            "{command}: {response}"
+        );
+    }
+
+    let gated = run(&mut state, json!({"id": "info", "action": "session_info"})).await;
+    assert_eq!(
+        assert_success(&gated)["confirmation_required"],
+        true,
+        "{gated}"
+    );
+}
+
+#[tokio::test]
+async fn environment_cdp_target_is_the_default_connection() {
+    let _cdp_guard = EnvVarGuard::set_path("AGENT_BROWSER_CDP", Path::new("http://127.0.0.1:9"));
+    let mut state = engine(EngineOptions {
+        session: Some("adapter-env-cdp".to_string()),
+        ..EngineOptions::default()
+    });
+
+    let response = run(&mut state, json!({"id": "url", "action": "url"})).await;
+
+    assert_error_contains(&response, "CDP connection failed");
+}
+
+#[tokio::test]
 async fn stream_result_messages_report_success() {
     let socket_dir = TempDir::new().expect("stream socket dir should be created");
     let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());

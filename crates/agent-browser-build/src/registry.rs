@@ -13,6 +13,7 @@ use std::{
 };
 
 const ROOT_MODULES: &[(&str, &str)] = &[
+    ("browser_security", "browser_security.rs"),
     ("ca_bundle", "ca_bundle.rs"),
     ("color", "color.rs"),
     ("commands", "commands.rs"),
@@ -22,6 +23,7 @@ const ROOT_MODULES: &[(&str, &str)] = &[
     ("plugins", "plugins.rs"),
     ("read", "read.rs"),
     ("session_files", "session_files.rs"),
+    ("session_settings", "session_settings/mod.rs"),
     ("tls", "tls.rs"),
     ("validation", "validation.rs"),
 ];
@@ -36,6 +38,7 @@ const NATIVE_MODULES: &[(&str, &str)] = &[
     ("diff", "diff.rs"),
     ("downloads", "downloads.rs"),
     ("element", "element.rs"),
+    ("flow", "flow/mod.rs"),
     ("inspect_server", "inspect_server.rs"),
     ("interaction", "interaction.rs"),
     ("network", "network.rs"),
@@ -67,6 +70,7 @@ pub(crate) fn write_upstream_modules(source_root: &Path, out_dir: &Path) {
         require_file(&path);
         let module_path = match *name {
             "connection" => rewrite_connection_module(out_dir, &path),
+            "session_settings" => rewrite_session_settings_module(out_dir, &path),
             _ => path,
         };
         line(
@@ -75,6 +79,10 @@ pub(crate) fn write_upstream_modules(source_root: &Path, out_dir: &Path) {
                 "#[allow(dead_code, clippy::new_without_default, clippy::should_implement_trait)]"
             ),
         );
+        if *name == "session_settings" {
+            // Its re-exports cover the daemon entrypoint the adapter replaces.
+            line(&mut output, format_args!("#[allow(unused_imports)]"));
+        }
         line(
             &mut output,
             format_args!("#[path = \"{}\"]", path_literal(&module_path)),
@@ -148,6 +156,9 @@ fn write_native_module(source_root: &Path, out_dir: &Path) -> PathBuf {
         );
         if matches!(*name, "actions" | "stream") {
             line(&mut output, format_args!("#[allow(private_interfaces)]"));
+        }
+        if *name == "actions" {
+            line(&mut output, format_args!("#[allow(clippy::drop_non_drop)]"));
         }
         if *name == "snapshot" {
             line(

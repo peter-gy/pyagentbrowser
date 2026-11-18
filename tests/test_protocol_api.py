@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import math
+import warnings
 from pathlib import Path
 from typing import Any, cast
 
@@ -12,6 +13,9 @@ from support.sdk import _browser, _command_without_id, _tab
 from agentbrowser import (
     AgentBrowserError,
     AsyncBrowser,
+    BrowserError,
+    ConfirmationRequired,
+    EngineWarning,
     NativeParseError,
     RouteResponse,
     StateLoadResult,
@@ -54,6 +58,84 @@ def test_native_execute_returns_failed_envelopes_without_hiding_diagnostics() ->
 
     assert response.success is False
     assert response.raw["code"] == "probe_failed"
+
+
+_OUTDATED_CHROME = "Chrome 140.0.7339.80 is behind stable 142.0.7444.59, which fixed CVE-2026-0001"
+
+
+def test_checked_commands_emit_engine_warnings() -> None:
+    native = ScriptedNative(
+        {"url": {"success": True, "warning": _OUTDATED_CHROME, "data": {"url": "about:blank"}}}
+    )
+    browser = _browser(native)
+
+    with pytest.warns(EngineWarning, match="behind stable"):
+        assert browser.page.url() == "about:blank"
+    with pytest.warns(EngineWarning, match="behind stable"):
+        assert browser.native.data("url") == {"url": "about:blank"}
+
+    async def run() -> str:
+        async_browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+        return await async_browser.page.url()
+
+    with pytest.warns(EngineWarning, match="behind stable"):
+        assert asyncio.run(run()) == "about:blank"
+
+
+def test_failed_commands_emit_the_engine_warning_before_raising() -> None:
+    native = ScriptedNative(
+        {
+            "click": {
+                "success": False,
+                "error": "click timed out",
+                "warning": "A JavaScript confirm dialog is blocking the page",
+            }
+        }
+    )
+    browser = _browser(native)
+
+    with (
+        pytest.warns(EngineWarning, match="confirm dialog is blocking"),
+        pytest.raises(BrowserError, match="click timed out"),
+    ):
+        browser.native.data("click", selector="#save")
+
+
+def test_confirmed_command_emits_its_engine_warning_once() -> None:
+    dialog = "A JavaScript confirm dialog is blocking the page"
+    native = ScriptedNative(
+        {
+            "click": {"confirmation_required": True, "confirmation_id": "c1", "action": "click"},
+            "confirm": {
+                "success": True,
+                "warning": dialog,
+                "data": {
+                    "confirmed": True,
+                    "action": "click",
+                    "result": {"success": True, "warning": dialog, "data": {"clicked": True}},
+                },
+            },
+        }
+    )
+    browser = _browser(native)
+    with pytest.raises(ConfirmationRequired) as required:
+        browser.native.data("click", selector="#publish")
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        assert required.value.pending.confirm() == {"clicked": True}
+
+    assert [str(warning.message) for warning in caught] == [dialog]
+
+
+def test_native_execute_returns_the_warning_on_the_envelope() -> None:
+    native = ScriptedNative(
+        {"url": {"success": True, "warning": _OUTDATED_CHROME, "data": {"url": "about:blank"}}}
+    )
+
+    response = _browser(native).native.execute("url")
+
+    assert response.warning == _OUTDATED_CHROME
 
 
 @pytest.mark.parametrize(

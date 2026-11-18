@@ -40,16 +40,21 @@ Local launch checks the explicit executable environment, the native cache and di
 | --- | --- |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | Select the local Chrome or Chromium executable. |
 | `AGENT_BROWSER_ENGINE` | Select `chrome` or `lightpanda` when `LaunchOptions.engine` is unset. |
-| `AGENT_BROWSER_PROVIDER` | Select `browserbase`, `browserless`, `browser-use` or `browseruse`, `kernel`, `agentcore`, `ios`, `safari`, or a configured provider plugin. |
-| `AGENT_BROWSER_CDP` | Supply an existing browser's Chrome DevTools Protocol port or WebSocket URL for a lazy controller. |
-| `AGENT_BROWSER_AUTO_CONNECT` | Ask the engine to discover and attach to a running Chrome instance. |
+| `AGENT_BROWSER_PROVIDER` | Select `browserbase`, `browserless`, `browser-use` or `browseruse`, `kernel`, `agentcore`, `ios`, `safari`, or a configured provider plugin when `LaunchOptions.provider` is unset. |
+| `AGENT_BROWSER_CDP` | Attach to an existing browser's Chrome DevTools Protocol port or WebSocket URL when the controller names no `CDPTarget`. |
+| `AGENT_BROWSER_CDP_HEADERS` | Send a JSON object of WebSocket headers with the `AGENT_BROWSER_CDP` connection. |
+| `AGENT_BROWSER_AUTO_CONNECT` | Discover and attach to a running Chrome instance. `0`, `false`, and `no` leave it off. |
 | `AGENT_BROWSER_WEBGPU` | Enable the native local WebGPU preset unless `LaunchOptions.webgpu` overrides it. |
 | `AGENT_BROWSER_AUTOSAVE_INTERVAL_MS` | Set keyed restore autosave cadence unless `RestoreOptions.autosave_interval_ms` overrides it. |
 | `AGENT_BROWSER_DASHBOARD_CLI_VERSION` | Set the external dashboard version written to session discovery metadata. |
 | `AGENT_BROWSER_SOCKET_DIR` | Select the native socket and control-file base directory. Saved browser state uses its separate state directory. |
 | `AGENT_BROWSER_ENABLE` | Enable built-in launch features such as `react-devtools` before page scripts run. |
+| `AGENT_BROWSER_NO_VERSION_CHECK` | Set to `1` or `true` to skip the Chrome release-feed request behind the outdated-browser `EngineWarning`. |
+| `AGENT_BROWSER_FLOWS_DIR` | Select the directory for saved flows. The default is `~/.agent-browser/flows`. |
 
-Explicit Python options take precedence where the same behavior is configurable in `LaunchOptions`, `SessionOptions`, or `RestoreOptions`.
+The engine reads these variables when a controller creates its native session. Explicit Python options take precedence where the same behavior is configurable in `LaunchOptions`, `SessionOptions`, or `RestoreOptions`.
+
+A connection variable selects the browser for every launch of that controller, including `Browser.launch()`. `Browser.attach(CDPTarget(...))` and `LaunchOptions.provider` replace it.
 
 External providers require provider-specific credentials and can create billable remote browser sessions. Follow the [upstream configuration reference](https://agent-browser.dev/configuration) for the embedded engine version.
 

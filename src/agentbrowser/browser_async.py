@@ -14,6 +14,7 @@ from agentbrowser.features.diagnostics.diff import AsyncDiff
 from agentbrowser.features.documents.handles_async import AsyncPage
 from agentbrowser.features.downloads.api import AsyncDownloads
 from agentbrowser.features.emulation.api import AsyncEmulation
+from agentbrowser.features.flows.api import AsyncFlows
 from agentbrowser.features.input.api import AsyncClipboard, AsyncDialogs, AsyncKeyboard, AsyncMouse
 from agentbrowser.features.network.api import AsyncNetwork
 from agentbrowser.features.scripts.api import AsyncScripts
@@ -40,7 +41,7 @@ class AsyncBrowser:
     Native calls run on a dedicated owner thread so the event loop can keep
     scheduling unrelated work. Document operations live under `page`.
     Browser-wide operations live under `tabs`, `network`, `diagnostics`,
-    `session`, `webmcp`, `cdp`, and `native`."""
+    `session`, `webmcp`, `flows`, `cdp`, and `native`."""
 
     def __init__(
         self,
@@ -49,7 +50,7 @@ class AsyncBrowser:
         _native_session: AsyncNativeSession | None = None,
     ) -> None:
         base_options = normalize_session(session)
-        launch_configuration = LaunchConfiguration.from_public_options(
+        launch_configuration = LaunchConfiguration.from_options(
             allowed_domains=base_options._allowed_domains()
         )
         self._controller = AsyncController(
@@ -99,7 +100,7 @@ class AsyncBrowser:
         """Create a browser and start the native browser process."""
         session_config = normalize_session(session)
         browser = cls._from_configuration(
-            LaunchConfiguration.from_public_options(
+            LaunchConfiguration.from_options(
                 options,
                 allowed_domains=session_config._allowed_domains(),
             ),
@@ -124,7 +125,7 @@ class AsyncBrowser:
         """Create a browser and attach to a running CDP target."""
         session_config = normalize_session(session)
         browser = cls._from_configuration(
-            LaunchConfiguration.from_public_options(
+            LaunchConfiguration.from_options(
                 launch,
                 attach=target,
                 allowed_domains=session_config._allowed_domains(),
@@ -201,6 +202,10 @@ class AsyncBrowser:
     @property
     def emulation(self) -> AsyncEmulation:
         return AsyncEmulation(self._executor)
+
+    @property
+    def flows(self) -> AsyncFlows:
+        return AsyncFlows(self._executor)
 
     @property
     def keyboard(self) -> AsyncKeyboard:

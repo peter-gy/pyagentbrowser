@@ -1,6 +1,7 @@
 use serde_json::{json, Value};
 
 use crate::{
+    confirmation::SECURITY_SETTINGS_ERROR,
     native,
     options::{configure, EngineOptions},
 };
@@ -35,12 +36,11 @@ impl Engine {
 
     pub async fn execute(&mut self, command: &Value) -> Value {
         let mut response = crate::confirmation::dispatch(command, &mut self.state).await;
-        if response
-            .get("error")
-            .and_then(Value::as_str)
-            .is_some_and(|error| error.contains("Unknown ref:"))
-        {
+        let error = response.get("error").and_then(Value::as_str);
+        if error.is_some_and(|error| error.contains("Unknown ref:")) {
             response["code"] = json!("unknown_ref");
+        } else if error.is_some_and(|error| error.ends_with(SECURITY_SETTINGS_ERROR)) {
+            response["code"] = json!("security_settings");
         }
         response
     }

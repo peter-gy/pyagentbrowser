@@ -1,6 +1,6 @@
 [package]
 name = "agent-browser"
-version = "0.41.1"
+version = "0.43.0"
 edition = "2021"
 description = "Library adapter for the agent-browser upstream submodule"
 license = "Apache-2.0"
@@ -15,7 +15,6 @@ test = false
 [dependencies]
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-dirs = "5.0"
 base64 = "0.22"
 getrandom = "0.2"
 tokio = { version = "1", features = ["rt-multi-thread", "macros", "net", "io-util", "time", "sync", "signal", "process"] }
@@ -38,6 +37,7 @@ hmac = "0.12"
 hex = "0.4"
 chrono = "0.4"
 urlencoding = "2"
+psl = "=2.1.246"
 rustls-native-certs = "0.8"
 webpki-roots = "0.26"
 
@@ -45,7 +45,7 @@ webpki-roots = "0.26"
 libc = "0.2"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Security", "Win32_System_JobObjects", "Win32_System_StationsAndDesktops", "Win32_Graphics_Gdi"] }
+windows-sys = { version = "0.52", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_Storage_FileSystem", "Win32_Security", "Win32_System_JobObjects", "Win32_System_StationsAndDesktops", "Win32_Graphics_Gdi"] }
 
 [build-dependencies]
 agent-browser-build = { path = "../agent-browser-build" }

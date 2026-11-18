@@ -14,6 +14,7 @@ from agentbrowser.features.diagnostics.diff import Diff
 from agentbrowser.features.documents.handles import Page
 from agentbrowser.features.downloads.api import Downloads
 from agentbrowser.features.emulation.api import Emulation
+from agentbrowser.features.flows.api import Flows
 from agentbrowser.features.input.api import Clipboard, Dialogs, Keyboard, Mouse
 from agentbrowser.features.network.api import Network
 from agentbrowser.features.scripts.api import Scripts
@@ -39,8 +40,8 @@ class Browser:
 
     Use `launch()` for a local process and `attach()` for an existing CDP
     target. Document operations live under `page`. Browser-wide operations live
-    under `tabs`, `network`, `diagnostics`, `session`, `webmcp`, `cdp`, and
-    `native`.
+    under `tabs`, `network`, `diagnostics`, `session`, `webmcp`, `flows`, `cdp`,
+    and `native`.
     """
 
     def __init__(
@@ -50,7 +51,7 @@ class Browser:
         _native_session: NativeSession | None = None,
     ) -> None:
         base_options = normalize_session(session)
-        launch_configuration = LaunchConfiguration.from_public_options(
+        launch_configuration = LaunchConfiguration.from_options(
             allowed_domains=base_options._allowed_domains()
         )
         self._controller = Controller(
@@ -100,7 +101,7 @@ class Browser:
         """Create a browser and start the native browser process."""
         session_config = normalize_session(session)
         browser = cls._from_configuration(
-            LaunchConfiguration.from_public_options(
+            LaunchConfiguration.from_options(
                 options,
                 allowed_domains=session_config._allowed_domains(),
             ),
@@ -125,7 +126,7 @@ class Browser:
         """Create a browser and attach to a running CDP target."""
         session_config = normalize_session(session)
         browser = cls._from_configuration(
-            LaunchConfiguration.from_public_options(
+            LaunchConfiguration.from_options(
                 launch,
                 attach=target,
                 allowed_domains=session_config._allowed_domains(),
@@ -202,6 +203,10 @@ class Browser:
     @property
     def emulation(self) -> Emulation:
         return Emulation(self._executor)
+
+    @property
+    def flows(self) -> Flows:
+        return Flows(self._executor)
 
     @property
     def keyboard(self) -> Keyboard:

@@ -82,6 +82,9 @@ Use [`page.find`](docs/guides/interact.md) for live element queries and
   tabs, cookies, saved state, and explicit cleanup.
 - **Control actions.** Configure domain restrictions and confirmation policy
   for operations through the native engine.
+- **Replay recorded tasks.** Record a task once as a
+  [saved flow](docs/guides/flows.md), then run its requests again with new
+  parameters.
 - **Compose in Python.** Use synchronous or asynchronous controllers, agent
   skills, and the complete engine protocol through `browser.native`.
 

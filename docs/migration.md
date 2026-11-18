@@ -1,11 +1,57 @@
 ---
 title: Migration guide
-description: Update applications for pyagentbrowser 0.41 contracts and the scoped browser agent API.
+description: Update applications for pyagentbrowser 0.43 and 0.41 contracts and the scoped browser agent API.
 ---
 
 # Migration guide
 
 Each section lists the replacement for a changed contract.
+
+## Upgrade to pyagentbrowser 0.43
+
+### Handle `EngineWarning`
+
+Typed methods and `browser.native.data()` emit the engine's response warning as an `EngineWarning` through `warnings.warn`. A test suite that turns warnings into errors needs one of these:
+
+```python
+import pytest
+
+from agentbrowser import EngineWarning
+
+with pytest.warns(EngineWarning, match="dialog is blocking the page"):
+    publish.click()
+```
+
+```toml
+[tool.pytest.ini_options]
+filterwarnings = ["error", "ignore::agentbrowser.EngineWarning"]
+```
+
+The engine also warns once per launched browser when Chrome is behind the stable release and newer releases fixed CVEs. It requests the Chrome release feed to decide. Set `AGENT_BROWSER_NO_VERSION_CHECK=1` in test and offline environments to skip that request.
+
+### Read hints through `Ref.hint`
+
+`Snapshot.text` prints a `hint="..."` token after the attribute block of a control whose accessible name is empty or shared with another ref:
+
+```text
+- button "Delete" [ref=e7] hint="in:Invoice 42"
+```
+
+Code that parses tree lines must accept the token. Read `Ref.hint`, and pass `hint=` to `Snapshot.one()` or `Snapshot.all()` to select by it.
+
+### Connection variables select the browser for every launch
+
+`AGENT_BROWSER_CDP`, `AGENT_BROWSER_AUTO_CONNECT`, and `AGENT_BROWSER_PROVIDER` now apply to `Browser.launch()` as well as to a lazily started `Browser()`. Unset them in a process that must launch a local browser, or name the target with `Browser.attach(CDPTarget(...))` or `LaunchOptions.provider`.
+
+### Launch a local browser for downloads
+
+`browser.downloads` raises `BrowserError` on a browser the session attached to. Move download workflows to a session that launches its own browser.
+
+### Send complete values in a raw `launch`
+
+A raw `browser.native` `launch` command changes the launch settings it names and keeps the session's current value for every field it omits. Name each setting a relaunch must change. A proxy URL with credentials is split into server, username, and password, and its credentials are percent-decoded.
+
+On a session attached through CDP or a provider, the engine ignores launch settings that apply to a local browser, such as `profile`, `extensions`, and `args`, and lists them under `lifecycle.settings` in the response.
 
 ## Upgrade to pyagentbrowser 0.41
 

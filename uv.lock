@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.11, <3.15"
 
 [[package]]
@@ -157,7 +157,7 @@ wheels = [
 
 [[package]]
 name = "pyagentbrowser"
-version = "0.41.1"
+version = "0.43.0rc0"
 source = { editable = "." }
 dependencies = [
     { name = "agent-plugins" },

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import os
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal, get_args
 
 from agentbrowser.contracts.connection import ProxyConfig, proxy_value
 from agentbrowser.contracts.protocol import optional, path_value, paths_value
 from agentbrowser.features.emulation.models import ColorScheme
 from agentbrowser.features.session.models import DashboardOptions, RestoreOptions
+
+CaptureMode = Literal["flow"]
 
 _ALLOWLIST_BLOCKED_CHROME_SWITCHES = {
     "app",
@@ -71,16 +73,23 @@ class LaunchOptions:
     ignore_https_errors: bool = False
     user_agent: str | None = None
     download_path: str | Path | None = None
+    capture: Sequence[CaptureMode] = ()
 
     def __post_init__(self) -> None:
         if isinstance(self.extensions, str):
             raise TypeError("extensions must be a sequence, not a string")
         if isinstance(self.args, str):
             raise TypeError("args must be a sequence, not a string")
+        if isinstance(self.capture, str):
+            raise TypeError("capture must be a sequence, not a string")
         if self.ca_cert is not None and not str(self.ca_cert).strip():
             raise ValueError("ca_cert must not be empty")
+        capture = tuple(self.capture)
+        if unknown := [mode for mode in capture if mode not in get_args(CaptureMode)]:
+            raise ValueError(f"unknown capture mode {unknown[0]!r}. Supported: flow")
         object.__setattr__(self, "extensions", tuple(self.extensions))
         object.__setattr__(self, "args", tuple(self.args))
+        object.__setattr__(self, "capture", capture)
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,86 +185,57 @@ def normalize_session(
 
 @dataclass(frozen=True, slots=True)
 class LaunchConfiguration:
-    """Normalized launch options shared by sync and async browser sessions.
+    """Browser process options with the session's attach target and allowlist."""
 
-    Instances store explicit process-launch or CDP-attach defaults.
-    """
-
-    headless: bool = True
-    executable_path: str | None = None
-    engine: str | None = None
+    options: LaunchOptions = field(default_factory=LaunchOptions)
+    attach: CDPTarget | None = None
     allowed_domains: str | None = None
-    profile: str | None = None
-    storage_state: str | None = None
-    extensions: tuple[str, ...] = ()
-    proxy: str | ProxyConfig | Mapping[str, Any] | None = None
-    ca_cert: str | None = None
-    provider: str | None = None
-    cdp_url: str | None = None
-    cdp_port: int | None = None
-    auto_connect: bool = False
-    color_scheme: ColorScheme | None = None
-    hide_scrollbars: bool | None = None
-    webgpu: bool | None = None
-    webmcp: bool | None = None
-    no_xvfb: bool | None = None
-    args: tuple[str, ...] = ()
-    allow_file_access: bool = False
-    ignore_https_errors: bool = False
-    user_agent: str | None = None
-    download_path: str | None = None
 
     def __post_init__(self) -> None:
+        options = self.options
         if self.allowed_domains and self.allowed_domains.strip():
-            if self.storage_state is not None and self.storage_state.strip():
+            if options.storage_state is not None and str(options.storage_state).strip():
                 raise ValueError(
                     "allowed_domains cannot be combined with storage_state because saved "
                     "origins can replay before containment starts"
                 )
-            if self.cdp_url is not None or self.cdp_port is not None:
+            if self.attach is not None:
                 raise ValueError(
                     "allowed_domains cannot be combined with CDP attachment because containment "
                     "must start before page scripts"
                 )
-            if self.auto_connect:
-                raise ValueError(
-                    "allowed_domains cannot be combined with auto-connect because containment "
-                    "must start before page scripts"
-                )
-            if self.profile is not None:
+            if options.profile is not None:
                 raise ValueError(
                     "allowed_domains cannot be combined with profile because Chrome can restore "
                     "pages before containment starts"
                 )
-            if self.provider is not None and self.provider.strip().lower() in {"ios", "safari"}:
+            if options.provider is not None and options.provider.strip().lower() in {
+                "ios",
+                "safari",
+            }:
                 raise ValueError(
-                    f"allowed_domains cannot be enforced by the {self.provider.strip()} provider"
+                    f"allowed_domains cannot be enforced by the {options.provider.strip()} provider"
                 )
-            if conflict := _allowlist_arg_conflict(self.args):
+            if conflict := _allowlist_arg_conflict(options.args):
                 raise ValueError(
                     "allowed_domains cannot be combined with browser args containing "
                     f"{conflict} because pages can open before containment starts"
                 )
 
-        external_browser = (
-            self.cdp_url is not None
-            or self.cdp_port is not None
-            or self.auto_connect
-            or self.provider is not None
-        )
-        if self.ca_cert is not None:
-            if self.profile is not None:
+        external_browser = self.attach is not None or options.provider is not None
+        if options.ca_cert is not None:
+            if options.profile is not None:
                 raise ValueError("ca_cert cannot be combined with profile")
-            if self.ignore_https_errors:
+            if options.ignore_https_errors:
                 raise ValueError("ca_cert cannot be combined with ignore_https_errors")
-            engine = self.engine or os.environ.get("AGENT_BROWSER_ENGINE")
+            engine = options.engine or os.environ.get("AGENT_BROWSER_ENGINE")
             if engine is not None and engine.strip().lower() != "chrome":
                 raise ValueError("ca_cert requires the Chrome engine on Linux")
             if external_browser:
                 raise ValueError("ca_cert requires a local Chromium browser launch")
         if not external_browser:
             return
-        webgpu_enabled = self.webgpu
+        webgpu_enabled = options.webgpu
         if webgpu_enabled is None:
             webgpu_enabled = os.environ.get("AGENT_BROWSER_WEBGPU") in {"1", "true"}
         if webgpu_enabled:
@@ -263,157 +243,50 @@ class LaunchConfiguration:
                 "webgpu requires a local browser launch. Pass webgpu=False to override "
                 "AGENT_BROWSER_WEBGPU for CDP and provider connections"
             )
-        if self.no_xvfb is True:
+        if options.no_xvfb is True:
             raise ValueError("no_xvfb requires a local browser launch")
 
     @classmethod
     def from_options(
-        cls,
-        *,
-        headless: bool = True,
-        executable_path: str | Path | None = None,
-        engine: str | None = None,
-        allowed_domains: str | None = None,
-        profile: str | Path | None = None,
-        storage_state: str | Path | None = None,
-        extensions: Sequence[str | Path] = (),
-        proxy: str | ProxyConfig | Mapping[str, Any] | None = None,
-        ca_cert: str | Path | None = None,
-        provider: str | None = None,
-        cdp_url: str | None = None,
-        cdp_port: int | None = None,
-        auto_connect: bool = False,
-        color_scheme: ColorScheme | None = None,
-        hide_scrollbars: bool | None = None,
-        webgpu: bool | None = None,
-        webmcp: bool | None = None,
-        no_xvfb: bool | None = None,
-        args: Sequence[str] = (),
-        allow_file_access: bool = False,
-        ignore_https_errors: bool = False,
-        user_agent: str | None = None,
-        download_path: str | Path | None = None,
-    ) -> LaunchConfiguration:
-        """Build a normalized launch configuration from public constructor options."""
-        return cls(
-            headless=headless,
-            executable_path=path_value(executable_path),
-            engine=engine,
-            allowed_domains=allowed_domains,
-            profile=path_value(profile),
-            storage_state=path_value(storage_state),
-            extensions=tuple(paths_value(extensions)),
-            proxy=proxy,
-            ca_cert=path_value(ca_cert),
-            provider=provider,
-            cdp_url=cdp_url,
-            cdp_port=cdp_port,
-            auto_connect=auto_connect,
-            color_scheme=color_scheme,
-            hide_scrollbars=hide_scrollbars,
-            webgpu=webgpu,
-            webmcp=webmcp,
-            no_xvfb=no_xvfb,
-            args=tuple(args),
-            allow_file_access=allow_file_access,
-            ignore_https_errors=ignore_https_errors,
-            user_agent=user_agent,
-            download_path=path_value(download_path),
-        )
-
-    @classmethod
-    def from_public_options(
         cls,
         options: LaunchOptions | None = None,
         *,
         attach: CDPTarget | None = None,
         allowed_domains: str | None = None,
     ) -> LaunchConfiguration:
-        """Build a launch configuration from named public option objects."""
-        options = normalize_launch(options)
-        target = cdp_target(attach) if attach is not None else None
-        return cls.from_options(
-            headless=options.headless,
-            executable_path=options.executable_path,
-            engine=options.engine,
+        """Build a launch configuration from the public option objects."""
+        return cls(
+            normalize_launch(options),
+            attach=cdp_target(attach) if attach is not None else None,
             allowed_domains=allowed_domains,
-            profile=options.profile,
-            storage_state=options.storage_state,
-            extensions=options.extensions,
-            proxy=options.proxy,
-            ca_cert=options.ca_cert,
-            provider=options.provider,
-            cdp_url=target.url if target is not None else None,
-            cdp_port=target.port if target is not None else None,
-            auto_connect=target.auto_connect if target is not None else False,
-            color_scheme=options.color_scheme,
-            hide_scrollbars=options.hide_scrollbars,
-            webgpu=options.webgpu,
-            webmcp=options.webmcp,
-            no_xvfb=options.no_xvfb,
-            args=options.args,
-            allow_file_access=options.allow_file_access,
-            ignore_https_errors=options.ignore_https_errors,
-            user_agent=options.user_agent,
-            download_path=options.download_path,
         )
 
-    def replace_launch(self, options: LaunchOptions) -> LaunchConfiguration:
-        """Return this configuration with browser process options replaced."""
-        options = normalize_launch(options)
-        return replace(
-            self,
-            headless=options.headless,
-            executable_path=path_value(options.executable_path),
-            engine=options.engine,
-            profile=path_value(options.profile),
-            storage_state=path_value(options.storage_state),
-            extensions=tuple(paths_value(options.extensions)),
-            proxy=options.proxy,
-            ca_cert=path_value(options.ca_cert),
-            provider=options.provider,
-            color_scheme=options.color_scheme,
-            hide_scrollbars=options.hide_scrollbars,
-            webgpu=options.webgpu,
-            webmcp=options.webmcp,
-            no_xvfb=options.no_xvfb,
-            args=tuple(options.args),
-            allow_file_access=options.allow_file_access,
-            ignore_https_errors=options.ignore_https_errors,
-            user_agent=options.user_agent,
-            download_path=path_value(options.download_path),
-        )
-
-    def command_params(
-        self,
-        *,
-        options: LaunchOptions | None = None,
-    ) -> dict[str, Any]:
-        """Return native command parameters for `launch`."""
-        config = self.replace_launch(options) if options is not None else self
-        resolved_hide_scrollbars = config.hide_scrollbars
+    def command_params(self) -> dict[str, Any]:
+        """Return native `launch` parameters."""
+        options, attach = self.options, self.attach
         return {
-            "headless": config.headless,
-            "executablePath": optional(config.executable_path),
-            "engine": optional(config.engine),
-            "args": list(config.args),
-            "profile": optional(config.profile),
-            "storageState": optional(config.storage_state),
-            "extensions": list(config.extensions),
-            "proxy": optional(proxy_value(config.proxy)),
-            "caCert": optional(config.ca_cert),
-            "provider": optional(config.provider),
-            "cdpUrl": optional(config.cdp_url),
-            "cdpPort": optional(config.cdp_port),
-            "autoConnect": config.auto_connect,
-            "allowFileAccess": config.allow_file_access,
-            "ignoreHTTPSErrors": config.ignore_https_errors,
-            "userAgent": optional(config.user_agent),
-            "downloadPath": optional(config.download_path),
-            "colorScheme": optional(config.color_scheme),
-            "hideScrollbars": optional(resolved_hide_scrollbars),
-            "webgpu": optional(config.webgpu),
-            "webmcp": optional(config.webmcp),
-            "noXvfb": optional(config.no_xvfb),
-            "allowedDomains": optional(config.allowed_domains),
+            "headless": options.headless,
+            "executablePath": optional(path_value(options.executable_path)),
+            "engine": optional(options.engine),
+            "args": list(options.args),
+            "profile": optional(path_value(options.profile)),
+            "storageState": optional(path_value(options.storage_state)),
+            "extensions": paths_value(options.extensions),
+            "proxy": optional(proxy_value(options.proxy)),
+            "caCert": optional(path_value(options.ca_cert)),
+            "provider": optional(options.provider),
+            "cdpUrl": optional(attach.url if attach is not None else None),
+            "cdpPort": optional(attach.port if attach is not None else None),
+            "autoConnect": attach.auto_connect if attach is not None else False,
+            "allowFileAccess": options.allow_file_access,
+            "ignoreHTTPSErrors": options.ignore_https_errors,
+            "userAgent": optional(options.user_agent),
+            "downloadPath": optional(path_value(options.download_path)),
+            "colorScheme": optional(options.color_scheme),
+            "hideScrollbars": optional(options.hide_scrollbars),
+            "webgpu": optional(options.webgpu),
+            "webmcp": optional(options.webmcp),
+            "noXvfb": optional(options.no_xvfb),
+            "capture": optional(list(options.capture) or None),
+            "allowedDomains": optional(self.allowed_domains),
         }

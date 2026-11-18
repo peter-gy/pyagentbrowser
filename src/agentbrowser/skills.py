@@ -30,8 +30,17 @@ class Skill:
     hidden: bool
     parts: tuple[str, ...]
 
+    @property
+    def references(self) -> tuple[str, ...]:
+        """Paths of the files directly inside `references/` and `templates/`."""
+        return tuple(part for part in self.parts if _is_reference(part))
+
     def read(self, path: str = MAIN) -> str:
-        """Return the text of one file in this skill."""
+        """Return the text of one file in this skill.
+
+        `path` is a relative path. A reference also answers to its file name
+        or stem, so `read("commands")` returns `references/commands.md`.
+        """
         return read(self.name, path)
 
     def markdown(self, *, full: bool = False) -> str:
@@ -61,14 +70,40 @@ def get(name: str) -> Skill:
 
 
 def read(name: str, path: str = MAIN) -> str:
-    """Return the text of one skill file. Raises `KeyError` for an unknown skill or part."""
+    """Return the text of one skill file.
+
+    `path` is a relative path. A reference also answers to its file name or
+    stem, so `read("core", "commands")` returns `references/commands.md`.
+    Raises `KeyError` for an unknown skill, an unknown part, or a name that
+    matches several references.
+    """
     normalized = _normalize(path)
     content = skill_file(name, normalized)
     if content is not None:
         return content
-    if skill_record(name) is None:
+    record = skill_record(name)
+    if record is None:
         raise KeyError(f"skill not found: {name}")
+    matches = [
+        part for part in record[2] if _is_reference(part) and normalized in _reference_names(part)
+    ]
+    if len(matches) > 1:
+        raise KeyError(
+            f"skill {name!r} reference {normalized!r} is ambiguous: {', '.join(matches)}"
+        )
+    if matches and (content := skill_file(name, matches[0])) is not None:
+        return content
     raise KeyError(f"skill {name!r} has no part {normalized!r}")
+
+
+def _is_reference(part: str) -> bool:
+    directory, _, file_name = part.rpartition("/")
+    return directory in {"references", "templates"} and bool(file_name)
+
+
+def _reference_names(part: str) -> tuple[str, str]:
+    file_name = part.rpartition("/")[2]
+    return file_name, file_name.split(".", 1)[0]
 
 
 def _normalize(path: str) -> str:

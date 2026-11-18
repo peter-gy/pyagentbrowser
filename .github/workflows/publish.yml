@@ -83,7 +83,7 @@ jobs:
             python: "3.11"
             target: x86_64
             artifact: macos-x86_64-abi3
-          - os: macos-14
+          - os: macos-15
             python: "3.11"
             target: aarch64
             artifact: macos-aarch64-abi3

@@ -48,6 +48,22 @@ worker includes queue time in this budget. Expiry before dispatch raises
 `TimeoutError`. An interrupted native command reports `code="execution_timeout"`.
 Inspect page state before retrying an interrupted mutation.
 
+## Change a session setting with a command
+
+Every native command accepts a `settings` object keyed by the engine's setting names. A live setting such as `default-timeout` applies in place, and the response reports each change under `lifecycle.settings`:
+
+```python
+with Browser.launch() as browser:
+    data = browser.native.data("url", settings={"default-timeout": 9000})
+    print(data["lifecycle"]["settings"]["changes"])
+    # [{'option': 'default-timeout', 'requested': 9000, 'running': 15000,
+    #   'effect': 'live', 'applied': True}]
+```
+
+A launch setting such as `profile`, `args`, or `capture` closes the running browser and launches another one before the action runs. Refs and frame handles from the closed browser are expired. An unknown setting name fails the command.
+
+A session keeps the `allowed-domains`, `action-policy`, and `confirm-actions` it started with. A command that would change one of them fails with `BrowserError.code == "security_settings"`. Set them through `SessionOptions`.
+
 ## Find the action vocabulary
 
 The engine's native dispatcher defines JSON action names and fields. Print the installed commit and inspect that exact source revision:

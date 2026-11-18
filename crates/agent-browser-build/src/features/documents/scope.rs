@@ -9,8 +9,19 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
     super::element::set_active_frame(state.active_frame_id.as_deref());"#;
     const SCOPED_SYNC: &str =
         r#"    // Explicit page and frame scope is applied after policy admission."#;
-    const UPSTREAM_POLICY_ACTIONS: &str = r#"    let policy_actions =
-        policy_actions_for_command(cmd, action, needs_launch, state.attached_target.as_ref());"#;
+    const UPSTREAM_POLICY_ACTIONS: &str = r#"    let policy_actions = policy_actions_for_command(
+        cmd,
+        action,
+        needs_launch,
+        state
+            .attached_target
+            .as_ref()
+            .filter(|_| !switches_connection),
+        run_flow.as_deref(),
+        launch_plan
+            .as_ref()
+            .map_or(&state.settings, |plan| &plan.next),
+    );"#;
     const SCOPED_POLICY_ACTIONS: &str = r#"    let needs_scope_switch = cmd
         .get("_targetId")
         .and_then(Value::as_str)
@@ -22,8 +33,19 @@ pub(crate) fn rewrite_scoped_page_commands(contents: Source) -> Source {
                     .and_then(|manager| manager.active_target_id().ok())
                     != Some(target_id)
         });
-    let mut policy_actions =
-        policy_actions_for_command(cmd, action, needs_launch, state.attached_target.as_ref());
+    let mut policy_actions = policy_actions_for_command(
+        cmd,
+        action,
+        needs_launch,
+        state
+            .attached_target
+            .as_ref()
+            .filter(|_| !switches_connection),
+        run_flow.as_deref(),
+        launch_plan
+            .as_ref()
+            .map_or(&state.settings, |plan| &plan.next),
+    );
     if needs_scope_switch {
         policy_actions.insert(0, "tab_switch".to_string());
     }"#;

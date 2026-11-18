@@ -10,6 +10,15 @@ class AgentBrowserError(RuntimeError):
     """Common catchable base for Python SDK errors."""
 
 
+class EngineWarning(UserWarning):
+    """Advisory the engine attached to a command response.
+
+    Checked commands emit it through `warnings.warn`. Examples are an installed
+    Chrome behind the stable release with fixed CVEs and a JavaScript dialog
+    that blocks the page.
+    """
+
+
 class NativeParseError(AgentBrowserError, ValueError):
     """Raised when native payloads cannot be parsed into typed SDK models."""
 

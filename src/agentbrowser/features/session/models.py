@@ -103,13 +103,15 @@ class CloseResult:
     save_status: RestoreSaveStatus | None = None
     state_path: Path | None = None
     save_error: str | None = None
+    unsaved_flow_steps: int = 0
     raw: Mapping[str, Any] = field(default_factory=dict)
 
     def __repr__(self) -> str:
         return (
             f"CloseResult(closed={self.closed!r}, restore_status={self.restore_status!r}, "
             f"save_status={self.save_status!r}, state_path={self.state_path!r}, "
-            f"save_error={self.save_error!r})"
+            f"save_error={self.save_error!r}, "
+            f"unsaved_flow_steps={self.unsaved_flow_steps!r})"
         )
 
 

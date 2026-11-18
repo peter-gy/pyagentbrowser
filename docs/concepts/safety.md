@@ -7,6 +7,8 @@ description: Configure domain containment, action confirmation, policy files, an
 
 `SessionOptions` attaches domain containment and action policy to one native session. The checks apply to typed namespaces and raw native calls.
 
+A session keeps the allowed domains, action policy, and confirm actions it started with. A command that would change one of them fails with `BrowserError.code == "security_settings"`. The rule covers a raw `settings` object, a raw `launch`, and every command a [saved flow](/guides/flows) replays. A session created without allowed domains can adopt a list through one raw `launch`.
+
 The direct `browser.cdp` WebSocket is a separate low-level command plane. Raw
 CDP methods bypass Python command policy and confirmation. Use the typed or raw
 native action path when those checks or controller lifecycle updates are part of

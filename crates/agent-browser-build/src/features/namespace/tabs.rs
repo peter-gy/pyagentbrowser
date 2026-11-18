@@ -69,6 +69,27 @@ pub fn clear_for_namespace(session: &str, namespace: Option<&str>) {
     let _ = fs::remove_file(binding_path_for_namespace(session, namespace));
 }"#,
     );
+    let contents = replace_once_named(
+        contents,
+        "tab binding namespace pin release",
+        r#"pub fn release_pin(session: &str) -> Result<Option<TabBinding>, String> {
+    match load(session)? {
+        Some(mut binding) if binding.pinned => {
+            binding.pinned = false;
+            save(session, &binding)?;"#,
+        r#"pub fn release_pin(session: &str) -> Result<Option<TabBinding>, String> {
+    release_pin_for_namespace(session, None)
+}
+
+pub fn release_pin_for_namespace(
+    session: &str,
+    namespace: Option<&str>,
+) -> Result<Option<TabBinding>, String> {
+    match load_for_namespace(session, namespace)? {
+        Some(mut binding) if binding.pinned => {
+            binding.pinned = false;
+            save_for_namespace(session, &binding, namespace)?;"#,
+    );
     fs::write(destination.as_path(), contents).expect("failed to write generated tab binding file");
     destination
 }

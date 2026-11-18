@@ -1,4 +1,5 @@
 use super::super::super::{
+    features::embedding::rewrite_chrome_module,
     patch::replace_once_named,
     source::{line, path_literal, read_rewrite_source, require_file},
 };
@@ -42,14 +43,15 @@ pub(crate) fn rewrite_cdp_module(out_dir: &Path, source: &Path) -> PathBuf {
         "types",
         "windows_process",
     ] {
-        let path = if name == "client" {
-            client.clone()
-        } else {
-            root.join(format!("{name}.rs"))
+        let path = match name {
+            "client" => client.clone(),
+            "chrome" => rewrite_chrome_module(out_dir, &root.join("chrome.rs")),
+            _ => {
+                let path = root.join(format!("{name}.rs"));
+                require_file(&path);
+                path
+            }
         };
-        if name != "client" {
-            require_file(&path);
-        }
         if name == "windows_process" {
             module.push_str("#[cfg(windows)]\n");
         }
