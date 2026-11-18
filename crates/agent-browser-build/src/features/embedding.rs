@@ -58,3 +58,19 @@ pub(crate) fn rewrite_session_settings_module(out_dir: &Path, source: &Path) -> 
         .expect("failed to write generated session settings file");
     destination
 }
+
+/// Chrome 157 renamed the feature that exposes `document.modelContext` from
+/// `WebMCPTesting` to `WebMCP`. Chrome ignores a feature name it does not know,
+/// so the launch enables both.
+pub(crate) fn rewrite_chrome_module(out_dir: &Path, source: &Path) -> PathBuf {
+    let contents = read_rewrite_source(source, "Chrome launch file").feature("webmcp");
+    let contents = replace_once_named(
+        contents,
+        "WebMCP feature name",
+        "        enable_features.push(\"WebMCPTesting\".to_string());\n",
+        "        enable_features.push(\"WebMCPTesting\".to_string());\n        enable_features.push(\"WebMCP\".to_string());\n",
+    );
+    let destination = out_dir.join("agent_browser_cdp_chrome.rs");
+    fs::write(destination.as_path(), contents).expect("failed to write generated Chrome file");
+    destination
+}

@@ -44,6 +44,7 @@ a Git submodule checkout.
 | CDP protocol types    | Generate browser and JavaScript protocol bindings from upstream JSON schemas         | Adapter compilation and native engine seams |
 | Confirmation identity | Park each command under its request ID, then authorize `confirm` and `deny` against that ID, current policy, and allowed domains before upstream replays the command | Adapter smoke confirmation cases            |
 | Session settings      | Build the settings from environment defaults, the environment connection target, and engine options, keep security settings in process memory, and refuse a planned change to them | Adapter smoke and native option tests       |
+| Chrome launch flags   | Enable the WebMCP feature under the name Chrome 157 and later use                    | WebMCP browser seam                         |
 | Namespaced state      | Thread namespace through saved state and restore paths                               | Native state tests                          |
 | Tab binding           | Persist namespace-aware target IDs and expose stable `targetId`                      | Tab and integration tests                   |
 | Stream response       | Preserve the success envelope expected by Python                                     | Native stream tests                         |
