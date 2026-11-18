@@ -93,7 +93,8 @@ The `core` skill teaches the engine's browser interaction workflow. `read(name)`
 core = skills.get("core")
 print(core.description)
 print(core.parts)  # ("SKILL.md", "references/commands.md", ...)
-print(core.read("references/commands.md"))
+print(core.references)  # ("references/authentication.md", ..., "templates/form-automation.sh")
+print(core.read("commands"))  # references/commands.md
 bundle = core.markdown(full=True)
 ```
 
@@ -103,8 +104,11 @@ bundle = core.markdown(full=True)
 | `get(name)` | One `Skill` with name, description, hidden flag, and part paths |
 | `read(name, path="SKILL.md")` | One file's text |
 | `Skill.read(path="SKILL.md")` | One file of that skill |
+| `Skill.references` | Paths of the files directly inside `references/` and `templates/` |
 | `Skill.markdown(*, full=False)` | `SKILL.md`, or every part joined under `--- path ---` headers |
 
-Use the main file when the agent needs the normal browser workflow. Load individual parts when a task reaches the capability they describe. Use `markdown(full=True)` when the host needs the complete instruction tree as one document.
+`read()` takes a relative path. A reference also answers to its file name or its stem, so `core.read("commands")`, `core.read("commands.md")`, and `core.read("references/commands.md")` return the same text. A name that matches several references raises `KeyError` with the candidate paths.
+
+The `core` skill's `SKILL.md` routes each task to one reference. Load the main file first, then load the single reference a task reaches. Use `markdown(full=True)` when the host needs the complete instruction tree as one document.
 
 Skill files are compiled into the native extension, so reads return text without parsing or file access. Part paths reject absolute paths, traversal, empty components, and malformed relative paths. Missing skills or files raise `KeyError`.

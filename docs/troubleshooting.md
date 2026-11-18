@@ -22,6 +22,20 @@ Set `AGENT_BROWSER_EXECUTABLE_PATH` or `LaunchOptions.executable_path` when disc
 
 On displayless Linux hosts, headed mode uses [Xvfb](https://www.x.org/releases/current/doc/man/man1/Xvfb.1.xhtml), a virtual X display server, by default. `LaunchOptions(no_xvfb=True)` requires an available display.
 
+## The engine reports a warning
+
+Typed methods and `browser.native.data()` emit an `EngineWarning` through Python's [`warnings`](https://docs.python.org/3/library/warnings.html) module when the engine attaches an advisory to a response. The engine warns when Chrome is behind the current stable release and the newer releases fixed CVEs, and when a JavaScript dialog blocks the page.
+
+```python
+import warnings
+
+from agentbrowser import EngineWarning
+
+warnings.filterwarnings("error", category=EngineWarning, message="A JavaScript .* dialog")
+```
+
+Run `ensure_installed()` or update the selected Chrome to clear the release warning. The engine checks each launched browser once by requesting the Chrome release feed from `chromereleases.googleblog.com` with a three-second timeout. Set `AGENT_BROWSER_NO_VERSION_CHECK=1` to skip that request. `browser.native.execute()` returns the same text in `BrowserResponse.warning` without emitting a Python warning.
+
 ## Attachment cannot select a tab
 
 Confirm that the remote-debugging port or WebSocket URL belongs to the intended browser. `agentbrowser.CDPTarget` accepts exactly one endpoint.
@@ -29,6 +43,14 @@ Confirm that the remote-debugging port or WebSocket URL belongs to the intended 
 Attachment selects a responsive page target. If every renderer is discarded, it attempts to reactivate the first one. A remaining failure raises `BrowserError`.
 
 For a pinned attached session, `BrowserError.code == "tab_gone"` means another client closed the bound page target. Inspect `error.response["data"]` for the target ID and optional last URL before choosing a recovery tab.
+
+## A download fails on an attached browser
+
+`browser.downloads` saves files only from a browser this session launched. On a session created with `Browser.attach()`, an environment CDP target, or a provider, the remote endpoint names the saved file, so the engine rejects the download with a `BrowserError`. Launch a local browser for download workflows.
+
+## A tab closed during a command
+
+A command whose tab or frame closes before Chrome answers fails at once with a `BrowserError` whose message contains `Target closed: CDP session <id> detached`. List the remaining tabs with `browser.tabs.list()` and continue on one of them.
 
 ## A tab stopped responding
 

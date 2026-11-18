@@ -1,6 +1,6 @@
 ---
 title: Capability namespace reference
-description: Exact method contracts for page, query, capture, tabs, state, network, input, diagnostics, WebMCP, CDP, and native namespaces.
+description: Exact method contracts for page, query, capture, tabs, state, network, input, diagnostics, WebMCP, saved flows, CDP, and native namespaces.
 ---
 
 # Capability namespace reference
@@ -20,6 +20,7 @@ description: Exact method contracts for page, query, capture, tabs, state, netwo
 | `scripts` | Page code and initialization scripts |
 | `diagnostics`, `dialogs` | Runtime inspection and JavaScript dialogs |
 | `webmcp`, `dashboard` | Agent tools and session observability |
+| `flows` | Recorded tasks saved as replayable requests |
 | `cdp` | Direct Chrome DevTools Protocol access |
 | `native` | Complete pinned engine protocol |
 
@@ -238,6 +239,21 @@ Supply one inline value or URL according to the method signature.
 | `invoke(tool, params=None, *, frame_id=None, detach=False, timeout_ms=None)` | Start a tool call and return `WebMCPInvocation`. |
 | `result(invocation_id, *, timeout_ms=None)` | Wait for a detached invocation. |
 | `cancel(invocation_id)` | Cancel an active invocation. |
+
+## `browser.flows`
+
+Saved flows are experimental in the embedded engine. `steps()` and `save()` need a session launched with `LaunchOptions(capture=["flow"])`.
+
+| Method | Contract |
+| --- | --- |
+| `steps()` | Return the `FlowRecording` of commands captured so far. |
+| `save(name, *, params=None, description=None, output=None, from_step=None, to_step=None, timeout_ms=None)` | Save recorded steps as a named flow and return `SavedFlow`. Each `params` value found in the recording becomes that parameter. |
+| `run(name, *, params=None, origin=None, allow_writes=(), where=None, fields=(), limit=None, timeout_ms=None)` | Send the flow's requests and return `FlowRun`. Works before a browser is launched. |
+| `list(*, origin=None)` | Return a `FlowSummary` for each flow on disk, optionally for one registrable domain. |
+
+A flow name uses letters, digits, `-`, and `_`. `params` and `where` map strings to strings. `allow_writes` takes `"all"` or a sequence of write IDs from `SavedFlow.writes`. A write it leaves out raises `ConfirmationRequired` with the action `flow_write:<id>`. `fields` takes dotted paths. `timeout_ms` on `save()` bounds the wait for requests still loading, and on `run()` it bounds the whole run.
+
+`run()` raises `FlowRunError` when the site stops the run. See [Record and run saved flows](/guides/flows).
 
 ## `browser.cdp`
 

@@ -87,8 +87,9 @@ function, frame, capture, scrolling, and geometry operations.
 | `ignore_https_errors` | `False` | Continue through certificate validation errors. |
 | `user_agent` | `None` | Set the launch user agent. |
 | `download_path` | `None` | Set the default download directory. |
+| `capture` | `()` | Record the session for [saved flows](/guides/flows). `"flow"` is the supported mode. |
 
-Pass sequences for `extensions` and `args`. Scalar strings raise `TypeError`.
+Pass sequences for `extensions`, `args`, and `capture`. Scalar strings raise `TypeError`. An unknown capture mode raises `ValueError`.
 
 `ca_cert` requires a local Chrome engine on Linux. It conflicts with browser profiles, `ignore_https_errors`, CDP attachment, and provider connections. The host needs `certutil` from `libnss3-tools` on Debian or Ubuntu, or `nss-tools` on RPM Linux.
 
@@ -96,7 +97,7 @@ WebGPU and `no_xvfb=True` apply to local launches. External endpoints and provid
 
 Built-in providers are `browserbase`, `browserless`, `browser-use` or `browseruse`, `kernel`, `agentcore`, `ios`, and `safari`. A configured browser-provider plugin can supply another name. Provider sessions require their service credentials, network access, and platform setup. Use the [upstream provider configuration](https://agent-browser.dev/configuration) for the engine version reported by `agentbrowser.__agent_browser_version__`.
 
-When attaching, `CDPTarget` supplies the endpoint and `launch` supplies remaining browser settings. Attachment rejects profiles, extensions, `ca_cert`, WebGPU, `no_xvfb=True`, and session domain containment. Local executable and browser-argument fields have no local process to configure.
+When attaching, `CDPTarget` supplies the endpoint and `launch` supplies remaining browser settings. Attachment rejects `ca_cert`, WebGPU, `no_xvfb=True`, and session domain containment. The engine ignores profiles, extensions, executable paths, and browser arguments on an attached session, because they configure a local process.
 
 [Lightpanda](https://lightpanda.io/) is a headless browser engine designed for machine workloads. Install its binary before selecting it. Profiles, storage-state launch, extensions, file access, headed mode, WebGPU, private CA import, and custom Chrome arguments are Chrome-specific. The [agent-browser Lightpanda guide](https://agent-browser.dev/engines/lightpanda) records its installation and current protocol coverage.
 

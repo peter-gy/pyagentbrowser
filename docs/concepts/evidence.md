@@ -38,6 +38,24 @@ link = snapshot.one(role="link", name="Learn more")
 
 `one()` raises `LookupError` for zero or several matches. Use `all()` when the page can contain several matching elements. `ref("e1")` and `ref("@e1")` select an exact ref ID.
 
+### Tell apart controls that share a name
+
+A table with one `Delete` button per row gives every button the same role and name. The engine prints a hint beside each control whose accessible name is empty or shared with another ref in the snapshot:
+
+```text
+- button "Delete" [ref=e4] hint="icon:lucide-trash; in:Invoice 41"
+- button "Delete" [ref=e7] hint="icon:lucide-trash; in:Invoice 42"
+```
+
+`Ref.hint` holds that text, and `hint=` selects by a substring of it:
+
+```python
+delete = snapshot.one(role="button", name="Delete", hint="Invoice 42")
+print(delete.hint)  # icon:lucide-trash; in:Invoice 42
+```
+
+A hint lists the control's icon, image file, `data-testid`, `name` or `id`, and the text of its nearest table row or list item. `Ref.hint` is `None` for a control whose role and name are unique in the snapshot. The `LookupError` for several matches prints each candidate's hint.
+
 ## A ref mutation captures a transition
 
 ```python
@@ -72,7 +90,7 @@ except StaleRefError as error:
     result = error.refresh().click()
 ```
 
-`refresh()` captures a new snapshot and resolves the accessible role and name again. Pass new criteria when the page changed the element's accessible identity.
+`refresh()` captures a new snapshot and resolves the accessible role and name again. When several refs share that role and name, it selects the one that carries the stale ref's hint. Pass new criteria when the page changed the element's accessible identity.
 
 ## Use a live query for direct control
 
