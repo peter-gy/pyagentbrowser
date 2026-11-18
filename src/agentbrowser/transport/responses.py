@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import sys
+import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
+from pathlib import Path
 from typing import Any, cast
 
-from agentbrowser.contracts.errors import BrowserError, ConfirmationRequired
+from agentbrowser.contracts.errors import BrowserError, ConfirmationRequired, EngineWarning
 from agentbrowser.contracts.protocol import BrowserResponse, response_data_mapping
 from agentbrowser.contracts.types import JSONMapping, JSONObject, JSONValue
 from agentbrowser.transport.policy import DomainAllowlist
@@ -37,7 +40,25 @@ def _response_from_mapping(
     )
 
 
+_PACKAGE_DIR = str(Path(__file__).resolve().parents[1])
+
+
+def _warn(response: BrowserResponse, *, reported: str | None = None) -> None:
+    """Emit the response warning, leaving out lines `reported` already carried."""
+    known = (reported or "").splitlines()
+    message = "\n".join(line for line in (response.warning or "").splitlines() if line not in known)
+    if not message:
+        return
+    if sys.version_info >= (3, 12):
+        # Attribute the warning to the caller's line so the default filter
+        # reports it once per call site.
+        warnings.warn(message, EngineWarning, skip_file_prefixes=(_PACKAGE_DIR,))
+    else:
+        warnings.warn(message, EngineWarning, stacklevel=2)
+
+
 def _checked_response(action: str, response: BrowserResponse) -> BrowserResponse:
+    _warn(response)
     if not response.success:
         message = str(response.raw.get("error", "unknown native error"))
         raise BrowserError(action, message, response.raw)
@@ -125,6 +146,8 @@ def _unwrap_confirmed_response(response: BrowserResponse) -> BrowserResponse:
         command_id=response.id,
         raw=result,
     )
+    # The engine repeats the confirmed command's warning on the envelope.
+    _warn(unwrapped, reported=response.warning)
     if not unwrapped.success:
         message = str(result.get("error", "confirmed action failed"))
         raise BrowserError(confirmed_action, message, result)

@@ -1,11 +1,68 @@
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from typing import Any, cast
 
 from agentbrowser.contracts.errors import NativeParseError
 from agentbrowser.features.evidence.changes import SnapshotDiff
 from agentbrowser.features.evidence.models import SnapshotData, SnapshotSpec
+
+# The engine prints a tree line as
+#   - role "json name" [level=1, ref=e7, url=/x] hint="rust debug string": value
+# The name is a JSON string and the attributes before `ref` are engine values.
+# The URL and everything after the attribute block are page text.
+_REF_LINE = re.compile(
+    r"""
+    \s* -[ ] \S+                                  # role
+    (?: [ ] " (?: [^"\\] | \\. )* " )?             # name
+    [ ] \[ (?: [a-z]+ (?: = [A-Za-z0-9]+ )? ,[ ] )*  # attributes before the ref
+    ref= (?P<ref> [A-Za-z0-9_-]+ )
+    (?P<url> ,[ ] url= )?
+    """,
+    re.VERBOSE,
+)
+_BLOCK_END_HINT = re.compile(r'\] hint="(?P<hint>(?:[^"\\]|\\.)*)"')
+_DEBUG_ESCAPE = re.compile(r"\\(?:u\{(?P<code>[0-9a-fA-F]{1,6})\}|(?P<char>.))")
+_DEBUG_CHARS = {"n": "\n", "r": "\r", "t": "\t", "0": "\0"}
+
+
+def _debug_unescape(text: str) -> str:
+    def replace(match: re.Match[str]) -> str:
+        code = match.group("code")
+        if code is not None:
+            point = int(code, 16)
+            return chr(point) if point <= 0x10FFFF else match.group(0)
+        char = match.group("char")
+        return _DEBUG_CHARS.get(char, char)
+
+    return _DEBUG_ESCAPE.sub(replace, text)
+
+
+def _line_hint(line: str) -> tuple[str, str] | None:
+    """Return the ref and hint one tree line prints for its own node."""
+    node = _REF_LINE.match(line)
+    if node is None:
+        return None
+    if node.group("url") is None:
+        hint = _BLOCK_END_HINT.match(line, node.end())
+    else:
+        # A URL is unescaped page text and can contain `] hint="..."` itself,
+        # so the line carries a hint only when exactly one candidate follows.
+        candidates = list(_BLOCK_END_HINT.finditer(line, node.end()))
+        hint = candidates[0] if len(candidates) == 1 else None
+    if hint is None:
+        return None
+    return node.group("ref"), _debug_unescape(hint.group("hint"))
+
+
+def _hints(text: str, refs: Mapping[str, Any]) -> dict[str, str]:
+    hints: dict[str, str] = {}
+    for line in text.split("\n"):
+        found = _line_hint(line)
+        if found is not None and found[0] in refs:
+            hints[found[0]] = found[1]
+    return hints
 
 
 def snapshot_from_data(
@@ -35,6 +92,7 @@ def snapshot_from_data(
         refs=refs,
         raw=data,
         spec=spec or SnapshotSpec(),
+        hints=_hints(text, refs),
     )
 
 

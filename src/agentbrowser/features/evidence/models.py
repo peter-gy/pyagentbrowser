@@ -34,6 +34,8 @@ class SnapshotData:
         Mapping of snapshot ref ids to accessible metadata.
     raw
         Complete native response mapping.
+    hints
+        Mapping of snapshot ref ids to the hint printed beside the ref.
     """
 
     text: str
@@ -42,6 +44,7 @@ class SnapshotData:
     raw: Mapping[str, Any]
     spec: SnapshotSpec = field(default_factory=SnapshotSpec)
     generation: int = 0
+    hints: Mapping[str, str] = field(default_factory=dict)
 
     def ref(self, ref_id: str) -> SnapshotRef:
         """Return one snapshot ref by id.
@@ -65,6 +68,7 @@ class SnapshotData:
             role=str(metadata.get("role", "")),
             name=str(metadata.get("name", "")),
             raw=metadata,
+            hint=self.hints.get(normalized),
         )
 
     def find_refs(
@@ -73,14 +77,15 @@ class SnapshotData:
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
+        hint: str | None = None,
         exact: bool = False,
     ) -> list[SnapshotRef]:
-        """Return refs matching role/name/text criteria."""
+        """Return refs matching role, name, and hint criteria."""
         refs = [self.ref(ref_id) for ref_id in self.refs]
         return [
             ref
             for ref in refs
-            if _matches_ref(ref, role=role, name=name, contains=contains, exact=exact)
+            if _matches_ref(ref, role=role, name=name, contains=contains, hint=hint, exact=exact)
         ]
 
     def one_ref(
@@ -89,6 +94,7 @@ class SnapshotData:
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
+        hint: str | None = None,
         exact: bool = False,
     ) -> SnapshotRef:
         """Return one matching ref or raise with bounded recovery context."""
@@ -96,37 +102,48 @@ class SnapshotData:
             role=role,
             name=name,
             contains=contains,
+            hint=hint,
             exact=exact,
         )
         criteria = _ref_criteria(
             role=role,
             name=name,
             contains=contains,
+            hint=hint,
             exact=exact,
         )
         if not matches:
             available = ", ".join(
-                f"{ref.selector} {ref.role} {ref.name!r}"
-                for ref in (self.ref(ref_id) for ref_id in tuple(self.refs)[:8])
+                _describe(ref) for ref in (self.ref(ref_id) for ref_id in tuple(self.refs)[:8])
             )
             suffix = f". Available refs: {available}" if available else ". Snapshot has no refs"
             raise LookupError(f"snapshot contains no matching ref for {criteria}{suffix}")
         if len(matches) > 1:
-            selectors = ", ".join(match.selector for match in matches[:8])
+            candidates = ", ".join(
+                match.selector if match.hint is None else f"{match.selector} hint={match.hint!r}"
+                for match in matches[:8]
+            )
             raise LookupError(
-                f"snapshot criteria matched multiple refs for {criteria}: {selectors}"
+                f"snapshot criteria matched multiple refs for {criteria}: {candidates}"
             )
         return matches[0]
 
 
 @dataclass(frozen=True, slots=True)
 class SnapshotRef:
-    """A deterministic element ref produced by an agent-browser snapshot."""
+    """A deterministic element ref produced by an agent-browser snapshot.
+
+    `hint` is the engine's disambiguation text for a control whose accessible
+    name is empty or shared with another ref in the same snapshot. It lists the
+    control's icon, image file, `data-testid`, `name` or `id`, and the text of
+    its nearest row or list item, such as `icon:lucide-trash; in:Invoice 42`.
+    """
 
     id: str
     role: str
     name: str
     raw: Mapping[str, Any]
+    hint: str | None = None
 
     @property
     def selector(self) -> str:
@@ -142,17 +159,24 @@ def normalize_ref(ref_id: str) -> str:
     return ref_id[1:] if ref_id.startswith("@") else ref_id
 
 
+def _describe(ref: SnapshotRef) -> str:
+    described = f"{ref.selector} {ref.role} {ref.name!r}"
+    return described if ref.hint is None else f"{described} hint={ref.hint!r}"
+
+
 def _ref_criteria(
     *,
     role: str | None,
     name: str | None,
     contains: str | None,
+    hint: str | None,
     exact: bool,
 ) -> str:
     values = {
         "role": role,
         "name": name,
         "contains": contains,
+        "hint": hint,
         "exact": exact,
     }
     return (
@@ -171,9 +195,12 @@ def _matches_ref(
     role: str | None,
     name: str | None,
     contains: str | None,
+    hint: str | None,
     exact: bool,
 ) -> bool:
     if role is not None and ref.role != role:
+        return False
+    if hint is not None and (ref.hint is None or hint not in ref.hint):
         return False
     if name is not None:
         matches_name = ref.name == name if exact else name in ref.name

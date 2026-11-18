@@ -72,15 +72,21 @@ class Snapshot:
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
+        hint: str | None = None,
         exact: bool = False,
     ) -> Ref:
-        """Return one ref matching accessible metadata."""
+        """Return one ref matching accessible metadata.
+
+        `hint` matches a substring of the ref's hint, which tells apart
+        controls that share a name.
+        """
         return Ref(
             self,
             self._data.one_ref(
                 role=role,
                 name=name,
                 contains=contains,
+                hint=hint,
                 exact=exact,
             ),
         )
@@ -91,6 +97,7 @@ class Snapshot:
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
+        hint: str | None = None,
         exact: bool = False,
     ) -> tuple[Ref, ...]:
         """Return all refs matching accessible metadata."""
@@ -100,6 +107,7 @@ class Snapshot:
                 role=role,
                 name=name,
                 contains=contains,
+                hint=hint,
                 exact=exact,
             )
         )
@@ -179,15 +187,21 @@ class AsyncSnapshot:
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
+        hint: str | None = None,
         exact: bool = False,
     ) -> AsyncRef:
-        """Return one ref matching accessible metadata."""
+        """Return one ref matching accessible metadata.
+
+        `hint` matches a substring of the ref's hint, which tells apart
+        controls that share a name.
+        """
         return AsyncRef(
             self,
             self._data.one_ref(
                 role=role,
                 name=name,
                 contains=contains,
+                hint=hint,
                 exact=exact,
             ),
         )
@@ -198,6 +212,7 @@ class AsyncSnapshot:
         role: str | None = None,
         name: str | None = None,
         contains: str | None = None,
+        hint: str | None = None,
         exact: bool = False,
     ) -> tuple[AsyncRef, ...]:
         """Return all refs matching accessible metadata."""
@@ -207,6 +222,7 @@ class AsyncSnapshot:
                 role=role,
                 name=name,
                 contains=contains,
+                hint=hint,
                 exact=exact,
             )
         )

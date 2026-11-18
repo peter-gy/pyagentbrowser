@@ -9,7 +9,7 @@ from typing import Any
 from agentbrowser.contracts.actions import INTERNAL_SHUTDOWN_ACTION
 from agentbrowser.contracts.protocol import OMIT
 from agentbrowser.install import ensure_installed
-from agentbrowser.launch import LaunchConfiguration, LaunchOptions
+from agentbrowser.launch import LaunchConfiguration
 
 _SKIP_AUTO_INSTALL_ACTIONS = {
     "",
@@ -17,6 +17,10 @@ _SKIP_AUTO_INSTALL_ACTIONS = {
     "close",
     "read",
     "har_stop",
+    "flow_save",
+    "flow_steps",
+    "flow_run",
+    "flow_list",
     "credentials_set",
     "credentials_get",
     "credentials_delete",
@@ -78,13 +82,13 @@ class Startup:
     auto_install: bool
     installed: bool = False
 
-    def launch_params(self, options: LaunchOptions | None = None) -> dict[str, Any]:
-        params = self.configuration.command_params(options=options)
+    def launch_params(self) -> dict[str, Any]:
+        params = self.configuration.command_params()
         self._prepare_launch(params)
         return params
 
-    async def launch_params_async(self, options: LaunchOptions | None = None) -> dict[str, Any]:
-        params = self.configuration.command_params(options=options)
+    async def launch_params_async(self) -> dict[str, Any]:
+        params = self.configuration.command_params()
         await asyncio.to_thread(self._prepare_launch, params)
         return params
 

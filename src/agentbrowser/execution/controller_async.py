@@ -17,7 +17,7 @@ from agentbrowser.execution.startup import Startup, requires_start
 from agentbrowser.execution.state import CommandState
 from agentbrowser.features.session.codec import close_result_from_data
 from agentbrowser.features.session.models import CloseResult, RestoreSaveError
-from agentbrowser.launch import LaunchConfiguration, LaunchOptions, SessionOptions
+from agentbrowser.launch import LaunchConfiguration, SessionOptions
 from agentbrowser.transport.async_ import AsyncNativeSession
 from agentbrowser.transport.responses import (
     _checked_response,
@@ -68,9 +68,9 @@ class AsyncController:
     def closed(self) -> bool:
         return self._close_task is not None or self._session.closed
 
-    async def start(self, *, options: LaunchOptions | None = None) -> JSONMapping:
+    async def start(self) -> JSONMapping:
         self._ensure_open()
-        params = await self._startup.launch_params_async(options)
+        params = await self._startup.launch_params_async()
         return await self._command("launch", **params)
 
     def _record_native_metadata(self, response: BrowserResponse) -> None:

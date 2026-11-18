@@ -35,6 +35,16 @@ def test_read_returns_main_and_supplementary_parts() -> None:
     assert core.read(f"./{reference}") == core.read(reference)
 
 
+def test_read_resolves_a_reference_by_file_name_or_stem() -> None:
+    core = skills.get("core")
+
+    assert "references/commands.md" in core.references
+    assert "SKILL.md" not in core.references
+    assert core.read("commands") == core.read("references/commands.md")
+    assert skills.read("core", "commands.md") == core.read("references/commands.md")
+    assert core.read("form-automation") == core.read("templates/form-automation.sh")
+
+
 def test_markdown_appends_every_part_when_full() -> None:
     core = skills.get("core")
 

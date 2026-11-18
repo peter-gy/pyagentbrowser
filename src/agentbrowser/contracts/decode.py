@@ -139,3 +139,19 @@ def optional_flag(data: Mapping[str, Any], field: str, *, model: str) -> bool:
     if not isinstance(value, bool):
         raise NativeParseError(f"{model} field '{field}' must be a boolean")
     return value
+
+
+def required_objects(
+    data: Mapping[str, Any], field: str, *, action: str
+) -> tuple[Mapping[str, Any], ...]:
+    value = data.get(field)
+    if not isinstance(value, list) or any(not isinstance(item, Mapping) for item in value):
+        raise NativeParseError(f"{action} field '{field}' must be an array of objects")
+    return tuple(value)
+
+
+def string_mapping(data: Mapping[str, Any], field: str, *, action: str) -> Mapping[str, str]:
+    value = data.get(field)
+    if not isinstance(value, Mapping) or any(not isinstance(item, str) for item in value.values()):
+        raise NativeParseError(f"{action} field '{field}' must be an object of strings")
+    return value

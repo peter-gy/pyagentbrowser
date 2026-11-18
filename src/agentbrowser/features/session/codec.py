@@ -87,11 +87,17 @@ def close_result_from_data(data: Mapping[str, Any]) -> CloseResult:
     if not closed:
         raise NativeParseError("close field 'closed' must be true")
     state_path = optional_string(data, "statePath", action=action)
+    unsaved = data.get("unsaved")
+    if unsaved is not None and not isinstance(unsaved, Mapping):
+        raise NativeParseError("close field 'unsaved' must be an object")
     return CloseResult(
         closed=closed,
         restore_status=_restore_status(data, action=action),
         save_status=_save_status(data, action=action),
         state_path=Path(state_path) if state_path is not None else None,
         save_error=optional_string(data, "saveError", action=action),
+        unsaved_flow_steps=(
+            required_int(unsaved, "steps", action="close unsaved") if unsaved is not None else 0
+        ),
         raw=data,
     )
