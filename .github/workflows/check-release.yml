@@ -83,7 +83,7 @@ jobs:
     if: needs.changes.outputs.source == 'true'
     uses: ./.github/workflows/build-wheel.yml
     with:
-      os: macos-14
+      os: macos-15
       python: "3.11"
       target: aarch64
       artifact: check-macos-aarch64-abi3
@@ -108,7 +108,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-14]
+        os: [ubuntu-latest, macos-15]
     steps:
       - uses: actions/checkout@v6
         with:
@@ -171,7 +171,7 @@ jobs:
         include:
           - os: ubuntu-latest
             artifact: check-linux-x86_64-abi3
-          - os: macos-14
+          - os: macos-15
             artifact: check-macos-aarch64-abi3
           - os: windows-latest
             artifact: check-windows-x86_64-abi3
