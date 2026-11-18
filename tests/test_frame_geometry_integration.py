@@ -45,7 +45,8 @@ def test_frame_capture_clips_every_ancestor_viewport(
         return f'<iframe style="{style}" src="{url}"></iframe>'
 
     other_site = frame_site.replace("127.0.0.1", "localhost")
-    inner = document("<script>window.ready = true</script>", "red")
+    painted = "requestAnimationFrame(() => requestAnimationFrame(() => { window.painted = true }))"
+    inner = document(f"<script>{painted}</script>", "red")
     middle = document(
         frame(f"{other_site}/inner.html", "left:10px;top:20px;width:500px;height:400px"), "blue"
     )
@@ -69,7 +70,11 @@ def test_frame_capture_clips_every_ancestor_viewport(
         outer_frame = browser.page.frames.get(selector="iframe")
         middle_frame = outer_frame.frames.get(selector="iframe")
         inner_frame = middle_frame.frames.get(selector="iframe")
-        inner_frame.wait_for_function("window.ready === true")
+        # The capture takes no settle time, so wait until the innermost frame
+        # has drawn and the page has composited it.
+        inner_frame.wait_for_function("window.painted === true")
+        browser.page.evaluate(painted)
+        browser.page.wait_for_function("window.painted === true")
         # Cross-process projection requires more than one iframe CDP session.
         trees = browser.native.data("frame", list=True)["oopifFrameTrees"]
         assert isinstance(trees, list) and len(trees) >= 2
