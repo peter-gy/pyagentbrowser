@@ -153,8 +153,9 @@ browser_agent.close("review")
 ```
 
 Replace `connect()` with `create()` at ownership boundaries and `get()` at
-retrieval sites. Replace `disconnect()` with `close()`. Duplicate and missing
-names now fail, which prevents a retrieval typo from starting another browser.
+retrieval sites. Replace `disconnect()` with `close()`. `create()` raises
+`ValueError` for a registered name, and `get()` raises `KeyError` for an
+unknown name, so a misspelled name cannot start another browser.
 
 ### Carry frame scope through a handle
 

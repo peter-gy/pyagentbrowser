@@ -90,5 +90,3 @@ with Browser.launch() as browser:
 ```
 
 Native action names and response shapes follow the embedded engine version. Promote repeated application code to a typed wrapper only when the application can own its validation and result shape.
-
-Compose application workflows with the public `Page` and `Frame` methods.

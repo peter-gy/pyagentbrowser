@@ -5,9 +5,7 @@ description: Understand why pyagentbrowser combines a native browser engine with
 
 # Why pyagentbrowser?
 
-Browser automation for agents has to answer more than whether a click returned successfully. The caller also needs to know what page state the agent inspected, what changed after the action, which browser resources remain active, and which targets the session may reach.
-
-pyagentbrowser makes those questions part of the Python contract.
+After an agent clicks, the caller needs to know what page state the agent inspected, what changed after the action, which browser resources remain active, and which targets the session may reach. pyagentbrowser answers each of these questions through its Python API.
 
 ## Keep the engine in the Python process
 
@@ -22,7 +20,7 @@ The native `agent-browser` engine is embedded in the installed extension. A `Bro
 
 ## Make page state explicit
 
-An accessibility snapshot records the page structure used to select an element. A ref remains attached to that snapshot. This creates a concrete chain from observation to target to action.
+An accessibility snapshot records the page structure used to select an element. A ref remains attached to that snapshot.
 
 ```text
 Snapshot A
@@ -32,7 +30,7 @@ Snapshot A
   -> SnapshotDiff(A, B)
 ```
 
-A live query offers a separate contract for workflows that need a locator resolved at execution time. The distinction lets callers choose evidence or direct control deliberately.
+A live query is a separate contract. It resolves its locator each time an operation runs.
 
 ## Own browser resources as one lifecycle
 
@@ -40,9 +38,9 @@ The controller tracks the native session, browser process or attachment, current
 
 The asynchronous controller keeps native calls ordered on one owner thread while the Python event loop remains available. Concurrent close calls share one terminal result.
 
-## Keep the Python surface focused
+## Promote native actions to typed APIs
 
-The SDK promotes a native action when Python can provide a stable workflow, validation, a typed result, or lifecycle behavior. The remaining engine surface stays available through:
+The SDK promotes a native action when Python can provide a stable workflow, validation, a typed result, or lifecycle behavior. Every other engine action stays available through `browser.native`:
 
 ```python
 from agentbrowser import Browser

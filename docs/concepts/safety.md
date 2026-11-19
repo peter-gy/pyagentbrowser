@@ -9,10 +9,9 @@ description: Configure domain containment, action confirmation, policy files, an
 
 A session keeps the allowed domains, action policy, and confirm actions it started with. A command that would change one of them fails with `BrowserError.code == "security_settings"`. The rule covers a raw `settings` object, a raw `launch`, and every command a [saved flow](/guides/flows) replays. A session created without allowed domains can adopt a list through one raw `launch`.
 
-The direct `browser.cdp` WebSocket is a separate low-level command plane. Raw
-CDP methods bypass Python command policy and confirmation. Use the typed or raw
-native action path when those checks or controller lifecycle updates are part of
-the application contract.
+Raw `browser.cdp` methods travel over a separate WebSocket and skip action
+policy and confirmation. Use the typed or raw native action path when those
+checks or controller lifecycle updates are part of the application contract.
 
 ## Restrict reachable domains
 
@@ -52,7 +51,7 @@ with Browser.launch(session=session) as browser:
 
 `PendingAction.confirm()` resumes the initiating operation and preserves its return type. For a ref mutation, the continuation also completes the requested wait, next snapshot, and diff. `deny()` rejects it. `map()` attaches higher-level work that runs after confirmation.
 
-Confirmation replay loads the current policy and checks target domains again. A pending action cannot use stale authorization to cross a changed boundary.
+Confirmation replay loads the current policy and checks target domains again.
 
 `SessionOptions.action_policy` accepts a JSON file with `default`, `allow`, `deny`, and `confirm` fields:
 
@@ -72,7 +71,7 @@ The policy file must remain readable and valid JSON. The engine rereads it befor
 
 ## Explicit unscoped operations
 
-These flags widen one operation and should appear at the call site that needs them:
+Each flag widens one operation. Pass it at the call that needs the wider scope:
 
 | Flag | Operation |
 | --- | --- |
