@@ -53,7 +53,6 @@ seconds. Shared cleanup continues after a caller stops waiting.
 
 `tests/test_api_parity.py` checks public signatures. Capability tests establish
 returned values, error behavior, confirmation, and lifecycle. Use
-`tests/test_extensions.py` for the consumer extension boundary and
 `make test-integration` when the contract requires real document state.
 
 ## Public imports
