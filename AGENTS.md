@@ -19,21 +19,23 @@ pixi run --locked check
 ```
 
 The committed `pixi.lock` supplies Python 3.14, the Rust toolchain that
-`rust-toolchain.toml` pins (including Clippy and rustfmt), C/C++ compilers and a Linux sysroot, Make, Git, uv, Node.js, pnpm,
-FFmpeg, and Linux Chrome runtime libraries. Supported development platforms are
-Linux x86-64/arm64 and macOS Intel/Apple Silicon. On Windows use WSL2 with a Linux
-checkout; native Windows wheels remain covered by release CI. macOS also needs
-Apple's SDK (`xcode-select --install`). Pixi cannot distribute that SDK.
+`rust-toolchain.toml` pins with Clippy and rustfmt, C and C++ compilers, a
+Linux sysroot, Make, Git, uv, Node.js, pnpm, FFmpeg, and Linux Chrome runtime
+libraries. Supported development platforms are Linux x86-64 and arm64, and
+macOS on Intel and Apple Silicon. On Windows, use WSL2 with a Linux checkout.
+Release CI builds and tests the native Windows wheels. macOS also needs Apple's
+SDK (`xcode-select --install`), which Pixi cannot distribute.
 The Linux Rust linker uses GCC's built-in specs to keep local Conda RPATHs out
 of wheels while retaining the locked compiler and sysroot. On macOS the
 extension links through Apple's `/usr/bin/cc` for the same reason.
 
-Use `pixi run --locked <task>` for the tasks below, or `pixi shell` and then
-ordinary `make` / `uv run --no-sync` commands. Python dependencies and the
-editable extension live in `.venv`; `.pixi` owns the system toolchain. For a
-focused test use `pixi run --locked uv run --no-sync pytest -q path/to/test.py`.
-Rebuild with `pixi run --locked install` after native changes. `pixi run python`
-uses the toolchain interpreter; use `uv run --no-sync python` to import the SDK.
+Use `pixi run --locked <task>` for the tasks below, or run `pixi shell` and
+then ordinary `make` and `uv run --no-sync` commands. Python dependencies and
+the editable extension live in `.venv`, and `.pixi` owns the system toolchain.
+For a focused test, use
+`pixi run --locked uv run --no-sync pytest -q path/to/test.py`. Rebuild with
+`pixi run --locked install` after native changes. `pixi run python` starts the
+toolchain interpreter. Use `uv run --no-sync python` to import the SDK.
 
 For browser work, run `pixi run --locked browser-install`, then
 `pixi run --locked test-integration`. Browser downloads use the SDK's Chrome for
@@ -41,8 +43,9 @@ Testing cache and are separate from `pixi.lock`. Linux arm64 needs an installed
 Chromium executable selected with `PYAGENTBROWSER_CHROME` because Chrome for
 Testing has no Linux arm64 download. In containers with restricted user
 namespaces, use `CI=1 pixi run --locked test-integration` to apply the upstream
-engine's CI launch settings. Docs work starts with
-`pixi run --locked docs-dev`; validate with `pixi run --locked docs-check`.
+engine's CI launch settings. Start docs work with
+`pixi run --locked docs-dev` and validate it with
+`pixi run --locked docs-check`.
 
 Keep dependency ownership separate: update `pixi.toml` and `pixi.lock` for
 system tools, `pyproject.toml` and `uv.lock` for Python packages, and

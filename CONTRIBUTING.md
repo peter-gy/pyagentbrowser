@@ -15,10 +15,10 @@ Silicon. Windows contributors can use WSL2 and a Linux checkout. macOS needs
 Apple's SDK from `xcode-select --install`. See [AGENTS.md](AGENTS.md#development-setup)
 for tool versions, browser setup, focused tests, and dependency updates.
 
-Run `pixi shell` to use the Make commands below, or use their matching Pixi tasks
-(e.g. `pixi run --locked test-sdk`). Python dependencies remain locked by
-`uv.lock` and install into `.venv`; Pixi owns the interpreter and native tools.
-Build the editable extension again after changing Rust code.
+Run `pixi shell` to use the Make commands below, or use their matching Pixi
+tasks, such as `pixi run --locked test-sdk`. `uv.lock` pins the Python
+dependencies, which install into `.venv`. Pixi owns the interpreter and native
+tools. Build the editable extension again after changing Rust code.
 
 ## Command map
 
