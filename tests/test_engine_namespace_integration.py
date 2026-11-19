@@ -20,9 +20,7 @@ def test_session_binding_stays_in_its_namespace_and_close_releases_the_pin(
 ) -> None:
     socket_dir = tmp_path / "sockets"
     monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
-    # The engine writes its launch sidecar files only into an existing directory.
     binding_path = socket_dir / "namespaces" / "worker-a" / "run" / "research.target"
-    binding_path.parent.mkdir(parents=True)
     (tmp_path / "page.html").write_text("<!doctype html><title>Namespace</title>")
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(tmp_path))

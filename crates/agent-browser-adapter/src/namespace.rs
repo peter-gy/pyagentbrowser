@@ -11,6 +11,7 @@ use std::{
     cell::RefCell,
     env,
     future::Future,
+    marker::PhantomData,
     pin::Pin,
     task::{Context, Poll},
 };
@@ -43,9 +44,13 @@ impl Namespace {
     }
 
     /// Enters the namespace until the guard drops, then restores what the
-    /// thread had entered before.
-    pub fn enter(&self) -> Entered {
-        Entered(ENTERED.replace(Some(self.0.clone())))
+    /// thread had entered before. Guards must drop in reverse order on the
+    /// thread that made them, so the guard stays inside this crate.
+    pub(crate) fn enter(&self) -> Entered {
+        Entered {
+            previous: ENTERED.replace(Some(self.0.clone())),
+            thread_bound: PhantomData,
+        }
     }
 
     /// Enters the namespace for the rest of the thread's life. Call it when a
@@ -68,11 +73,14 @@ impl Namespace {
 }
 
 /// Restores the thread's previous namespace on drop.
-pub struct Entered(Option<Option<String>>);
+pub(crate) struct Entered {
+    previous: Option<Option<String>>,
+    thread_bound: PhantomData<*const ()>,
+}
 
 impl Drop for Entered {
     fn drop(&mut self) {
-        ENTERED.set(self.0.take());
+        ENTERED.set(self.previous.take());
     }
 }
 

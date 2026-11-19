@@ -53,6 +53,14 @@ A raw `browser.native` `launch` command changes the launch settings it names and
 
 On a session attached through CDP or a provider, the engine ignores launch settings that apply to a local browser, such as `profile`, `extensions`, and `args`, and lists them under `lifecycle.settings` in the response.
 
+### Name sessions with letters, digits, hyphens, and underscores
+
+From 0.43.0.1, `SessionOptions(session_id=...)` raises `ValueError` for any other character, because the name becomes a file name in the session directory. Rename a session that used dots, spaces, or path separators. `agentbrowser.session_id()` returns a valid name.
+
+### Read a namespaced session's files from its namespace directory
+
+From 0.43.0.1, a session with `SessionOptions(namespace=...)` writes its `.engine`, `.provider`, `.extensions`, and `.stream` files under `namespaces/<name>/run/` in the socket directory. Earlier releases wrote them to the base socket directory. `browser.session.status().socket_dir` returns the directory.
+
 ## Upgrade to pyagentbrowser 0.41
 
 ### Pass one `RouteResponse` to `network.route()`

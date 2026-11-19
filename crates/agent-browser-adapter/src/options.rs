@@ -6,6 +6,7 @@ use serde_json::Value;
 use crate::{
     native::{actions::DaemonState, policy::ActionPolicy, tab_binding},
     session_settings::{Key, Running, SecurityView, Store, StoreError},
+    validation::{is_valid_session_name, session_name_error},
 };
 
 #[derive(Default, Deserialize)]
@@ -122,6 +123,10 @@ fn settings(options: &EngineOptions) -> Result<Running, String> {
 pub(crate) fn configure(options: &EngineOptions) -> Result<DaemonState, String> {
     let mut daemon = DaemonState::with_store(settings(options)?, Arc::new(ProcessStore));
     if let Some(session) = &options.session {
+        // The name becomes a file name in the socket directory.
+        if !is_valid_session_name(session) {
+            return Err(session_name_error(session));
+        }
         daemon.session_id.clone_from(session);
         // Upstream read the pin for the session the environment names.
         daemon.pin_tab = daemon.settings.pin_tab()

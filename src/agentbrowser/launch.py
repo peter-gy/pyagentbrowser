@@ -9,7 +9,11 @@ from typing import Any, Literal, get_args
 from agentbrowser.contracts.connection import ProxyConfig, proxy_value
 from agentbrowser.contracts.protocol import optional, path_value, paths_value
 from agentbrowser.features.emulation.models import ColorScheme
-from agentbrowser.features.session.models import DashboardOptions, RestoreOptions
+from agentbrowser.features.session.models import (
+    DashboardOptions,
+    RestoreOptions,
+    is_valid_session_component,
+)
 
 CaptureMode = Literal["flow"]
 
@@ -125,6 +129,11 @@ class SessionOptions:
     dashboard: DashboardOptions | None = None
 
     def __post_init__(self) -> None:
+        if self.session_id is not None and not is_valid_session_component(self.session_id):
+            raise ValueError(
+                f"Invalid session_id '{self.session_id}'. Only alphanumeric characters, "
+                "hyphens, and underscores are allowed."
+            )
         if self.timeout is not None and self.timeout < 0:
             raise ValueError("timeout must be non-negative")
         if isinstance(self.allowed_domains, str):

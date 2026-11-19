@@ -107,7 +107,7 @@ When attaching, `CDPTarget` supplies the endpoint and `launch` supplies remainin
 
 | Field | Default | Contract |
 | --- | --- | --- |
-| `session_id` | `None` | Name the native session and its optional pinned tab binding. |
+| `session_id` | `None` | Name the native session and its optional pinned tab binding. Accepts letters, digits, hyphens, and underscores. |
 | `restore` | `None` | Configure keyed restore persistence. |
 | `namespace` | `None` | Separate native control and saved-state paths. |
 | `timeout` | `15.0` | Set the default timeout in seconds. `None` disables it. |

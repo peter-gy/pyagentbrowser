@@ -26,6 +26,10 @@ impl Engine {
         let namespace = Namespace::new(options.namespace.clone());
         let state = {
             let _entered = namespace.enter();
+            // Upstream's CLI creates this directory before it starts a
+            // daemon. The engine writes its session files there and skips
+            // most of them when the directory is missing.
+            let _ = std::fs::create_dir_all(crate::connection::get_socket_dir());
             configure(options)?
         };
         Ok(Self { state, namespace })
