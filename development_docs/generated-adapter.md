@@ -8,10 +8,10 @@ Cargo compiles the resulting modules inside `agent-browser-adapter`.
 
 The upstream checkout is immutable input. Every downstream rewrite has a narrow inspected anchor, an expected match count, and a failure path when upstream moves.
 
-The adapter connects the upstream executable code to an embedded library. It
+The adapter compiles upstream executable code as an embedded library. It
 assigns process ownership, threads downstream identity through upstream state,
-and exposes the operations consumed by PyO3. Generic browser behavior remains
-owned by upstream.
+and exposes the operations consumed by PyO3. Upstream owns generic browser
+behavior.
 
 ## Inputs and outputs
 
@@ -29,12 +29,12 @@ owned by upstream.
 
 The adapter exports `Engine` and owned configuration and resource operations.
 Generated upstream manager types stay inside that crate. PyO3 consumes the
-owned interface, so changes to upstream state types are resolved at the adapter
+owned interface, so a change to upstream state types stops at the adapter
 boundary.
 
 Generated Rust stays outside version control. The source distribution carries
-the pinned inputs and transformation program so a local build does not require
-a Git submodule checkout.
+the pinned inputs and transformation program, so a local build runs without a
+Git submodule checkout.
 
 ## Generated surfaces
 
@@ -42,8 +42,8 @@ a Git submodule checkout.
 | --------------------- | ------------------------------------------------------------------------------------ | ------------------------------------------- |
 | Upstream module tree  | Register engine modules and write adapted modules needed by the embedded library     | Adapter Rust smoke and native smoke         |
 | CDP protocol types    | Generate browser and JavaScript protocol bindings from upstream JSON schemas         | Adapter compilation and native engine seams |
-| Confirmation identity | Park each command under its request ID, then authorize `confirm` and `deny` against that ID, current policy, and allowed domains before upstream replays the command | Adapter smoke confirmation cases            |
-| Session settings      | Build the settings from environment defaults, the environment connection target, and engine options, keep security settings in process memory, and refuse a planned change to them | Adapter smoke and native option tests       |
+| Confirmation identity | Park each command under its request ID. Authorize `confirm` against that ID, the current policy, and allowed domains before upstream replays the command. Authorize `deny` against that ID | Adapter smoke confirmation cases            |
+| Session settings      | Build the settings from environment defaults, the environment connection target, and engine options, keep security settings in process memory, and refuse a planned change to them except a first allowed-domains list | Adapter smoke and native option tests       |
 | Chrome launch flags   | Enable the WebMCP feature under the name Chrome 157 and later use                    | WebMCP browser seam                         |
 | Namespaced state      | Thread namespace through saved state and restore paths                               | Native state tests                          |
 | Tab binding           | Persist namespace-aware target IDs and expose stable `targetId`                      | Tab and integration tests                   |
@@ -61,7 +61,7 @@ a Git submodule checkout.
 7. Run `make rust-check rust-test` for Rust ownership.
 8. Run the Python or browser boundary test affected by the adapted behavior.
 
-An anchor failure is a request to re-audit the pinned source. Broadening a text match until the build passes can rewrite the wrong construct.
+An anchor failure means the pinned source needs a re-audit. Broadening a text match until the build passes can rewrite the wrong construct.
 
 ## Fail-closed transformations
 
@@ -73,13 +73,13 @@ patches it depends on. Unused dependency declarations also fail.
 `agent_browser_build::generate(source_root, output_dir)` returns the input and
 patch report. Failures preserve the partial report with the failed source
 contract. The adapter build script uses the inputs to register Cargo rebuild
-dependencies. This checks source assumptions. Compilation and runtime tests
-check the resulting behavior.
+dependencies. Generation checks source assumptions. Compilation and runtime
+tests check the resulting behavior.
 
 Inspect the generated module when debugging, then change the transformation or
-its source registry. Never repair build output directly. A changed match count
-is acceptable after the new upstream structure has been read and the intended
-cardinality is explicit.
+its source registry. Never repair build output directly. Change a match count
+only after you read the new upstream structure and state the intended
+cardinality.
 
 ## Adding registered modules
 

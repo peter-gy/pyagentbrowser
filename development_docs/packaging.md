@@ -1,10 +1,10 @@
 # Packaging
 
-pyagentbrowser ships one Python distribution, one import package, one pinned native engine, and one extension built against [Python's stable application binary interface](https://docs.python.org/3/c-api/stable.html) per platform target.
+The `pyagentbrowser` distribution ships the `agentbrowser` import package, a pinned native engine, and an extension built against [Python's stable application binary interface](https://docs.python.org/3/c-api/stable.html) for each platform target.
 
-The artifact is the final output of the [downstream wrapper model](repository-model.md).
-It binds one Python SDK release to one exact upstream commit while preserving
-distinct package and source identities.
+Each artifact binds one Python SDK release to one exact upstream commit and
+keeps the package and source identities distinct. The
+[downstream wrapper model](repository-model.md) defines those identities.
 
 A package version such as `0.36.0.2` embeds upstream tag `v0.36.0`. The fourth
 component identifies the second downstream update on that tag.
@@ -20,7 +20,7 @@ component identifies the second downstream update on that tag.
 | Wheel               | Windows x86-64                                |
 | Source distribution | Portable source inputs for a local Rust build |
 
-The stable-ABI baseline is Python 3.11. Release verification exercises Python 3.11 and 3.14 endpoints and the SDK matrix covers every supported Python version.
+The stable-ABI baseline is Python 3.11. Release verification exercises the Python 3.11 and 3.14 endpoints. The SDK matrix covers every supported Python version.
 
 ## Wheel contract
 

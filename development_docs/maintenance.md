@@ -5,9 +5,9 @@ and evidence behind upstream updates, package releases, and CI.
 
 For development, provision the locked system tools using the
 [Pixi setup](../AGENTS.md#development-setup), then use `pixi shell` for the Make
-commands below. Pixi supplies the pinned Rust compiler directly; manually
-provisioned environments select the same pin through rustup. Release wheel
-builders continue to use the platform and manylinux toolchains in CI.
+commands below. Pixi supplies the pinned Rust compiler. A manually
+provisioned environment selects the same pin through rustup. CI release wheel
+builders use the platform and manylinux toolchains.
 
 Read [the generated adapter contract](generated-adapter.md) before changing a
 rewrite. Read [the packaging contract](packaging.md) before changing artifact
@@ -36,17 +36,16 @@ The output path must name a new directory. To audit a separate checkout, run
 `uv run --no-sync python -m scripts.check_upstream --source <checkout>`.
 `--compile` uses cached Cargo dependencies. `--output <new-directory>` preserves
 `report.json` alongside the JSON emitted on stdout. The probe creates an
-isolated workspace and leaves the source pin,
-manifests, and lockfiles unchanged. It uses `target/upstream-check` for its build
-cache.
+isolated workspace and leaves the source pin, manifests, and lockfiles
+unchanged. It uses `target/upstream-check` for its build cache.
 
 The report includes source and dependency changes, Cargo feature declarations,
 package compilation settings, protocol-generation inputs, applied patches, and
 optional compilation results. Feature and compilation-setting changes require
 review because the adapter owns the manifest used to compile embedded source.
-Changes requiring source
-review appear in `review_required` and produce a nonzero exit status. A passing
-probe establishes the requested generation and compilation checks. Run affected
+Changes that require source review appear in `review_required` and produce a
+nonzero exit status. A passing probe proves only the requested generation and
+compilation checks. Run affected
 browser seams and the release gate before accepting the candidate.
 
 Pin the latest commit from the official upstream branch with:
@@ -179,15 +178,16 @@ the source distribution.
 6. Follow the tag-triggered `Publish` workflow through public verification.
 
 The publish workflow requires successful exact-SHA release evidence before it
-accepts a tag. It builds five wheels against Python's stable application binary interface and one sdist, validates every payload,
-publishes through PyPI trusted publishing, installs the public wheel on Linux
-and Windows, and verifies the public artifact set plus GitHub prerelease state.
+accepts a tag. It builds five wheels against Python's stable application
+binary interface and one sdist, then validates every payload. It publishes
+through PyPI trusted publishing and installs the public wheel on Linux and
+Windows. It then verifies the public artifact set and GitHub prerelease state.
 Release candidate notes compare with the nearest ancestor release tag. Final
-release notes compare with the nearest final tag, preserving the complete
-change set across a release candidate series.
+release notes compare with the nearest final tag, so they cover every change in
+a release candidate series.
 
 Published artifacts are immutable. If publication starts and a later gate
-fails, fix forward with a new version and tag.
+fails, publish the fix under a new version and tag.
 
 ## Validation ladder
 
@@ -206,11 +206,11 @@ fails, fix forward with a new version and tag.
 verification. The source-distribution check rebuilds the extension, so its
 toolchain must match the wheel build.
 
-CI uses the same ownership boundaries. `Release Check` separates quality, SDK
-versions, platform builds, and real-browser seams. `Publish` reuses the wheel
-builder, then verifies the public index from clean environments. `Required
-gate` reports one aggregate result after every `Release Check` job group
-finishes.
+CI uses the same ownership boundaries. `Release Check` runs separate jobs for
+quality, SDK versions, platform builds, and real-browser seams. `Publish`
+reuses the wheel builder, then verifies the public index from clean
+environments. `Required gate` reports one aggregate result after every
+`Release Check` job group finishes.
 
 [Testing](testing.md) defines which marker and runtime boundary should carry a
 new contract. [Documentation](documentation.md) defines the public-site build

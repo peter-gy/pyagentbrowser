@@ -33,8 +33,8 @@ Test the behavior this repository adds or changes:
 
 Generic engine actions remain upstream responsibility until this repository
 adapts them, exposes a typed contract around them, or depends on them at an
-integration boundary. An upstream update should exercise representative seams,
-not duplicate the upstream suite.
+integration boundary. Test an upstream update at representative seams. The
+upstream suite covers generic engine behavior.
 
 ## Test design
 
@@ -61,4 +61,4 @@ make check-release
 `make check` is the normal Python and Rust handoff. Add `make docs-check` for
 public documentation, contributor-page navigation, local links, and site
 changes. Review changed Markdown against the repository documentation rules.
-Add the boundary-specific command for the implementation surface changed.
+Add the boundary-specific command for the implementation you changed.

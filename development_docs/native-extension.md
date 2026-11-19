@@ -1,17 +1,18 @@
 # Native extension
 
 `crates/pyagentbrowser` builds the PyO3 module imported as
-`agentbrowser._native`. It turns one Python native session into an in-process
-Rust engine with owned runtime, maintenance, dashboard, and cleanup resources.
+`agentbrowser._native`. It backs one Python native session with an in-process
+Rust engine and owns its runtime, maintenance, dashboard, and cleanup resources.
 
 ## Boundary contract
 
-The Python-facing surface is deliberately small:
+The extension exposes these Python entry points:
 
 | Entry point                   | Contract                                                                 |
 | ----------------------------- | ------------------------------------------------------------------------ |
 | `NativeBrowser(options_json)` | Construct native state and its Tokio runtime from validated JSON options |
-| `execute_json(command_json)`  | Execute one ordered JSON command and return one JSON response envelope   |
+| `execute_json(command_json, cancellation)` | Execute one ordered JSON command and return one JSON response envelope |
+| `NativeCancellation()`        | Interrupt the active `execute_json()` call that received this token      |
 | `browser_cache_dir()`         | Report the upstream browser cache location                               |
 | `find_chrome_executable()`    | Run native browser discovery                                             |
 | `_run_browser_install()`      | Invoke the bundled upstream installer                                    |
@@ -38,8 +39,8 @@ queue, so an event loop never directly enters the synchronous native object.
 
 ## Maintenance loop
 
-The maintenance task calls `Engine::maintain()` on a short
-tick. The adapter observes browser exit, drains process events, and applies
+The maintenance task calls `Engine::maintain()` every 100
+milliseconds. The adapter observes browser exit, drains process events, and applies
 automatic saved-state behavior at the configured interval.
 
 The task belongs to the native object because it must continue while Python is

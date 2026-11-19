@@ -1,8 +1,8 @@
 # Embedded resources
 
 pyagentbrowser compiles selected upstream source and data into its native
-extension and source distribution. These resources remain traceable to the
-exact upstream pin.
+extension and source distribution. Each resource traces to the exact upstream
+pin.
 
 ## Resource inventory
 
@@ -55,9 +55,9 @@ staged source resources, and normalized source-distribution timestamps.
 ## Protocol-generation inputs
 
 The adapter reads pinned browser and JavaScript protocol schemas and generates
-Rust types in `OUT_DIR`. Those types support the embedded engine and are
-different from the optional Python direct CDP client, which sends dynamic
-method names and mappings.
+Rust types in `OUT_DIR`. Those types serve the embedded engine. The optional
+Python direct CDP client is separate and sends dynamic method names and
+mappings.
 
 Treat a schema update as an upstream source change. Compile the adapter and run
 the browser seams that use affected engine behavior.
