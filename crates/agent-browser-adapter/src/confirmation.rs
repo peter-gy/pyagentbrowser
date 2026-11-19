@@ -51,6 +51,18 @@ pub(crate) fn authorize_settings(
     Ok(())
 }
 
+/// The native action a semantic locator command performs on its match. The
+/// engine gates `getbyrole` and its siblings by this name as well as their
+/// own, so one `click`, `fill`, `check`, `hover`, or `gettext` rule covers the
+/// action however the command names its target.
+pub(crate) fn locator_policy_action(cmd: &Value) -> &str {
+    match cmd.get("subaction").and_then(|v| v.as_str()) {
+        None => "click",
+        Some("text") => "gettext",
+        Some(subaction) => subaction,
+    }
+}
+
 fn confirmation_id_from_command(cmd: &Value) -> Result<&str, String> {
     cmd.get("confirmation_id")
         .or_else(|| cmd.get("confirmationId"))

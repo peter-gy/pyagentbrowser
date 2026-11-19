@@ -65,6 +65,8 @@ Confirmation replay loads the current policy and checks target domains again.
 
 The pinned engine compares exact native action names. Deny rules run first, then confirmation rules. A nonempty allow list denies unmatched actions unless `default` is `allow`. A missing allow list uses `default`, with `allow` as the fallback behavior.
 
+A semantic query such as `page.find.role("button").click()` runs as one locator command: `getbyrole`, `getbytext`, `getbylabel`, `getbyplaceholder`, `getbyalttext`, `getbytitle`, `getbytestid`, or `nth`. The engine checks that command under its own name and under the action it performs on the match: `click`, `fill`, `check`, `hover`, or `gettext`. A `click` rule therefore covers a click through a ref, a CSS selector, and a semantic query. An allow list must name both the locator command and the action. `ConfirmationRequired.policy_action` reports which of the two names paused the operation.
+
 `SessionOptions.confirm_actions=("click", "cookies_set")` requests the same exact-name confirmation directly. The installed engine's native dispatcher defines the JSON action vocabulary. Print `agentbrowser.__agent_browser_commit__` and inspect `cli/src/native/actions.rs` at that exact upstream revision. The [raw native protocol guide](/guides/native-protocol#find-the-action-vocabulary) builds the source URL.
 
 The policy file must remain readable and valid JSON. The engine rereads it before each action. While the file is unreadable or invalid, every action except `close` fails with `action policy failed to load`. Confirmation rereads it before replay and fails when the action is now denied.

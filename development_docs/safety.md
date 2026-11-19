@@ -36,6 +36,8 @@ The native engine receives allowed domains, the action-policy path, and exact co
 
 A raw native `launch` cannot change an active allowlist. A successful `launch` on a session without an allowlist can adopt one.
 
+Upstream checks a semantic locator command (`getbyrole` and its siblings, and `nth`) under the locator's name alone. The adapter adds the action the command performs on its match, so a `click`, `fill`, `check`, `hover`, or `gettext` rule covers the action however the command names its target.
+
 The engine accepts settings from a `settings` patch on any command, from the `launch` envelope, and from each command a saved flow replays. It applies them before its policy gates. The adapter authorizes every planned change where the engine applies it. A change to `action-policy` or `confirm-actions` fails with `code: "security_settings"`, and so does a change to `allowed-domains` on a session that has a list. A session without allowed domains can adopt a list. The security settings come from `EngineOptions` at construction and stay in process memory.
 
 ## Confirmation replay

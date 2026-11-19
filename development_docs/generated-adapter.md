@@ -44,6 +44,7 @@ Git submodule checkout.
 | Upstream module tree  | Register engine modules and write adapted modules needed by the embedded library     | Adapter Rust smoke and native smoke         |
 | CDP protocol types    | Generate browser and JavaScript protocol bindings from upstream JSON schemas         | Adapter compilation and native engine seams |
 | Confirmation identity | Park each command under its request ID. Authorize `confirm` against that ID, the current policy, and allowed domains before upstream replays the command. Authorize `deny` against that ID | Adapter smoke confirmation cases            |
+| Locator policy action | Check a semantic locator command under the action it performs as well as its own name | Adapter smoke policy cases and the semantic-query confirmation seam |
 | Session settings      | Build the settings from environment defaults, the environment connection target, and engine options, keep security settings in process memory, and refuse a planned change to them except a first allowed-domains list | Adapter smoke and native option tests       |
 | Chrome launch flags   | Enable the WebMCP feature under the name Chrome 157 and later use                    | WebMCP browser seam                         |
 | Engine namespace      | Send upstream's reads of the process namespace to the namespace the calling thread entered, so the socket and state directories follow each engine | Adapter smoke, native namespace, and namespace integration tests |

@@ -136,6 +136,60 @@ async fn deny_requires_present_matching_confirmation_id() {
 }
 
 #[tokio::test]
+async fn semantic_locator_command_asks_about_the_action_it_performs() {
+    let mut state = engine(EngineOptions {
+        confirm_actions: Some(vec!["click".to_string(), "gettext".to_string()]),
+        ..EngineOptions::default()
+    });
+
+    let click = run(
+        &mut state,
+        json!({"id": "role", "action": "getbyrole", "role": "button"}),
+    )
+    .await;
+    let click_data = assert_success(&click);
+    assert_eq!(click_data["confirmation_required"], true);
+    assert_eq!(click_data["action"], "click");
+    run(
+        &mut state,
+        json!({"id": "deny", "action": "deny", "confirmation_id": "role"}),
+    )
+    .await;
+
+    let text = run(
+        &mut state,
+        json!({"id": "text", "action": "getbytext", "text": "Save", "subaction": "text"}),
+    )
+    .await;
+    let text_data = assert_success(&text);
+    assert_eq!(text_data["confirmation_required"], true);
+    assert_eq!(text_data["action"], "gettext");
+}
+
+#[tokio::test]
+async fn policy_denies_semantic_locator_command_by_the_action_it_performs() {
+    let policy = NamedTempFile::new().expect("policy file should be created");
+    std::fs::write(policy.path(), r#"{"default":"allow","deny":["fill"]}"#).unwrap();
+    let mut state = engine(EngineOptions {
+        action_policy: Some(policy.path().to_str().unwrap().to_string()),
+        ..EngineOptions::default()
+    });
+
+    let denied = run(
+        &mut state,
+        json!({
+            "id": "label",
+            "action": "getbylabel",
+            "label": "Email",
+            "subaction": "fill",
+            "value": "ada@example.com"
+        }),
+    )
+    .await;
+    assert_error_contains(&denied, "Action 'fill' denied by policy");
+}
+
+#[tokio::test]
 async fn confirmation_replay_reloads_policy_and_denies_newly_blocked_action() {
     let policy = NamedTempFile::new().expect("policy file should be created");
     std::fs::write(policy.path(), r#"{"confirm":["stream_status"]}"#).unwrap();
