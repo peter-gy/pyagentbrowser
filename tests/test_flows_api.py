@@ -616,7 +616,9 @@ def test_confirmed_flow_write_returns_the_decoded_run() -> None:
     with pytest.raises(ConfirmationRequired) as required:
         browser.flows.run("order")
 
-    assert required.value.data["action"] == "flow_write:s2r1"
+    assert required.value.action == "flow_run"
+    assert required.value.policy_action == "flow_write:s2r1"
+    assert required.value.pending.policy_action == "flow_write:s2r1"
     run = cast(Any, required.value.pending).confirm()
     assert isinstance(run, FlowRun)
     assert run.steps[0].tier == "page"
@@ -689,7 +691,7 @@ def test_flow_run_with_two_uncovered_writes_confirms_each_before_decoding() -> N
         browser.flows.run("order")
     with pytest.raises(ConfirmationRequired) as second:
         cast(Any, first.value.pending).confirm()
-    assert second.value.data["action"] == "flow_write:s3r1"
+    assert second.value.policy_action == "flow_write:s3r1"
     with pytest.raises(FlowRunError) as stopped:
         cast(Any, second.value.pending).confirm()
 

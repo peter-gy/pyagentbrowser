@@ -5,7 +5,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any, Generic, Literal, TypeVar, cast
 
-from agentbrowser.contracts.errors import ConfirmationRequired
+from agentbrowser.contracts.errors import ConfirmationRequired, policy_action
 from agentbrowser.contracts.types import JSONMapping
 
 if TYPE_CHECKING:
@@ -29,6 +29,11 @@ class PendingAction(Generic[T]):
     _expect: Literal["object", "any"] = "object"
     _error: Callable[[BaseException], BaseException] | None = None
     _complete: Callable[[Any], T] | None = None
+
+    @property
+    def policy_action(self) -> str:
+        """Policy name that needs approval, such as `click` or `flow_write:s2r1`."""
+        return policy_action(self.details, self.action)
 
     def _confirm(self) -> T:
         """Confirm this pending action and decode its original return type."""
@@ -106,6 +111,11 @@ class AsyncPendingAction(Generic[T]):
     _expect: Literal["object", "any"] = "object"
     _error: Callable[[BaseException], BaseException] | None = None
     _complete: Callable[[Any], Any] | None = None
+
+    @property
+    def policy_action(self) -> str:
+        """Policy name that needs approval, such as `click` or `flow_write:s2r1`."""
+        return policy_action(self.details, self.action)
 
     async def _confirm(self) -> T:
         """Confirm this pending action and decode its original return type."""

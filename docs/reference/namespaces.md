@@ -251,7 +251,7 @@ Saved flows are experimental in the embedded engine. `steps()` and `save()` need
 | `run(name, *, params=None, origin=None, allow_writes=(), where=None, fields=(), limit=None, timeout_ms=None)` | Send the flow's requests and return `FlowRun`. Works before a browser is launched. |
 | `list(*, origin=None)` | Return a `FlowSummary` for each flow on disk, optionally for one registrable domain. |
 
-A flow name uses letters, digits, `-`, and `_`. `params` and `where` map strings to strings. `allow_writes` takes `"all"` or a sequence of write IDs from `SavedFlow.writes`. A write it leaves out raises `ConfirmationRequired` with the action `flow_write:<id>`. `fields` takes dotted paths. `timeout_ms` on `save()` bounds the wait for requests still loading, and on `run()` it bounds the whole run.
+A flow name uses letters, digits, `-`, and `_`. `params` and `where` map strings to strings. `allow_writes` takes `"all"` or a sequence of write IDs from `SavedFlow.writes`. A write it leaves out raises `ConfirmationRequired` with the `policy_action` `flow_write:<id>`. `fields` takes dotted paths. `timeout_ms` on `save()` bounds the wait for requests still loading, and on `run()` it bounds the whole run.
 
 `run()` raises `FlowRunError` when the site stops the run. See [Record and run saved flows](/guides/flows).
 

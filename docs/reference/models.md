@@ -206,7 +206,7 @@ A flow tier is `http`, `page`, or `replay`. `FlowRun.data` is the output request
 
 ## Pending confirmation
 
-`PendingAction[T]` exposes `confirmation_id`, native `action`, and confirmation-response `details` for one paused operation.
+`PendingAction[T]` exposes `confirmation_id`, native `action`, `policy_action`, and confirmation-response `details` for one paused operation. `action` is the command that paused. `policy_action` is the policy name that needs approval, such as `navigate` for an accessibility audit of a URL or `flow_write:s2r1` for a saved-flow write.
 
 | Method | Contract |
 | --- | --- |
@@ -226,7 +226,7 @@ Catch SDK-owned failures through `AgentBrowserError`.
 | --- | --- |
 | `AgentBrowserError` | Catchable base for SDK-owned browser, evidence, installation, persistence, and direct CDP failures. |
 | `BrowserError` | Native failure or Python safety rejection. Exposes `action`, `response`, and structured `code`. |
-| `ConfirmationRequired` | Paused typed or checked action with a typed `pending` continuation. |
+| `ConfirmationRequired` | Paused typed or checked action with its `policy_action` and a typed `pending` continuation. |
 | `StaleRefError` | Expired synchronous ref with `refresh()`. |
 | `AsyncStaleRefError` | Expired asynchronous ref with awaitable `refresh()`. |
 | `ActionTransitionError` | Mutation completed, then its wait, snapshot, or diff stage failed. |
