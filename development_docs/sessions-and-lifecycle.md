@@ -8,7 +8,7 @@ A `Browser` controller owns one native session. The native session owns ordered 
 | ----------------- | --------------------------- | -------------------------------------------------------------- |
 | `Browser` object  | Python application          | One controller lifetime                                        |
 | Native session ID | `SessionOptions.session_id` | Native discovery and optional pinned tab binding               |
-| Namespace         | `SessionOptions.namespace`  | Control socket or port, restore records, and tab-binding paths |
+| Namespace         | `SessionOptions.namespace`  | Session files, saved state, and restore records                |
 | Restore key       | `RestoreOptions.key`        | One automatic persistence record                               |
 | Tab label         | Application                 | Readable selector inside the session                           |
 | CDP target ID     | Browser                     | Stable page-target identity when the browser preserves it      |

@@ -24,6 +24,7 @@ behavior.
 | Module registry and protocol generation | `crates/agent-browser-build/src/registry.rs` and `src/protocol/` |
 | Capability transformations | `crates/agent-browser-build/src/features/` |
 | Runtime document behavior | `crates/agent-browser-adapter/src/documents/` |
+| Engine settings, confirmation, and namespace | `crates/agent-browser-adapter/src/options.rs`, `confirmation.rs`, and `namespace.rs` |
 | Generated Rust modules       | Cargo `OUT_DIR`                               |
 | Stable library exports       | `crates/agent-browser-adapter/src/lib.rs`     |
 
@@ -45,8 +46,8 @@ Git submodule checkout.
 | Confirmation identity | Park each command under its request ID. Authorize `confirm` against that ID, the current policy, and allowed domains before upstream replays the command. Authorize `deny` against that ID | Adapter smoke confirmation cases            |
 | Session settings      | Build the settings from environment defaults, the environment connection target, and engine options, keep security settings in process memory, and refuse a planned change to them except a first allowed-domains list | Adapter smoke and native option tests       |
 | Chrome launch flags   | Enable the WebMCP feature under the name Chrome 157 and later use                    | WebMCP browser seam                         |
-| Namespaced state      | Thread namespace through saved state and restore paths                               | Native state tests                          |
-| Tab binding           | Persist namespace-aware target IDs and expose stable `targetId`                      | Tab and integration tests                   |
+| Engine namespace      | Send upstream's reads of the process namespace to the namespace the calling thread entered, so the socket and state directories follow each engine | Adapter smoke, native namespace, and namespace integration tests |
+| Tab binding           | Expose stable `targetId`                                                             | Tab and integration tests                   |
 | Stream response       | Preserve the success envelope expected by Python                                     | Native stream tests                         |
 | Dashboard boundary    | Expose stream observation while Python retains browser control and session ownership | Native dashboard tests                      |
 
