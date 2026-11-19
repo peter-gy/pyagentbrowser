@@ -330,6 +330,28 @@ def test_confirmation_completes_ref_transition_evidence(chrome_path: Path) -> No
         assert isinstance(result.diff, SnapshotDiff)
 
 
+def test_click_confirmation_covers_a_semantic_query(chrome_path: Path) -> None:
+    html = "<button onclick=\"document.title = 'Deleted'\">Delete</button>"
+    session = SessionOptions(
+        session_id=f"confirm-query-{time.monotonic_ns()}",
+        timeout=5.0,
+        confirm_actions=("click",),
+    )
+    with _browser(chrome_path, session=session) as browser:
+        browser.page.open(_data_url(html))
+        button = browser.page.find.role("button", name="Delete")
+
+        assert button.text() == "Delete"
+        with pytest.raises(ConfirmationRequired) as required:
+            button.click()
+
+        assert required.value.action == "getbyrole"
+        assert required.value.policy_action == "click"
+        assert browser.page.title() != "Deleted"
+        required.value.pending.confirm()
+        assert browser.page.title() == "Deleted"
+
+
 def test_bound_page_gates_only_an_actual_target_switch(chrome_path: Path) -> None:
     session = SessionOptions(
         session_id=f"bound-page-policy-{time.monotonic_ns()}",

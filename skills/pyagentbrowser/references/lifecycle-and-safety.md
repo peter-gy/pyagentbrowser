@@ -72,7 +72,9 @@ when the workflow requires containment outside the browser process.
 ## Confirmation
 
 `SessionOptions(confirm_actions=(...))` selects exact native action names that
-must pause before execution. A paused operation raises `ConfirmationRequired`
+must pause before execution. A `click`, `fill`, `check`, `hover`, or `gettext`
+entry also covers that action through `page.find.role()` and the other semantic
+queries. A paused operation raises `ConfirmationRequired`
 and carries a pending continuation when the action can resume:
 
 ```python

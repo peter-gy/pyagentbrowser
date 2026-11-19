@@ -61,6 +61,16 @@ From 0.43.0.1, `SessionOptions(session_id=...)` raises `ValueError` for any othe
 
 From 0.43.0.1, a session with `SessionOptions(namespace=...)` writes its `.engine`, `.provider`, `.extensions`, and `.stream` files under `namespaces/<name>/run/` in the socket directory. Earlier releases wrote them to the base socket directory. `browser.session.status().socket_dir` returns the directory.
 
+### Allow the action a semantic query performs
+
+From 0.43.0.2, the engine checks a semantic query under its locator command and under the action it performs. `page.find.role("button").click()` matches `getbyrole` and `click`, and `.text()` matches `getbyrole` and `gettext`. A `confirm_actions` entry or a policy rule for `click`, `fill`, `check`, `hover`, or `gettext` now pauses or denies the matching query. An action policy with an allow list must name both actions:
+
+```json
+{
+  "allow": ["getbyrole", "click", "gettext"]
+}
+```
+
 ## Upgrade to pyagentbrowser 0.41
 
 ### Pass one `RouteResponse` to `network.route()`
