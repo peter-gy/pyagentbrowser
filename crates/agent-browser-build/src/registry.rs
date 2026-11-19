@@ -4,7 +4,7 @@ use super::features::{
     dashboard::*,
     documents::{client::*, elements::*, frames::*, scope::*, waits::*},
     embedding::*,
-    namespace::{actions::*, connection::*, state::*, tabs::*},
+    namespace::*,
 };
 use super::source::{line, path_literal, read_rewrite_source, require_file};
 use std::{
@@ -145,7 +145,6 @@ fn write_native_module(source_root: &Path, out_dir: &Path) -> PathBuf {
             "snapshot" => rewrite_snapshot_module(out_dir, &path),
             "state" => rewrite_state_module(out_dir, &path),
             "stream" => rewrite_stream_module(out_dir, &path),
-            "tab_binding" => rewrite_tab_binding_module(out_dir, &path),
             _ => path,
         };
         line(
@@ -181,7 +180,7 @@ fn rewrite_actions_module(out_dir: &Path, source: &Path) -> PathBuf {
     let destination = out_dir.join("agent_browser_actions.rs");
     let contents = read_rewrite_source(source, "actions file");
     let contents = rewrite_confirmation_handling(contents.feature("confirmation"));
-    let contents = rewrite_actions_namespace(contents.feature("namespace"));
+    let contents = rewrite_session_info_namespace(contents.feature("namespace"));
     let contents = rewrite_scoped_page_commands(contents.feature("documents"));
     let contents = rewrite_frame_commands(contents);
     let contents = rewrite_scoped_waits(contents);

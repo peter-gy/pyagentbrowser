@@ -27,9 +27,12 @@ impl Session {
         autosave_interval_ms: u64,
         dashboard: Option<(DashboardConfig, String)>,
     ) -> Result<Self, String> {
+        // Tasks the engine spawns resolve its namespace from their thread.
+        let namespace = engine.namespace();
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .thread_name("pyagentbrowser")
+            .on_thread_start(move || namespace.enter_thread())
             .build()
             .map_err(|error| format!("failed to create tokio runtime: {error}"))?;
         let dashboard = match dashboard {

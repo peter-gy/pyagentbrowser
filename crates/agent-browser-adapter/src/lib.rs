@@ -4,9 +4,11 @@ mod confirmation;
 mod documents;
 
 mod engine;
+mod namespace;
 mod options;
 
 pub use engine::{Engine, EngineIdentity, INTERNAL_SHUTDOWN_ACTION};
+pub use namespace::Namespace;
 pub use options::EngineOptions;
 
 pub fn browser_cache_dir() -> std::path::PathBuf {
@@ -21,10 +23,8 @@ pub fn run_browser_install(with_deps: bool) {
     install::run_install(with_deps);
 }
 
-pub fn socket_dir() -> std::path::PathBuf {
+/// The directory that holds socket and session files for `namespace`.
+pub fn socket_dir(namespace: &Namespace) -> std::path::PathBuf {
+    let _entered = namespace.enter();
     connection::get_socket_dir()
-}
-
-pub fn socket_dir_for_namespace(namespace: Option<&str>) -> std::path::PathBuf {
-    connection::get_socket_dir_for_namespace(namespace)
 }

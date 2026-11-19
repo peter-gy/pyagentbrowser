@@ -8,6 +8,7 @@ import sys
 import tempfile
 import time
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
@@ -171,6 +172,35 @@ def test_restore_and_namespace_options_reach_generated_adapter(
     assert status.restore_save == "never"
     assert status.restore_check_text == "Dashboard"
     assert status.socket_dir == (socket_dir / "namespaces" / "worktree-one" / "run")
+
+
+def test_concurrent_sessions_resolve_their_own_namespace(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    socket_dir = tmp_path / "sockets"
+    monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
+    expected = {
+        "A": socket_dir / "namespaces" / "a" / "run",
+        "B": socket_dir / "namespaces" / "b" / "run",
+        None: socket_dir,
+    }
+    browsers = {
+        namespace: Browser(session=SessionOptions(session_id="shared", namespace=namespace))
+        for namespace in expected
+    }
+
+    def resolved(namespace: str | None) -> list[Path]:
+        return [browsers[namespace].session.status().socket_dir for _ in range(25)]
+
+    try:
+        with ThreadPoolExecutor(max_workers=len(browsers)) as pool:
+            results = dict(zip(expected, pool.map(resolved, expected), strict=True))
+    finally:
+        for browser in browsers.values():
+            browser.close()
+
+    assert results == {namespace: [path] * 25 for namespace, path in expected.items()}
 
 
 def test_dashboard_sidecars_control_boundary_and_teardown(

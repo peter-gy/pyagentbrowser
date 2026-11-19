@@ -2,6 +2,7 @@ use serde_json::{json, Value};
 
 use crate::{
     confirmation::SECURITY_SETTINGS_ERROR,
+    namespace::Namespace,
     native,
     options::{configure, EngineOptions},
 };
@@ -11,6 +12,7 @@ pub const INTERNAL_SHUTDOWN_ACTION: &str = "__agent_browser_internal_shutdown";
 /// Owns one embedded engine and its ordered command state.
 pub struct Engine {
     state: native::actions::DaemonState,
+    namespace: Namespace,
 }
 
 pub struct EngineIdentity<'a> {
@@ -21,20 +23,33 @@ pub struct EngineIdentity<'a> {
 
 impl Engine {
     pub fn new(options: &EngineOptions) -> Result<Self, String> {
-        Ok(Self {
-            state: configure(options)?,
-        })
+        let namespace = Namespace::new(options.namespace.clone());
+        let state = {
+            let _entered = namespace.enter();
+            configure(options)?
+        };
+        Ok(Self { state, namespace })
     }
 
     pub fn identity(&self) -> EngineIdentity<'_> {
         EngineIdentity {
             session: &self.state.session_id,
-            namespace: self.state.namespace.as_deref(),
+            namespace: self.namespace.name(),
             engine: &self.state.engine,
         }
     }
 
+    /// The namespace this engine's runtime threads must enter when they start.
+    pub fn namespace(&self) -> Namespace {
+        self.namespace.clone()
+    }
+
     pub async fn execute(&mut self, command: &Value) -> Value {
+        let namespace = self.namespace.clone();
+        namespace.scope(self.dispatch(command)).await
+    }
+
+    async fn dispatch(&mut self, command: &Value) -> Value {
         let mut response = crate::confirmation::dispatch(command, &mut self.state).await;
         let error = response.get("error").and_then(Value::as_str);
         if error.is_some_and(|error| error.contains("Unknown ref:")) {
@@ -52,6 +67,13 @@ impl Engine {
     }
 
     pub async fn maintain(&mut self, autosave_interval_ms: u64) {
+        let namespace = self.namespace.clone();
+        namespace
+            .scope(self.maintain_browser(autosave_interval_ms))
+            .await;
+    }
+
+    async fn maintain_browser(&mut self, autosave_interval_ms: u64) {
         let process_exited = self
             .state
             .browser

@@ -25,6 +25,10 @@ The native layer embeds a pinned engine behind the Python API.
   Keep each feature's source transformations beside its own module registration.
 - Keep adapter changes scoped to embedding constraints such as entrypoints,
   process ownership, control transport, or platform integration.
+- An engine resolves its socket and state directories from the namespace its
+  thread entered. `Engine` enters it around its own futures. Whoever builds the
+  engine's Tokio runtime must call `Engine::namespace().enter_thread()` from
+  `on_thread_start`, because tasks the engine spawns run on those threads.
 - Treat paths, text encoding, line endings, process identity, and cleanup as
   cross-platform contracts. Validate Windows and Unix behavior when they differ.
 - Keep the adapter package version aligned with the embedded upstream version.

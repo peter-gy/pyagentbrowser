@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::Value;
 
 use crate::{
-    native::{actions::DaemonState, policy::ActionPolicy},
+    native::{actions::DaemonState, policy::ActionPolicy, tab_binding},
     session_settings::{Key, Running, SecurityView, Store, StoreError},
 };
 
@@ -123,8 +123,13 @@ pub(crate) fn configure(options: &EngineOptions) -> Result<DaemonState, String> 
     let mut daemon = DaemonState::with_store(settings(options)?, Arc::new(ProcessStore));
     if let Some(session) = &options.session {
         daemon.session_id.clone_from(session);
+        // Upstream read the pin for the session the environment names.
+        daemon.pin_tab = daemon.settings.pin_tab()
+            || tab_binding::load(session)
+                .ok()
+                .flatten()
+                .is_some_and(|binding| binding.pinned);
     }
-    daemon.namespace.clone_from(&options.namespace);
     if options.restore_key.is_some() {
         daemon.restore_status = "pending".to_string();
     }

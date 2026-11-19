@@ -310,6 +310,41 @@ async fn commands_cannot_replace_session_security_settings() {
 }
 
 #[tokio::test]
+async fn engines_in_one_process_keep_their_own_namespace() {
+    let socket_dir = TempDir::new().expect("socket dir should be created");
+    let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());
+    let mut engines: Vec<Engine> = [Some("Team A"), None, Some("team-b")]
+        .into_iter()
+        .map(|namespace| {
+            engine(EngineOptions {
+                session: Some("shared".to_string()),
+                namespace: namespace.map(str::to_string),
+                ..EngineOptions::default()
+            })
+        })
+        .collect();
+
+    let mut socket_dirs = Vec::new();
+    for state in &mut engines {
+        let info = run(state, json!({"id": "info", "action": "session_info"})).await;
+        let data = assert_success(&info);
+        assert_eq!(data["namespace"], json!(state.identity().namespace));
+        socket_dirs.push(data["socketDir"].as_str().unwrap().to_string());
+    }
+
+    let base = socket_dir.path();
+    assert_eq!(
+        socket_dirs,
+        [
+            base.join("namespaces/team-a/run"),
+            base.to_path_buf(),
+            base.join("namespaces/team-b/run"),
+        ]
+        .map(|dir| dir.to_string_lossy().into_owned())
+    );
+}
+
+#[tokio::test]
 async fn environment_cdp_target_is_the_default_connection() {
     let _cdp_guard = EnvVarGuard::set_path("AGENT_BROWSER_CDP", Path::new("http://127.0.0.1:9"));
     let mut state = engine(EngineOptions {
