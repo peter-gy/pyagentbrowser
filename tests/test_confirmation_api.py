@@ -1,15 +1,19 @@
 from __future__ import annotations
 
+import asyncio
 from pathlib import Path
+from typing import Any
 
 import pytest
-from fakes import ConfirmationNative
+from fakes import ConfirmationNative, ScriptedNative
 from support.sdk import _browser
 
 from agentbrowser import (
+    AsyncBrowser,
     ConfirmationRequired,
     Screenshot,
 )
+from agentbrowser.transport.async_ import AsyncNativeSession
 
 pytestmark = pytest.mark.sdk_dx
 
@@ -33,6 +37,36 @@ def test_confirmed_page_value_keeps_its_public_type() -> None:
         browser.page.title()
 
     assert required.value.pending.confirm() == "Confirmed"
+
+
+@pytest.mark.parametrize("asynchronous", [False, True])
+def test_confirmation_names_the_policy_action_that_needs_approval(asynchronous: bool) -> None:
+    # The engine asks about `navigate` when an accessibility audit names a URL.
+    native = ScriptedNative(
+        {
+            "a11y": {
+                "confirmation_required": True,
+                "confirmation_id": "c1",
+                "action": "navigate",
+            }
+        }
+    )
+    if asynchronous:
+
+        async def run() -> ConfirmationRequired[Any]:
+            browser = AsyncBrowser(_native_session=AsyncNativeSession(native=native))
+            with pytest.raises(ConfirmationRequired) as required:
+                await browser.native.data("a11y", url="https://example.com")
+            return required.value
+
+        error = asyncio.run(run())
+    else:
+        with pytest.raises(ConfirmationRequired) as required:
+            _browser(native).native.data("a11y", url="https://example.com")
+        error = required.value
+
+    assert (error.action, error.policy_action) == ("a11y", "navigate")
+    assert (error.pending.action, error.pending.policy_action) == ("a11y", "navigate")
 
 
 def test_pending_action_maps_compose_in_call_order() -> None:

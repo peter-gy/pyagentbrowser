@@ -93,7 +93,7 @@ from agentbrowser import ConfirmationRequired
 try:
     run = browser.flows.run("archive-invoice", params={"id": "42"})
 except ConfirmationRequired as required:
-    print(required.data["action"])  # flow_write:s2r1
+    print(required.policy_action)  # flow_write:s2r1
     run = required.pending.confirm()
 
 run = browser.flows.run("archive-invoice", params={"id": "43"}, allow_writes=["s2r1"])

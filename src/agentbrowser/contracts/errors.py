@@ -60,7 +60,12 @@ class FrameLookupError(AgentBrowserError, LookupError):
 
 
 class ConfirmationRequired(BrowserError, Generic[T]):
-    """Raised when the native policy requires confirmation before execution."""
+    """Raised when the native policy requires confirmation before execution.
+
+    `action` is the command that paused. `policy_action` is the policy name
+    that needs approval. They differ when one command covers several policy
+    names, such as a saved-flow run that asks about `flow_write:s2r1`.
+    """
 
     def __init__(
         self,
@@ -76,7 +81,14 @@ class ConfirmationRequired(BrowserError, Generic[T]):
         )
         self.confirmation_id = str(confirmation_id) if confirmation_id is not None else None
         self.data = dict(data)
+        self.policy_action = policy_action(data, action)
         self.pending = cast(T, None)
+
+
+def policy_action(confirmation: Mapping[str, Any], action: str) -> str:
+    """Return the policy name a confirmation response asks about."""
+    name = confirmation.get("action")
+    return name if isinstance(name, str) and name else action
 
 
 def _error_code_from_response(response: Mapping[str, Any]) -> str | None:
