@@ -50,7 +50,7 @@ class RestoreOptions:
     check_fn: str | None = None
 
     def __post_init__(self) -> None:
-        if not _is_valid_session_component(self.key):
+        if not is_valid_session_component(self.key):
             raise ValueError(
                 f"Invalid restore key '{self.key}'. Only alphanumeric characters, "
                 "hyphens, and underscores are allowed."
@@ -124,7 +124,7 @@ class RestoreSaveError(AgentBrowserError):
         super().__init__(f"browser closed with a restore-state save error: {detail}")
 
 
-def _is_valid_session_component(value: str) -> bool:
+def is_valid_session_component(value: str) -> bool:
     return bool(value) and all(char.isalnum() or char in {"-", "_"} for char in value)
 
 

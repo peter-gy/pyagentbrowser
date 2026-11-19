@@ -24,6 +24,8 @@ pytestmark = pytest.mark.sdk_dx
         (lambda: CDPTarget(url=""), ValueError, "url"),
         (lambda: CDPTarget(port=0), ValueError, "port"),
         (lambda: SessionOptions(timeout=-1), ValueError, "timeout"),
+        (lambda: SessionOptions(session_id="../other"), ValueError, "Invalid session_id"),
+        (lambda: SessionOptions(session_id=""), ValueError, "Invalid session_id"),
         (lambda: SessionOptions(allowed_domains=("",)), ValueError, "allowed_domains"),
         (
             lambda: SessionOptions(allowed_domains=cast(Any, "example.com")),

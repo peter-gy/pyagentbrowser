@@ -20,6 +20,7 @@ def test_session_binding_stays_in_its_namespace_and_close_releases_the_pin(
 ) -> None:
     socket_dir = tmp_path / "sockets"
     monkeypatch.setenv("AGENT_BROWSER_SOCKET_DIR", str(socket_dir))
+    binding_path = socket_dir / "namespaces" / "worker-a" / "run" / "research.target"
     (tmp_path / "page.html").write_text("<!doctype html><title>Namespace</title>")
     server = ThreadingHTTPServer(
         ("127.0.0.1", 0), partial(SimpleHTTPRequestHandler, directory=str(tmp_path))
@@ -34,12 +35,14 @@ def test_session_binding_stays_in_its_namespace_and_close_releases_the_pin(
         ) as browser:
             browser.page.open(f"{url}?token=fixture#section")
             browser.native.data("url", pinTab=True)
-            binding_path = socket_dir / "namespaces" / "worker-a" / "run" / "research.target"
             binding = json.loads(binding_path.read_text())
 
             assert binding["targetId"] == browser.page.target_id
             assert binding["url"] == url
             assert binding["pinned"] is True
+            session_files = {path for path in socket_dir.rglob("research.*") if path.is_file()}
+            assert binding_path.with_suffix(".engine") in session_files
+            assert {path.parent for path in session_files} == {binding_path.parent}
         assert json.loads(binding_path.read_text())["pinned"] is False
     finally:
         server.shutdown()

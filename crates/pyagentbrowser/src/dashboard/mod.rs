@@ -51,7 +51,7 @@ pub(crate) fn start_dashboard(
     config: DashboardConfig,
 ) -> Result<DashboardSidecar, String> {
     let identity = state.identity();
-    let socket_dir = agent_browser::socket_dir_for_namespace(identity.namespace);
+    let socket_dir = agent_browser::socket_dir(&state.namespace());
     fs::create_dir_all(&socket_dir).map_err(|err| {
         format!(
             "failed to create agent-browser socket directory '{}': {err}",

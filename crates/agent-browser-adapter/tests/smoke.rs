@@ -310,6 +310,79 @@ async fn commands_cannot_replace_session_security_settings() {
 }
 
 #[tokio::test]
+async fn engines_in_one_process_keep_their_own_namespace() {
+    let socket_dir = TempDir::new().expect("socket dir should be created");
+    let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());
+    let mut engines: Vec<Engine> = [Some("Team A"), None, Some("team-b")]
+        .into_iter()
+        .map(|namespace| {
+            engine(EngineOptions {
+                session: Some("shared".to_string()),
+                namespace: namespace.map(str::to_string),
+                ..EngineOptions::default()
+            })
+        })
+        .collect();
+
+    let mut socket_dirs = Vec::new();
+    for state in &mut engines {
+        let info = run(state, json!({"id": "info", "action": "session_info"})).await;
+        let data = assert_success(&info);
+        assert_eq!(data["namespace"], json!(state.identity().namespace));
+        socket_dirs.push(data["socketDir"].as_str().unwrap().to_string());
+    }
+
+    let base = socket_dir.path();
+    assert_eq!(
+        socket_dirs,
+        [
+            base.join("namespaces/team-a/run"),
+            base.to_path_buf(),
+            base.join("namespaces/team-b/run"),
+        ]
+        .map(|dir| dir.to_string_lossy().into_owned())
+    );
+}
+
+#[tokio::test]
+async fn new_namespace_holds_the_stream_file_of_its_session() {
+    let socket_dir = TempDir::new().expect("socket dir should be created");
+    let _socket_dir_guard = EnvVarGuard::set_path("AGENT_BROWSER_SOCKET_DIR", socket_dir.path());
+    let mut state = engine(EngineOptions {
+        session: Some("streamed".to_string()),
+        namespace: Some("Team A".to_string()),
+        ..EngineOptions::default()
+    });
+
+    let enabled = run(
+        &mut state,
+        json!({"id": "enable", "action": "stream_enable", "port": 0}),
+    )
+    .await;
+    assert_success(&enabled);
+
+    let stream_file = socket_dir
+        .path()
+        .join("namespaces/team-a/run/streamed.stream");
+    assert!(stream_file.is_file(), "missing {}", stream_file.display());
+    assert_success(&run(&mut state, json!({"id": "off", "action": "stream_disable"})).await);
+}
+
+#[test]
+fn session_name_that_is_not_a_file_name_is_rejected() {
+    for session in ["../escape", "a/b", ""] {
+        let rejected = Engine::new(&EngineOptions {
+            session: Some(session.to_string()),
+            ..EngineOptions::default()
+        });
+        assert!(
+            rejected.is_err_and(|error| error.contains("Invalid session name")),
+            "session {session:?} was accepted"
+        );
+    }
+}
+
+#[tokio::test]
 async fn environment_cdp_target_is_the_default_connection() {
     let _cdp_guard = EnvVarGuard::set_path("AGENT_BROWSER_CDP", Path::new("http://127.0.0.1:9"));
     let mut state = engine(EngineOptions {
