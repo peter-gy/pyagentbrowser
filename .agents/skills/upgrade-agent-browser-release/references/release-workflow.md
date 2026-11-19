@@ -140,9 +140,23 @@ Inspect the full exact source diff. Classify each change before adapting it:
 | Platform, process, CDP, or browser lifecycle change | Add a real-browser or native integration test at that boundary. |
 | Upstream docs, dashboard, JavaScript packages, or release automation | Record the review. Change pyagentbrowser only when its build, package, or public contract depends on it. |
 
-Run `make test-native` early. A failure here often identifies a missing copied
-module, missing direct dependency, or moved adapter anchor before broader tests
-consume time.
+Run the generator alone to find moved anchors before any compilation:
+
+```bash
+cargo run -q -p agent-browser-build --locked -- third_party/agent-browser "$(mktemp -d)/out"
+```
+
+It prints one JSON object. On failure, `error` names the file, feature, and
+patch whose anchor count changed, and `report.patches` lists the rewrites that
+applied before it. Fix that rewrite, then run the command again.
+
+Run `make test-native` next. A failure here often identifies a missing copied
+module or a missing direct dependency before broader tests consume time.
+
+When upstream adds a way to set session configuration, trace it to the function
+that applies it. Every change to allowed domains, the action policy, or confirm
+actions must pass `authorize_settings` in the adapter. Add an adapter smoke
+case for the new route.
 
 If adapter manifest changes follow the canonical updater, refresh its lock entry:
 
@@ -286,6 +300,18 @@ gh stack push --remote origin
 Confirm each active run uses the current branch SHA. A cancelled run from a
 superseded base update is historical when a later exact-head run passed and the
 PR reports `mergeStateStatus: CLEAN`.
+
+Two failures come from the environment and look like regressions:
+
+- A job that is cancelled before its first step, with the annotation
+  `The configuration '<image>' is not supported`, requests a retired runner
+  image. Move the workflow to a current label from the
+  [runner image list](https://github.com/actions/runner-images#available-images).
+- A browser seam that fails on a runner can follow a Chrome update on that
+  runner. Install the last published pyagentbrowser release in a clean
+  environment and run the same scenario against the same Chrome build. The
+  same failure there means Chrome changed, and the fix belongs in the adapter
+  or upstream.
 
 Merge the current-head green stack through the stack command:
 

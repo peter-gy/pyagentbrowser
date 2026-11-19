@@ -118,7 +118,7 @@ jobs:
         run: git -C third_party/agent-browser fetch --force --tags origin
       - uses: prefix-dev/setup-pixi@9dabb60412d3d2d967a8d682f7ce01317af40514 # v0.11.0
         with:
-          pixi-version: v0.81.0
+          pixi-version: v0.82.0
           locked: true
       - name: Check release metadata, Python, and Rust
         run: pixi run --locked make release-version-check check

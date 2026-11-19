@@ -80,18 +80,18 @@ fn find_chrome_executable() -> Option<String> {
 }
 
 #[pyfunction]
-#[pyo3(signature = (with_deps=false))]
-fn _run_browser_install(with_deps: bool) {
+#[pyo3(name = "_run_browser_install", signature = (with_deps=false))]
+fn run_browser_install(with_deps: bool) {
     agent_browser::run_browser_install(with_deps);
 }
 
-#[pymodule]
-fn _native(m: &Bound<'_, PyModule>) -> PyResult<()> {
+#[pymodule(name = "_native")]
+fn native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyNativeBrowser>()?;
     m.add_class::<PyNativeCancellation>()?;
     m.add_function(wrap_pyfunction!(browser_cache_dir, m)?)?;
     m.add_function(wrap_pyfunction!(find_chrome_executable, m)?)?;
-    m.add_function(wrap_pyfunction!(_run_browser_install, m)?)?;
+    m.add_function(wrap_pyfunction!(run_browser_install, m)?)?;
     m.add_function(wrap_pyfunction!(skill_names, m)?)?;
     m.add_function(wrap_pyfunction!(skill_record, m)?)?;
     m.add_function(wrap_pyfunction!(skill_file, m)?)?;

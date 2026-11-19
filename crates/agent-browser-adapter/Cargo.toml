@@ -52,3 +52,6 @@ agent-browser-build = { path = "../agent-browser-build" }
 
 [dev-dependencies]
 tempfile = "3"
+
+# Generated upstream modules compile in this crate, so it keeps the default lints.
+[lints]

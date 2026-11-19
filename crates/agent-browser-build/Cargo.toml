@@ -12,3 +12,6 @@ serde_json = "1.0"
 
 [dev-dependencies]
 tempfile = "3"
+
+# The generator keeps the default lints.
+[lints]
