@@ -31,7 +31,7 @@ asyncio.run(main())
 
 The synchronous and asynchronous surfaces use the same method names, parameters, result models, validation, confirmation behavior, domain policy, and evidence model.
 
-The intentional differences are:
+The surfaces differ in these ways:
 
 - Engine operations return awaitables.
 - Query factories and snapshot lookups stay synchronous because they create handles or inspect immutable data.

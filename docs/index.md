@@ -44,7 +44,7 @@ features:
       width: "24"
       height: "24"
       wrap: true
-    title: Keep the full engine in reach
+    title: Call every engine action
     details: Typed namespaces cover stable workflows while raw native actions remain available.
     link: /guides/native-protocol
     linkText: Native protocol

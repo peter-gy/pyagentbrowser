@@ -13,7 +13,7 @@ public option validation
 
 ## Launch constraints
 
-`LaunchConfiguration` rejects modes that can restore or open a page before containment begins. `allowed_domains` conflicts with profiles, storage-state replay, keyed restore, CDP attachment, automatic connection, iOS and Safari providers, and browser arguments that open existing pages.
+`LaunchConfiguration` rejects modes that can restore or open a page before containment begins. It rejects `allowed_domains` combined with profiles, storage-state replay, CDP attachment, automatic connection, iOS and Safari providers, and browser arguments that open existing pages. `NativeSession` rejects `allowed_domains` combined with keyed restore.
 
 Containment must start on a fresh controllable browser context before page, popup, frame, worker, or WebRTC scripts run.
 
@@ -23,7 +23,7 @@ Containment must start on a fresh controllable browser context before page, popu
 
 Exact entries match one host. A wildcard suffix authorizes the root host and its subdomains. Wildcard request patterns require matching wildcard authority.
 
-Successful cookie responses are filtered in memory before the result reaches
+Python filters successful cookie responses in memory before the result reaches
 the caller. A contained `state_save` writes the native file first, then Python
 reads, filters, and rewrites its cookies and origins in place before returning.
 A failure in this post-write stage can leave the created file and must surface
@@ -34,9 +34,9 @@ explicit unsafe flag.
 
 The native engine receives allowed domains, the action-policy path, and exact confirmation action names. The browser-level domain filter enforces requests that page scripts can initiate before Python observes them.
 
-Raw native launch actions cannot silently weaken an active allowlist. A successful explicitly authorized launch can adopt a new policy through the same session transition rules.
+A raw native `launch` cannot change an active allowlist. A successful `launch` on a session without an allowlist can adopt one.
 
-The engine accepts settings from a `settings` patch on every command, from the `launch` envelope, and from each command a saved flow replays, and it applies them before its policy gates. The adapter authorizes every planned change where the engine applies it. A change to `action-policy` or `confirm-actions` fails with `code: "security_settings"`, and so does a change to `allowed-domains` on a session that has a list. A session without allowed domains can adopt a list. The settings come from `EngineOptions` at construction and stay in process memory.
+The engine accepts settings from a `settings` patch on any command, from the `launch` envelope, and from each command a saved flow replays. It applies them before its policy gates. The adapter authorizes every planned change where the engine applies it. A change to `action-policy` or `confirm-actions` fails with `code: "security_settings"`, and so does a change to `allowed-domains` on a session that has a list. A session without allowed domains can adopt a list. The security settings come from `EngineOptions` at construction and stay in process memory.
 
 ## Confirmation replay
 

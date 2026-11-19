@@ -107,12 +107,12 @@ See [Generated adapter](generated-adapter.md) and [Maintenance](maintenance.md).
 
 | Change | Primary owner | Verification |
 | --- | --- | --- |
-| Typed workflow over existing actions | `features/<capability>/` | Public result, validation, confirmation, sync/async parity |
+| Typed workflow over existing actions | `features/<capability>/` | Public result, validation, confirmation, sync and async parity |
 | Shared dispatch or lifecycle rule | `execution/` | Every affected entry path, cancellation, terminal close |
 | Wire envelope or native queue | `transport/` | Protocol errors, ordering, interrupted and queued work |
 | Rust-owned process or helper lifetime | `crates/pyagentbrowser` | Native boundary and platform cleanup |
 | Embedded engine behavior | `crates/agent-browser-adapter` | Adapter contract and real-browser seam |
-| Upstream source adaptation | `crates/agent-browser-build` | Anchor/dependency audit, compilation, affected runtime seam |
+| Upstream source adaptation | `crates/agent-browser-build` | Anchor and dependency audit, compilation, affected runtime seam |
 | Artifact inputs or provenance | `scripts/artifacts/` and packaging manifests | Wheel and source-distribution install proof |
 
 Use `make check` for the normal handoff. Add the boundary-specific checks from

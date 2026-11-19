@@ -48,12 +48,11 @@ action set.
 Stable operations have the same names, parameters, validation, and result
 shapes across synchronous and asynchronous APIs. Engine calls become awaitable.
 Handle factories and immutable snapshot lookup stay synchronous.
-`AsyncBrowser.close()` additionally accepts an optional caller wait timeout in
+`AsyncBrowser.close()` also accepts an optional caller wait timeout in
 seconds. Shared cleanup continues after a caller stops waiting.
 
 `tests/test_api_parity.py` checks public signatures. Capability tests establish
 returned values, error behavior, confirmation, and lifecycle. Use
-`tests/test_extensions.py` for the consumer extension boundary and
 `make test-integration` when the contract requires real document state.
 
 ## Public imports

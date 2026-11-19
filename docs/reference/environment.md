@@ -39,7 +39,7 @@ Local launch checks the explicit executable environment, the native cache and di
 | Variable | Contract |
 | --- | --- |
 | `AGENT_BROWSER_EXECUTABLE_PATH` | Select the local Chrome or Chromium executable. |
-| `AGENT_BROWSER_ENGINE` | Select `chrome` or `lightpanda` when `LaunchOptions.engine` is unset. |
+| `AGENT_BROWSER_ENGINE` | Select `chrome`, `lightpanda`, or `obscura` when `LaunchOptions.engine` is unset. |
 | `AGENT_BROWSER_PROVIDER` | Select `browserbase`, `browserless`, `browser-use` or `browseruse`, `kernel`, `agentcore`, `ios`, `safari`, or a configured provider plugin when `LaunchOptions.provider` is unset. |
 | `AGENT_BROWSER_CDP` | Attach to an existing browser's Chrome DevTools Protocol port or WebSocket URL when the controller names no `CDPTarget`. |
 | `AGENT_BROWSER_CDP_HEADERS` | Send a JSON object of WebSocket headers with the `AGENT_BROWSER_CDP` connection. |

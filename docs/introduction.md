@@ -5,7 +5,7 @@ description: Learn the objects and boundaries that make up the pyagentbrowser Py
 
 # What is pyagentbrowser?
 
-pyagentbrowser embeds the native Rust [`agent-browser`](https://agent-browser.dev/) engine in a Python process. The `pyagentbrowser` distribution installs the `agentbrowser` import package, a typed Python API, the native engine, browser lifecycle management, safety policy, and action evidence.
+pyagentbrowser embeds the native Rust [`agent-browser`](https://agent-browser.dev/) engine in a Python process. The `pyagentbrowser` distribution installs the `agentbrowser` import package. The package contains a typed Python API, the native engine, browser lifecycle management, safety policy, and action evidence.
 
 The central object is a `Browser` controller. It owns a native session, which sends ordered actions to a local browser process or an attached browser. A `Page` binds one browser target, while a `Frame` binds one child browsing context.
 
@@ -44,7 +44,7 @@ with Browser.launch() as browser:
 
 Use a `Ref` when the workflow needs evidence tied to the page state the agent inspected. A ref mutation produces an `ActionResult`.
 
-Use a `Query` when direct live-page control is the goal. A query resolves when each operation runs and returns the query or requested value.
+Use a `Query` for direct control of the live page. A query resolves when each operation runs and returns the query or requested value.
 
 | Need | Element model | Result |
 | --- | --- | --- |

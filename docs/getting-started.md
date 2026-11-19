@@ -23,7 +23,7 @@ The first local launch selects `AGENT_BROWSER_EXECUTABLE_PATH`, a cached browser
 
 ## Run the first action
 
-`Browser.launch()` starts the native session and local browser before it returns. Use the controller as a context manager so controller-owned browser resources close together. A terminal persistence failure surfaces after cleanup.
+`Browser.launch()` starts the native session and local browser before it returns. Use the controller as a context manager so controller-owned browser resources close together.
 
 ```python
 from agentbrowser import Browser

@@ -265,7 +265,7 @@ A flow name uses letters, digits, `-`, and `_`. `params` and `where` map strings
 | `send(method, params=None, *, session_id=None)` | Send one raw protocol method. |
 | `target(*, label=None, url=None, target_id=None)` | Return a direct page-target handle. |
 
-The optional `cdp` package is required. Frame and execution-context handles expire after navigation-like transitions. Target handles resolve their selected page target when an operation runs.
+These methods require the `cdp` extra. Frame and execution-context handles expire after navigation-like transitions. Target handles resolve their selected page target when an operation runs.
 
 ## `browser.native`
 

@@ -1,6 +1,6 @@
 # Documentation
 
-The public documentation is a [VitePress](https://vitepress.dev/) static site rooted at `docs/`. Contributor implementation notes remain in `development_docs/`.
+The public documentation is a [VitePress](https://vitepress.dev/) static site rooted at `docs/`. Contributor implementation notes live in `development_docs/`.
 
 ## Reader boundaries
 
@@ -59,7 +59,7 @@ and `llms-full.txt`. Its navigation derives from the same route groups as the
 rendered sidebar. The Pages base path and site URL also determine its generated
 links.
 
-Maintainer brand exports are reviewed source assets. Contributors validate the public files through the docs build. A brand change requires a maintainer-provided export whose dimensions, SVG structure, and rendered appearance have been checked before it enters `docs/public`.
+Maintainer brand exports are reviewed source assets. Contributors validate the public files through the docs build. A brand change requires a maintainer-provided export. Check its dimensions, SVG structure, and rendered appearance before it enters `docs/public`.
 
 ## Validation
 

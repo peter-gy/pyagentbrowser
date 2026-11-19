@@ -41,9 +41,9 @@ candidate refs when criteria match zero or several refs. `Snapshot.ref()` raises
 | `refresh()` | Capture the same `SnapshotSpec` again. |
 | `diff()` | Capture the same document scope and compare it with this snapshot, returning `SnapshotDiff`. |
 
-Interactive representations keep snapshots, refs, action results, diffs, browser
-controllers, and close results bounded. Read `.text`, `.raw`, or the explicit
-fields when a code-mode task needs their complete content.
+The `repr()` of a snapshot, ref, action result, diff, browser controller, or
+close result leaves out page text and raw native data. Read `.text`, `.raw`,
+or the explicit fields when a code-mode task needs their complete content.
 
 ### `Ref`
 

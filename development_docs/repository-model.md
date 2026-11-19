@@ -1,7 +1,7 @@
 # Downstream wrapper model
 
-pyagentbrowser is an upstream-aligned Python product built around an exact
-revision of the upstream
+pyagentbrowser is a Python SDK built around an exact revision of the
+upstream
 [`agent-browser`](https://github.com/vercel-labs/agent-browser) engine. Git calls
 the repository that records a submodule pin the _superproject_. This guide uses
 _downstream wrapper_ because it also describes the product boundary.
@@ -22,7 +22,7 @@ official agent-browser repository
   -> wheel and source distribution
 ```
 
-The submodule is source input, not a downstream editing surface. A checkout
+The submodule is read-only source input. A checkout
 records its exact commit as a Git _gitlink_. A clean clone initializes that
 commit before Rust compilation or package verification.
 
@@ -31,9 +31,9 @@ modules and wrapper trees to Cargo `OUT_DIR`, and compiles them as a downstream
 library. The PyO3 crate links that library into `agentbrowser._native`. The
 Python package then owns the public contract above the JSON command protocol.
 
-The root Cargo workspace contains the build, adapter, and PyO3 crates. It explicitly
-excludes the upstream Cargo workspace, so Cargo resolves one downstream lock
-and never treats the submodule as another workspace member.
+The root Cargo workspace contains the build, adapter, and PyO3 crates. It
+excludes the upstream Cargo workspace, so Cargo resolves one downstream
+`Cargo.lock`.
 
 ## Ownership boundaries
 
@@ -54,7 +54,7 @@ fail-closed generated adaptation and keep the pinned checkout clean.
 
 ## Three linked identities
 
-The repository tracks three related identities with different meanings:
+The repository tracks three identities:
 
 | Identity               | Meaning                                         | Recorded in                                                 |
 | ---------------------- | ----------------------------------------------- | ----------------------------------------------------------- |
@@ -91,12 +91,12 @@ Before editing, identify the lowest owner that can hold the contract.
 
 A typed Python wrapper is warranted when Python owns stable validation, result
 decoding, lifecycle behavior, evidence capture, or a composition that callers
-would otherwise repeat. The raw native API preserves immediate access to every
-action in the pinned engine.
+would otherwise repeat. The raw native API reaches every action in the pinned
+engine.
 
 ## Intake an upstream revision
 
-An upstream update is a source review, not a dependency-number edit.
+Review an upstream update as a source diff.
 
 1. Resolve the candidate ref from the official remote.
 2. Compare it with the current gitlink and classify engine, protocol, build,

@@ -62,8 +62,8 @@ def screenshot_result(shot: Screenshot) -> dict:
 
 The tool handler returns this result through the host's content channel. Keep
 image blocks typed as images when forwarding them to the model. Encoding the
-whole result as text would expose base64 text rather than an image. A notebook
-image display and a saved file are separate from this model-facing delivery.
+whole result as text sends base64 text to the model. Displaying the image in a
+notebook or saving it to a file does not send it to the model.
 
 Inspect the delivered image before reporting visual findings. Snapshot diffs,
 scroll offsets, and geometry provide additional behavioral evidence.

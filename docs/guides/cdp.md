@@ -80,14 +80,13 @@ result = browser.cdp.send("Runtime.evaluate", {"expression": "2 + 2"})
 print(result)
 ```
 
-`browser.cdp.send()` writes directly to Chrome. Session action-policy and
-confirmation rules apply to typed namespaces and `browser.native`, not to raw
-CDP methods. The contained browser context retains its network filter, but a raw
+`browser.cdp.send()` writes directly to Chrome. Raw CDP methods skip the
+session's action-policy and confirmation rules. The contained browser context retains its network filter, but a raw
 method can change browser state that the controller does not track. Prefer the
 typed or native-action path for navigation, target creation, state changes, and
 browser lifecycle.
 
-The `agentbrowser.cdp` package also exports synchronous and asynchronous clients, controllers, page sessions, target handles, models, transports, connectors, and the CDP error family for applications that need the lower-level objects directly.
+The `agentbrowser.cdp` package also exports synchronous and asynchronous clients, controllers, page sessions, target handles, models, transports, connectors, and the CDP error family.
 
 ## Refresh handles after page changes
 

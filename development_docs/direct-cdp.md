@@ -16,13 +16,13 @@ NativeSession JSON protocol       CDPController WebSocket
   +---------- same browser -------+
 ```
 
-The native path remains authoritative for launch, policy, session state,
-high-level actions, and close. The direct CDP path asks the native engine for
+The native path owns launch, policy, session state, high-level actions, and
+close. The direct CDP path asks the native engine for
 the current browser WebSocket URL, attaches to a page target, and owns its
 protocol connection until invalidation or close.
 
-Direct CDP forms a second command plane within the same browser session. New
-behavior must identify which plane owns navigation, target selection, cached
+Direct CDP is a second command path within the same browser session. New
+behavior must identify which path owns navigation, target selection, cached
 handles, policy enforcement, and teardown.
 
 ## Safety boundary
@@ -42,8 +42,8 @@ owns their protocol and lifecycle consequences.
 
 The controller launches the browser lazily when needed, reads `cdp_url` through
 the checked native path, and constructs one synchronous or asynchronous client.
-The `websockets` dependency is imported at first connection so the base package
-can operate without the `cdp` extra.
+The client imports `websockets` at first connection, so the base package works
+without the `cdp` extra.
 
 A page session resolves one target by explicit target ID, exact URL, tab label,
 or the browser's current URL. Ambiguous matches raise a typed error. The
@@ -76,7 +76,7 @@ cannot consume each other's responses.
 
 ## Review checklist
 
-1. Choose native action or direct CDP ownership explicitly.
+1. Choose whether the native action path or direct CDP owns the operation.
 2. Preserve lazy launch and controller close behavior.
 3. Define how the operation selects a target, frame, and execution context.
 4. Invalidate generation-bound state after document or target changes.

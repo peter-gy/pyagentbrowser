@@ -5,7 +5,7 @@ description: Name tabs, pin attached sessions, manage cookies and Web Storage, a
 
 # Work with tabs and browser state
 
-Tab identity and stored browser data solve separate problems. Labels select tabs inside a session. Explicit state files and keyed restore records preserve cookies and origin storage.
+Labels select tabs inside a session. Explicit state files and keyed restore records preserve cookies and origin storage.
 
 ## Name and reuse tabs
 
