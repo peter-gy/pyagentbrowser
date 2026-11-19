@@ -54,25 +54,30 @@ jobs:
         with:
           python-version: ${{ inputs.python }}
       - uses: astral-sh/setup-uv@v8.2.0
-      - uses: dtolnay/rust-toolchain@1.98.1
+      - name: Install the Rust toolchain that rust-toolchain.toml pins
+        run: rustup toolchain install
 
       - name: Set reproducible build inputs
         run: |
           SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) python - <<'PY'
           import os
+          import sys
           from pathlib import Path
 
           workspace = Path(os.environ["GITHUB_WORKSPACE"]).resolve()
           cargo_home = Path(os.environ.get("CARGO_HOME", Path.home() / ".cargo")).resolve()
-          rustflags = " ".join(
-              (
-                  f"--remap-path-prefix={workspace}=/src/pyagentbrowser",
-                  "--remap-path-prefix=/io=/src/pyagentbrowser",
-                  f"--remap-path-prefix={cargo_home}=/cargo",
-                  "--remap-path-prefix=/root/.cargo=/cargo",
-                  "--remap-path-prefix=/usr/local/cargo=/cargo",
-              )
-          )
+          flags = [
+              f"--remap-path-prefix={workspace}=/src/pyagentbrowser",
+              "--remap-path-prefix=/io=/src/pyagentbrowser",
+              f"--remap-path-prefix={cargo_home}=/cargo",
+              "--remap-path-prefix=/root/.cargo=/cargo",
+              "--remap-path-prefix=/usr/local/cargo=/cargo",
+          ]
+          if sys.platform == "darwin":
+              # Apple's linker otherwise records the path of each object file
+              # that carries debug information.
+              flags.append("-C link-arg=-Wl,-S")
+          rustflags = " ".join(flags)
           with Path(os.environ["GITHUB_ENV"]).open("a", encoding="utf-8") as env_file:
               print(f"SOURCE_DATE_EPOCH={os.environ['SOURCE_DATE_EPOCH']}", file=env_file)
               print(f"RUSTFLAGS={rustflags}", file=env_file)
@@ -92,7 +97,6 @@ jobs:
           CFLAGS_aarch64_unknown_linux_gnu: "-D__ARM_ARCH=8"
         with:
           maturin-version: v1.14.1
-          rust-toolchain: 1.98.1
           target: ${{ inputs.target }}
           manylinux: ${{ inputs.manylinux }}
           sccache: ${{ inputs.sccache }}
@@ -115,7 +119,6 @@ jobs:
         uses: PyO3/maturin-action@v1
         with:
           maturin-version: v1.14.1
-          rust-toolchain: 1.98.1
           target: ${{ inputs.target }}
           sccache: ${{ inputs.sccache }}
           args: >-

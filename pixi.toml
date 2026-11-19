@@ -3,19 +3,19 @@ name = "pyagentbrowser-dev"
 description = "Locked system toolchain for pyagentbrowser development"
 channels = ["conda-forge"]
 platforms = ["linux-64", "linux-aarch64", "osx-64", "osx-arm64"]
-requires-pixi = ">=0.81.0,<0.82"
+requires-pixi = ">=0.81"
 
 # Python packages remain owned by pyproject.toml and uv.lock; Pixi supplies
 # the interpreter, native toolchain, and documentation/recording tools.
 [dependencies]
 python = "3.14.*"
-rust = "==1.98.1"
+rust = "==1.100.0"
 c-compiler = "*"
 cxx-compiler = "*"
 make = "*"
 git = "*"
 pkg-config = "*"
-uv = "==0.12.21"
+uv = "0.12.*"
 nodejs = "24.*"
 pnpm = "==11.10.0"
 ffmpeg = "*"
@@ -42,6 +42,14 @@ CARGO_TARGET_X86_64_UNKNOWN_LINUX_GNU_LINKER = "$PIXI_PROJECT_ROOT/scripts/pixi_
 
 [target.linux-aarch64.activation.env]
 CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER = "$PIXI_PROJECT_ROOT/scripts/pixi_linker.py"
+
+# Conda's clang adds the environment's library directory as an RPATH. Apple's
+# compiler driver links the extension against the system SDK alone.
+[target.osx-arm64.activation.env]
+CARGO_TARGET_AARCH64_APPLE_DARWIN_LINKER = "/usr/bin/cc"
+
+[target.osx-64.activation.env]
+CARGO_TARGET_X86_64_APPLE_DARWIN_LINKER = "/usr/bin/cc"
 
 [tasks]
 install = { cmd = "make install", description = "Install locked Python dependencies and build the editable extension" }

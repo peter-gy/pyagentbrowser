@@ -2,7 +2,7 @@
 
 PYTHON_SOURCES = src tests scripts examples
 BUILD_PYTHON ?= 3.11
-RUST_TOOLCHAIN ?= 1.98.1
+RUST_TOOLCHAIN ?= $(shell sed -n 's/^channel = "\(.*\)"/\1/p' rust-toolchain.toml)
 UPSTREAM_REF ?= origin/main
 ALLOW_NON_FAST_FORWARD ?= 0
 UPSTREAM_UPDATE_FLAGS = $(if $(filter 1,$(ALLOW_NON_FAST_FORWARD)),--allow-non-fast-forward)
@@ -21,6 +21,11 @@ PEP517_DIST_DIR = target/pep517-dist
 SOURCE_DATE_EPOCH ?= $(shell git log -1 --format=%ct 2>/dev/null || printf '315532800')
 CARGO_HOME ?= $(HOME)/.cargo
 REPRODUCIBLE_RUSTFLAGS = --remap-path-prefix=$(CURDIR)=/src/pyagentbrowser --remap-path-prefix=$(CARGO_HOME)=/cargo
+ifeq ($(shell uname -s),Darwin)
+# Apple's linker records the path of every object file that carries debug
+# information. -S leaves that debug map out of the extension.
+REPRODUCIBLE_RUSTFLAGS += -C link-arg=-Wl,-S
+endif
 
 .PHONY: help
 help:
@@ -92,7 +97,7 @@ typecheck: sync
 
 .PHONY: test
 test: native-dev
-	$(UV_RUN) pytest -q -m "not integration"
+	$(RUST_ENV) $(UV_RUN) pytest -q -m "not integration"
 
 .PHONY: test-sdk
 test-sdk: native-dev
@@ -104,7 +109,7 @@ test-native: native-dev
 
 .PHONY: test-package
 test-package: submodule-init sync
-	$(UV_RUN) pytest -q tests/packaging
+	$(RUST_ENV) $(UV_RUN) pytest -q tests/packaging
 
 .PHONY: test-integration
 test-integration: native-dev

@@ -2,7 +2,7 @@
 
 ## Setup
 
-Install [Pixi](https://pixi.sh/latest/installation/) 0.81.x. From a checkout:
+Install [Pixi](https://pixi.sh/latest/installation/) 0.81 or later. From a checkout:
 
 ```bash
 pixi install --locked

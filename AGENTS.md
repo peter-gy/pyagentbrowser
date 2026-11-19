@@ -9,8 +9,8 @@ upstream engine.
 
 ## Development setup
 
-Install [Pixi](https://pixi.sh/latest/installation/) 0.81.x, then run from the
-repository root:
+Install [Pixi](https://pixi.sh/latest/installation/) 0.81 or later, then run
+from the repository root:
 
 ```bash
 pixi install --locked
@@ -18,14 +18,15 @@ pixi run --locked install
 pixi run --locked check
 ```
 
-The committed `pixi.lock` supplies Python 3.14, Rust 1.98.1 (including Clippy and
-rustfmt), C/C++ compilers and a Linux sysroot, Make, Git, uv, Node.js, pnpm,
+The committed `pixi.lock` supplies Python 3.14, the Rust toolchain that
+`rust-toolchain.toml` pins (including Clippy and rustfmt), C/C++ compilers and a Linux sysroot, Make, Git, uv, Node.js, pnpm,
 FFmpeg, and Linux Chrome runtime libraries. Supported development platforms are
 Linux x86-64/arm64 and macOS Intel/Apple Silicon. On Windows use WSL2 with a Linux
 checkout; native Windows wheels remain covered by release CI. macOS also needs
 Apple's SDK (`xcode-select --install`). Pixi cannot distribute that SDK.
 The Linux Rust linker uses GCC's built-in specs to keep local Conda RPATHs out
-of wheels while retaining the locked compiler and sysroot.
+of wheels while retaining the locked compiler and sysroot. On macOS the
+extension links through Apple's `/usr/bin/cc` for the same reason.
 
 Use `pixi run --locked <task>` for the tasks below, or `pixi shell` and then
 ordinary `make` / `uv run --no-sync` commands. Python dependencies and the
@@ -46,9 +47,17 @@ engine's CI launch settings. Docs work starts with
 Keep dependency ownership separate: update `pixi.toml` and `pixi.lock` for
 system tools, `pyproject.toml` and `uv.lock` for Python packages, and
 `docs/package.json` and `docs/pnpm-lock.yaml` for docs packages. Refresh the
-system lock with `pixi lock`, then verify `pixi install --locked`. Keep its Rust
-pin aligned with `rust-toolchain.toml` and the Makefile. Existing Make commands
-also support a manually provisioned toolchain through rustup.
+system lock with `pixi lock`, then verify `pixi install --locked`.
+
+`rust-toolchain.toml` pins Rust for Make, rustup, and the wheel builds in CI.
+Set the same version in `pixi.toml` when it changes. `make test-package` fails
+while the two differ.
+
+The Make commands also run without Pixi. With
+[rustup](https://rustup.rs/), [uv](https://docs.astral.sh/uv/), and a C
+compiler installed, `make install` and `make check` select the pinned toolchain
+through rustup. Docs commands also need Node.js and the pnpm version in
+`docs/package.json`.
 
 ## Commands
 
